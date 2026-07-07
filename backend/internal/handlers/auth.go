@@ -2,10 +2,12 @@ package handlers
 
 import (
     "net/http"
+    "unicode"
+
     "github.com/gin-gonic/gin"
     "github.com/Uberrazumist/form-builder/backend/internal/models"
-    "gorm.io/gorm"
     "golang.org/x/crypto/bcrypt"
+    "gorm.io/gorm"
 )
 
 type RegisterInput struct {
@@ -21,6 +23,27 @@ func Register(db *gorm.DB) gin.HandlerFunc {
             c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
             return
         }
+
+        // --- Новая валидация пароля ---
+        if len(input.Password) < 8 {
+            c.JSON(http.StatusBadRequest, gin.H{"error": "Password must be at least 8 characters long"})
+            return
+        }
+        hasLetter := false
+        hasDigit := false
+        for _, ch := range input.Password {
+            if unicode.IsLetter(ch) {
+                hasLetter = true
+            }
+            if unicode.IsDigit(ch) {
+                hasDigit = true
+            }
+        }
+        if !hasLetter || !hasDigit {
+            c.JSON(http.StatusBadRequest, gin.H{"error": "Password must contain both letters and digits"})
+            return
+        }
+        // --- Конец валидации ---
 
         // Проверяем, существует ли пользователь
         var existing models.User
