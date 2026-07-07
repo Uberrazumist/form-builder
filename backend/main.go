@@ -2,6 +2,7 @@ package main
 
 import (
     "log"
+    "net/http"
     "os"
 
     "github.com/gin-gonic/gin"
@@ -13,7 +14,6 @@ import (
 )
 
 func main() {
-    // Переменные окружения
     host := os.Getenv("DB_HOST")
     user := os.Getenv("DB_USER")
     password := os.Getenv("DB_PASSWORD")
@@ -33,20 +33,19 @@ func main() {
     }
     log.Println("Connected to database successfully")
 
-    // Миграции
     if err := db.AutoMigrate(&models.User{}); err != nil {
         log.Fatal("Migration failed:", err)
     }
     log.Println("Migration completed")
 
-    // Gin
+    r := gin.Default()
+
     r.GET("/ping", func(c *gin.Context) {
-    c.String(http.StatusOK, "pong")
+        c.String(http.StatusOK, "pong")
     })
-    // Регистрация (пока только этот эндпоинт)
+
     r.POST("/api/register", handlers.Register(db))
 
-    // Запуск
     log.Println("Server starting on :8080")
     r.Run(":8080")
 }
