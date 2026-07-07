@@ -9,9 +9,15 @@ import HomeView from './views/HomeView.vue'
 </script>
 
 <style>
-body {
+* {
   margin: 0;
-  font-family: Arial, sans-serif;
-  background: #f4f7fc;
+  padding: 0;
+  box-sizing: border-box;
+}
+#app {
+  min-height: 100vh;
+  display: flex;
+  justify-content: center;
+  align-items: center;
 }
 </style>
