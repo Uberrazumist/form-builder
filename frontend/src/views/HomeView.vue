@@ -1,36 +1,490 @@
+<!-- src/views/HomeView.vue -->
 <template>
   <div class="home">
-    <section class="hero-inner">
-      <HeroSection />
-      <RegistrationForm />
+    <!-- HERO -->
+    <section class="hero">
+      <div class="hero-content">
+        <div class="hero-text">
+          <span class="eyebrow">Конструктор форм для школы</span>
+          <h1 class="hero-title">Создавайте формы<br/>за минуты, а не часы</h1>
+          <p class="hero-desc">
+            Единый сервис для регистрации, опросов и сбора данных.
+            Простой интерфейс, надёжная защита, удобный доступ для учеников и учителей.
+          </p>
+          
+          <div class="hero-actions">
+            <template v-if="isAuthenticated">
+              <router-link to="/create" class="btn-primary-large">
+                <Icon name="plus" />
+                Создать форму
+              </router-link>
+            </template>
+            <template v-else>
+              <router-link to="/login" class="btn-primary-large">Войти</router-link>
+              <router-link to="/register" class="btn-secondary-large">Зарегистрироваться</router-link>
+            </template>
+          </div>
+        </div>
+
+        <div class="hero-visual">
+          <div class="visual-card">
+            <div class="visual-icon">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                <rect x="3" y="3" width="18" height="18" rx="2"/>
+                <path d="M9 12l2 2 4-4"/>
+              </svg>
+            </div>
+            <h3>Быстро и просто</h3>
+            <p>Интуитивный интерфейс для создания любых форм</p>
+          </div>
+          <div class="visual-card">
+            <div class="visual-icon">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                <path d="M12 2L2 7l10 5 10-5-10-5z"/>
+                <path d="M2 17l10 5 10-5M2 12l10 5 10-5"/>
+              </svg>
+            </div>
+            <h3>Гибкие настройки</h3>
+            <p>9 типов вопросов, зависимости, публичный доступ</p>
+          </div>
+          <div class="visual-card">
+            <div class="visual-icon">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                <path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/>
+                <circle cx="9" cy="7" r="4"/>
+                <path d="M23 21v-2a4 4 0 00-3-3.87M16 3.13a4 4 0 010 7.75"/>
+              </svg>
+            </div>
+            <h3>Для всей школы</h3>
+            <p>Ученики, учителя, администрация — все в одном месте</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- STATS -->
+    <section class="stats">
+      <div class="stats-grid">
+        <div class="stat-card">
+          <span class="stat-number">100+</span>
+          <span class="stat-label">Опросов создано</span>
+        </div>
+        <div class="stat-card">
+          <span class="stat-number">20+</span>
+          <span class="stat-label">Учителей используют</span>
+        </div>
+        <div class="stat-card">
+          <span class="stat-number">500+</span>
+          <span class="stat-label">Учеников участвуют</span>
+        </div>
+        <div class="stat-card">
+          <span class="stat-number">0 ₽</span>
+          <span class="stat-label">Бесплатно для школ</span>
+        </div>
+      </div>
+    </section>
+
+    <!-- FEATURES -->
+    <section class="features">
+      <div class="section-header">
+        <span class="eyebrow">Возможности</span>
+        <h2 class="section-title">Всё, что нужно для школы</h2>
+      </div>
+      
+      <div class="features-grid">
+        <div class="feature-card">
+          <div class="feature-icon">
+            <Icon name="edit" />
+          </div>
+          <h3>Разные типы вопросов</h3>
+          <p>Текст, выбор из списка, рейтинг, выбор класса, учителя или времени</p>
+        </div>
+        <div class="feature-card">
+          <div class="feature-icon">
+            <Icon name="link" />
+          </div>
+          <h3>Зависимости вопросов</h3>
+          <p>Показывайте вопросы в зависимости от ответов на предыдущие</p>
+        </div>
+        <div class="feature-card">
+          <div class="feature-icon">
+            <Icon name="lock" />
+          </div>
+          <h3>Публичный доступ</h3>
+          <p>Делитесь ссылкой — форма доступна без регистрации</p>
+        </div>
+        <div class="feature-card">
+          <div class="feature-icon">
+            <Icon name="check" />
+          </div>
+          <h3>Валидация данных</h3>
+          <p>Обязательные поля, проверка email, минимальная длина пароля</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- USER FORMS (для авторизованных) -->
+    <section v-if="isAuthenticated" class="user-forms">
+      <div class="section-header">
+        <span class="eyebrow">Мои формы</span>
+        <h2 class="section-title">Ваши созданные формы</h2>
+      </div>
+      
+      <FormList />
+    </section>
+
+    <!-- CTA для неавторизованных -->
+    <section v-else class="cta">
+      <div class="cta-card">
+        <h2>Готовы начать?</h2>
+        <p>Зарегистрируйтесь и создайте свою первую форму за 5 минут</p>
+        <div class="cta-actions">
+          <router-link to="/register" class="btn-primary-large">Зарегистрироваться</router-link>
+          <router-link to="/login" class="btn-secondary-large">Уже есть аккаунт? Войти</router-link>
+        </div>
+      </div>
     </section>
   </div>
 </template>
 
 <script setup>
-import HeroSection from '../components/HeroSection.vue'
-import RegistrationForm from '../components/RegistrationForm.vue'
+import { ref, onMounted } from 'vue'
+import Icon from '../components/Icon.vue'
+import FormList from '../components/FormList.vue'
+
+const isAuthenticated = ref(false)
+
+onMounted(() => {
+  isAuthenticated.value = !!localStorage.getItem('token')
+})
 </script>
 
 <style scoped>
 .home {
   width: 100%;
   max-width: 1200px;
-  padding: 2rem;
   display: flex;
   flex-direction: column;
   gap: 4rem;
 }
-.hero-inner {
+
+/* HERO */
+.hero-content {
   display: grid;
-  grid-template-columns: 1.05fr 1fr;
+  grid-template-columns: 1fr 1fr;
   gap: 3rem;
   align-items: center;
 }
+
+.hero-text {
+  animation: fadeUp 0.6s ease both;
+}
+
+.eyebrow {
+  display: inline-block;
+  font-size: 0.78rem;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--primary);
+  background: var(--primary-soft);
+  padding: 0.35rem 0.8rem;
+  border-radius: 999px;
+  margin-bottom: 1.25rem;
+}
+
+.hero-title {
+  font-size: clamp(2rem, 4vw, 3rem);
+  font-weight: 700;
+  line-height: 1.15;
+  letter-spacing: -0.02em;
+  color: var(--text);
+  margin-bottom: 1rem;
+}
+
+.hero-desc {
+  font-size: 1.1rem;
+  color: var(--text-muted);
+  line-height: 1.6;
+  margin-bottom: 2rem;
+  max-width: 500px;
+}
+
+.hero-actions {
+  display: flex;
+  gap: 1rem;
+  flex-wrap: wrap;
+}
+
+.btn-primary-large,
+.btn-secondary-large {
+  padding: 0.95rem 2rem;
+  font-size: 1rem;
+  font-weight: 600;
+  border-radius: var(--radius-sm);
+  text-decoration: none;
+  transition: all 0.2s;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  cursor: pointer;
+  border: none;
+  font-family: inherit;
+}
+
+.btn-primary-large {
+  background: var(--primary);
+  color: #fff;
+  box-shadow: 0 4px 14px rgba(47, 79, 138, 0.25);
+}
+
+.btn-primary-large:hover {
+  background: var(--primary-hover);
+  transform: translateY(-2px);
+  box-shadow: 0 6px 20px rgba(47, 79, 138, 0.32);
+}
+
+.btn-secondary-large {
+  background: var(--surface);
+  color: var(--text);
+  border: 1.5px solid var(--border);
+}
+
+.btn-secondary-large:hover {
+  background: var(--bg);
+  border-color: #cfd6e3;
+}
+
+.hero-visual {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1rem;
+  animation: fadeUp 0.6s ease 0.1s both;
+}
+
+.visual-card {
+  background: var(--surface);
+  padding: 1.5rem;
+  border-radius: var(--radius);
+  border: 1px solid var(--border);
+  box-shadow: var(--shadow-sm);
+  transition: all 0.3s;
+}
+
+.visual-card:hover {
+  transform: translateY(-4px);
+  box-shadow: var(--shadow-md);
+}
+
+.visual-card:first-child {
+  grid-column: span 2;
+}
+
+.visual-icon {
+  width: 48px;
+  height: 48px;
+  background: var(--primary-soft);
+  color: var(--primary);
+  border-radius: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 1rem;
+}
+
+.visual-icon svg {
+  width: 24px;
+  height: 24px;
+}
+
+.visual-card h3 {
+  font-size: 1.1rem;
+  font-weight: 700;
+  color: var(--text);
+  margin-bottom: 0.5rem;
+}
+
+.visual-card p {
+  font-size: 0.9rem;
+  color: var(--text-muted);
+  line-height: 1.5;
+}
+
+/* STATS */
+.stats-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 1.5rem;
+}
+
+.stat-card {
+  background: var(--surface);
+  padding: 2rem 1.5rem;
+  border-radius: var(--radius);
+  border: 1px solid var(--border);
+  text-align: center;
+  transition: all 0.3s;
+}
+
+.stat-card:hover {
+  transform: translateY(-4px);
+  box-shadow: var(--shadow-md);
+}
+
+.stat-number {
+  display: block;
+  font-size: 2.5rem;
+  font-weight: 700;
+  color: var(--primary);
+  letter-spacing: -0.02em;
+  margin-bottom: 0.5rem;
+}
+
+.stat-label {
+  font-size: 0.9rem;
+  color: var(--text-muted);
+}
+
+/* FEATURES */
+.section-header {
+  text-align: center;
+  margin-bottom: 2.5rem;
+}
+
+.section-title {
+  font-size: clamp(1.5rem, 3vw, 2rem);
+  font-weight: 700;
+  color: var(--text);
+  letter-spacing: -0.01em;
+}
+
+.features-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 1.5rem;
+}
+
+.feature-card {
+  background: var(--surface);
+  padding: 2rem;
+  border-radius: var(--radius);
+  border: 1px solid var(--border);
+  transition: all 0.3s;
+}
+
+.feature-card:hover {
+  transform: translateY(-4px);
+  box-shadow: var(--shadow-md);
+}
+
+.feature-icon {
+  width: 56px;
+  height: 56px;
+  background: var(--primary-soft);
+  color: var(--primary);
+  border-radius: 14px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 1.25rem;
+}
+
+.feature-icon svg {
+  width: 28px;
+  height: 28px;
+}
+
+.feature-card h3 {
+  font-size: 1.2rem;
+  font-weight: 700;
+  color: var(--text);
+  margin-bottom: 0.75rem;
+}
+
+.feature-card p {
+  font-size: 0.95rem;
+  color: var(--text-muted);
+  line-height: 1.6;
+}
+
+/* USER FORMS */
+.user-forms {
+  animation: fadeUp 0.5s ease both;
+}
+
+/* CTA */
+.cta-card {
+  background: linear-gradient(135deg, var(--primary) 0%, var(--primary-hover) 100%);
+  padding: 3rem 2rem;
+  border-radius: var(--radius);
+  text-align: center;
+  color: #fff;
+  animation: fadeUp 0.5s ease both;
+}
+
+.cta-card h2 {
+  font-size: 2rem;
+  font-weight: 700;
+  margin-bottom: 0.75rem;
+}
+
+.cta-card p {
+  font-size: 1.1rem;
+  opacity: 0.9;
+  margin-bottom: 2rem;
+}
+
+.cta-actions {
+  display: flex;
+  gap: 1rem;
+  justify-content: center;
+  flex-wrap: wrap;
+}
+
+.cta-actions .btn-primary-large {
+  background: #fff;
+  color: var(--primary);
+}
+
+.cta-actions .btn-primary-large:hover {
+  background: var(--bg);
+}
+
+.cta-actions .btn-secondary-large {
+  background: transparent;
+  color: #fff;
+  border-color: rgba(255,255,255,0.3);
+}
+
+.cta-actions .btn-secondary-large:hover {
+  background: rgba(255,255,255,0.1);
+  border-color: rgba(255,255,255,0.5);
+}
+
+/* ANIMATIONS */
+@keyframes fadeUp {
+  from { opacity: 0; transform: translateY(12px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+/* RESPONSIVE */
 @media (max-width: 960px) {
-  .hero-inner {
+  .hero-content {
     grid-template-columns: 1fr;
     gap: 2rem;
   }
+  .hero-text { text-align: center; }
+  .hero-desc { margin-left: auto; margin-right: auto; }
+  .hero-actions { justify-content: center; }
+  .stats-grid { grid-template-columns: repeat(2, 1fr); }
+  .features-grid { grid-template-columns: 1fr; }
+}
+
+@media (max-width: 560px) {
+  .stats-grid { grid-template-columns: 1fr; }
+  .hero-actions { flex-direction: column; }
+  .btn-primary-large,
+  .btn-secondary-large { width: 100%; justify-content: center; }
+  .cta-actions { flex-direction: column; }
 }
 </style>
