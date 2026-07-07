@@ -40,8 +40,9 @@ func main() {
     log.Println("Migration completed")
 
     // Gin
-    r := gin.Default()
-
+    r.GET("/ping", func(c *gin.Context) {
+    c.String(http.StatusOK, "pong")
+    })
     // Регистрация (пока только этот эндпоинт)
     r.POST("/api/register", handlers.Register(db))
 
