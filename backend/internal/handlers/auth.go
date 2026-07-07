@@ -2,9 +2,11 @@ package handlers
 
 import (
     "net/http"
+    "time"
     "unicode"
 
     "github.com/gin-gonic/gin"
+    "github.com/golang-jwt/jwt/v5"
     "github.com/Uberrazumist/form-builder/backend/internal/models"
     "golang.org/x/crypto/bcrypt"
     "gorm.io/gorm"
@@ -24,7 +26,7 @@ func Register(db *gorm.DB) gin.HandlerFunc {
             return
         }
 
-        // --- Новая валидация пароля ---
+        // --- Валидация пароля ---
         if len(input.Password) < 8 {
             c.JSON(http.StatusBadRequest, gin.H{"error": "Password must be at least 8 characters long"})
             return
@@ -72,6 +74,55 @@ func Register(db *gorm.DB) gin.HandlerFunc {
 
         c.JSON(http.StatusCreated, gin.H{
             "message": "User registered successfully",
+            "user": gin.H{
+                "id":    user.ID,
+                "email": user.Email,
+                "name":  user.FullName,
+                "role":  user.Role,
+            },
+        })
+    }
+}
+
+type LoginInput struct {
+    Email    string `json:"email" binding:"required,email"`
+    Password string `json:"password" binding:"required"`
+}
+
+func Login(db *gorm.DB) gin.HandlerFunc {
+    return func(c *gin.Context) {
+        var input LoginInput
+        if err := c.ShouldBindJSON(&input); err != nil {
+            c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+            return
+        }
+
+        var user models.User
+        if err := db.Where("email = ?", input.Email).First(&user).Error; err != nil {
+            c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid email or password"})
+            return
+        }
+
+        if err := bcrypt.CompareHashAndPassword([]byte(user.Password), []byte(input.Password)); err != nil {
+            c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid email or password"})
+            return
+        }
+
+        // Генерация JWT
+        token := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.MapClaims{
+            "userID": user.ID.String(),
+            "email":  user.Email,
+            "role":   user.Role,
+            "exp":    time.Now().Add(time.Hour * 72).Unix(),
+        })
+        tokenString, err := token.SignedString([]byte("your-secret-key")) // позже вынести в переменную окружения
+        if err != nil {
+            c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to generate token"})
+            return
+        }
+
+        c.JSON(http.StatusOK, gin.H{
+            "token": tokenString,
             "user": gin.H{
                 "id":    user.ID,
                 "email": user.Email,

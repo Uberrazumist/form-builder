@@ -4,14 +4,12 @@
       <HeroSection />
       <RegistrationForm />
     </section>
-    <PhotoGallery />
   </div>
 </template>
 
 <script setup>
 import HeroSection from '../components/HeroSection.vue'
 import RegistrationForm from '../components/RegistrationForm.vue'
-import PhotoGallery from '../components/PhotoGallery.vue'
 </script>
 
 <style scoped>

@@ -45,7 +45,7 @@ func main() {
     })
 
     r.POST("/api/register", handlers.Register(db))
-
+    r.POST("/api/login", handlers.Login(db))
     log.Println("Server starting on :8080")
     r.Run(":8080")
 }
