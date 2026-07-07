@@ -37,7 +37,7 @@ jobs:
           cd frontend
           npm run build
 
-      # --- КОПИРОВАНИЕ НА ВМ ---
+      # --- КОПИРОВАНИЕ БЭКЕНДА ---
       - name: Copy backend binary to VPS
         uses: appleboy/scp-action@v0.1.7
         with:
@@ -48,6 +48,7 @@ jobs:
           target: "/root/form-builder/backend/"
           strip_components: 1
 
+      # --- КОПИРОВАНИЕ ФРОНТЕНДА ---
       - name: Copy frontend files to VPS
         uses: appleboy/scp-action@v0.1.7
         with:
@@ -56,7 +57,24 @@ jobs:
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           source: "frontend/dist/"
           target: "/var/www/form-builder/"
-          strip_components: 2   # убирает frontend/dist/ из пути
+          strip_components: 2
+
+      # --- СОЗДАНИЕ .env НА ВМ ---
+      - name: Create .env file on VPS
+        uses: appleboy/ssh-action@v1.2.0
+        with:
+          host: ${{ secrets.VM_HOST }}
+          username: ${{ secrets.VM_USER }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          script: |
+            cat > /root/form-builder/.env <<EOF
+            DB_HOST=db
+            DB_USER=formuser
+            DB_PASSWORD=formpass
+            DB_NAME=formsdb
+            DB_PORT=5432
+            JWT_SECRET=${{ secrets.JWT_SECRET }}
+            EOF
 
       # --- ПЕРЕЗАПУСК КОНТЕЙНЕРОВ ---
       - name: Restart containers on VPS

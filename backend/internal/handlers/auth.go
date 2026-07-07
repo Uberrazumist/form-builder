@@ -26,7 +26,6 @@ func Register(db *gorm.DB) gin.HandlerFunc {
             return
         }
 
-        // --- Валидация пароля ---
         if len(input.Password) < 8 {
             c.JSON(http.StatusBadRequest, gin.H{"error": "Password must be at least 8 characters long"})
             return
@@ -45,16 +44,13 @@ func Register(db *gorm.DB) gin.HandlerFunc {
             c.JSON(http.StatusBadRequest, gin.H{"error": "Password must contain both letters and digits"})
             return
         }
-        // --- Конец валидации ---
 
-        // Проверяем, существует ли пользователь
         var existing models.User
         if err := db.Where("email = ?", input.Email).First(&existing).Error; err == nil {
             c.JSON(http.StatusConflict, gin.H{"error": "User already exists"})
             return
         }
 
-        // Хешируем пароль
         hashed, err := bcrypt.GenerateFromPassword([]byte(input.Password), bcrypt.DefaultCost)
         if err != nil {
             c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to hash password"})
@@ -89,7 +85,7 @@ type LoginInput struct {
     Password string `json:"password" binding:"required"`
 }
 
-func Login(db *gorm.DB) gin.HandlerFunc {
+func Login(db *gorm.DB, jwtSecret string) gin.HandlerFunc {
     return func(c *gin.Context) {
         var input LoginInput
         if err := c.ShouldBindJSON(&input); err != nil {
@@ -108,14 +104,13 @@ func Login(db *gorm.DB) gin.HandlerFunc {
             return
         }
 
-        // Генерация JWT
         token := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.MapClaims{
             "userID": user.ID.String(),
             "email":  user.Email,
             "role":   user.Role,
             "exp":    time.Now().Add(time.Hour * 72).Unix(),
         })
-        tokenString, err := token.SignedString([]byte("your-secret-key")) // позже вынести в переменную окружения
+        tokenString, err := token.SignedString([]byte(jwtSecret))
         if err != nil {
             c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to generate token"})
             return

@@ -28,6 +28,12 @@ services:
     depends_on:
       - db
     restart: unless-stopped
-
+    environment:
+      - DB_HOST=db
+      - DB_USER=${DB_USER:-formuser}
+      - DB_PASSWORD=${DB_PASSWORD:-formpass}
+      - DB_NAME=${DB_NAME:-formsdb}
+      - DB_PORT=5432
+      - JWT_SECRET=${JWT_SECRET}
 volumes:
   postgres_data:
