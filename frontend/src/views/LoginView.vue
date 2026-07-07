@@ -1,24 +1,39 @@
+<!-- src/views/LoginView.vue -->
 <template>
   <div class="form-card">
     <div class="form-header">
-      <h2 class="form-title">Регистрация</h2>
-      <p class="form-subtitle">Создайте аккаунт, чтобы получить доступ к формам</p>
+      <h2 class="form-title">Вход</h2>
+      <p class="form-subtitle">Введите свои данные, чтобы войти</p>
     </div>
 
-    <form @submit.prevent="register" class="form" novalidate>
+    <form @submit.prevent="login" class="form" novalidate>
       <FormField
-        v-for="field in fields"
-        :key="field.id"
-        v-bind="field"
-        v-model="formData[field.id]"
+        id="email"
+        type="email"
+        icon="email"
+        label="Email"
+        placeholder="example@mail.com"
+        required
+        v-model="email"
+      />
+      <FormField
+        id="password"
+        type="password"
+        icon="lock"
+        label="Пароль"
+        placeholder="Введите пароль"
+        required
+        v-model="password"
       />
 
       <button type="submit" class="btn-primary" :disabled="loading">
-        <span v-if="!loading">Зарегистрироваться</span>
+        <span v-if="!loading">Войти</span>
         <span v-else class="spinner"></span>
       </button>
 
-      <p class="form-foot">Уже есть аккаунт? <router-link to="/login">Войти</router-link></p>
+      <p class="form-foot">
+        Нет аккаунта? <router-link to="/">Зарегистрироваться</router-link>
+      </p>
     </form>
 
     <FormResult v-if="result" :result="result" />
@@ -26,60 +41,47 @@
 </template>
 
 <script setup>
-import { ref, reactive } from 'vue'
-import FormField from './FormField.vue'
-import FormResult from './FormResult.vue'
+import { ref } from 'vue'
+import { useRouter } from 'vue-router'
+import FormField from '../components/FormField.vue'
+import FormResult from '../components/FormResult.vue'
 
-const fields = [
-  { id: 'email', type: 'email', icon: 'email', label: 'Email', placeholder: 'example@school123.ru', required: true },
-  { id: 'password', type: 'password', icon: 'lock', label: 'Пароль', placeholder: 'Не менее 8 символов', hint: 'Буквы и цифры', required: true, minlength: 8 },
-  { id: 'fullName', type: 'text', icon: 'user', label: 'Полное имя', placeholder: 'Иван Иванов' }
-]
-
-const formData = reactive({ email: '', password: '', fullName: '' })
+const email = ref('')
+const password = ref('')
 const result = ref(null)
 const loading = ref(false)
+const router = useRouter()
 
-const register = async () => {
+const login = async () => {
   loading.value = true
   result.value = null
-  
+
   try {
-    const response = await fetch('/api/register', {
+    const response = await fetch('/api/login', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        email: formData.email,
-        password: formData.password,
-        full_name: formData.fullName
-      })
+      body: JSON.stringify({ email: email.value, password: password.value })
     })
-    
+
     if (!response.ok) {
+      // Демо-режим только в dev при 404 (бэкенд не поднят)
       if (import.meta.env.DEV && response.status === 404) {
         result.value = {
           warning: 'Демо-режим',
-          message: 'Бэкенд недоступен (404)',
-          user: { 
-            email: formData.email, 
-            full_name: formData.fullName || 'Не указано' 
-          }
+          message: 'Бэкенд недоступен (404)'
         }
-      } else {
-        try {
-          const errorData = await response.json()
-          result.value = { 
-            error: errorData.error || errorData.message || `Ошибка ${response.status}` 
-          }
-        } catch {
-          result.value = { error: `Ошибка сервера: ${response.status}` }
-        }
+        return
       }
+      const errorData = await response.json()
+      result.value = { error: errorData.error || 'Ошибка входа' }
       return
     }
-    
+
     const data = await response.json()
-    result.value = data
+    localStorage.setItem('token', data.token)
+    localStorage.setItem('user', JSON.stringify(data.user))
+    result.value = { success: true, message: 'Вход выполнен успешно' }
+    setTimeout(() => router.push('/'), 1000)
   } catch (error) {
     if (import.meta.env.DEV) {
       result.value = {
@@ -88,7 +90,7 @@ const register = async () => {
         details: error.message
       }
     } else {
-      result.value = { error: 'Не удалось связаться с сервером. Попробуйте позже.' }
+      result.value = { error: 'Ошибка сети. Попробуйте позже.' }
     }
   } finally {
     loading.value = false
@@ -103,19 +105,23 @@ const register = async () => {
   border-radius: var(--radius);
   border: 1px solid var(--border);
   box-shadow: var(--shadow-lg);
+  max-width: 450px;
+  width: 100%;
+  margin: 0 auto;
   animation: fadeUp 0.5s ease both;
 }
+
 @keyframes fadeUp {
   from { opacity: 0; transform: translateY(12px); }
   to { opacity: 1; transform: translateY(0); }
 }
+
 .form-header { margin-bottom: 1.75rem; }
 .form-title {
   font-size: 1.5rem;
   font-weight: 700;
   color: var(--text);
   letter-spacing: -0.01em;
-  margin-bottom: 0.35rem;
 }
 .form-subtitle {
   color: var(--text-muted);
@@ -127,7 +133,6 @@ const register = async () => {
   gap: 1.1rem;
 }
 .btn-primary {
-  margin-top: 0.5rem;
   width: 100%;
   padding: 0.85rem;
   background: var(--primary);
@@ -165,7 +170,6 @@ const register = async () => {
   text-align: center;
   font-size: 0.88rem;
   color: var(--text-muted);
-  margin-top: 0.25rem;
 }
 .form-foot a {
   color: var(--primary);
