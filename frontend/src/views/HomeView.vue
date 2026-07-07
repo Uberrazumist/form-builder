@@ -1,20 +1,20 @@
 <template>
-  <div class="container">
-    <h2>Регистрация в конструкторе форм</h2>
-    <form @submit.prevent="register">
+  <div class="form-card">
+    <h2 class="form-title">Регистрация</h2>
+    <form @submit.prevent="register" class="form">
       <div class="form-group">
-        <label>Email</label>
-        <input type="email" v-model="email" required />
+        <label for="email">Email</label>
+        <input id="email" type="email" v-model="email" required placeholder="example@mail.com" />
       </div>
       <div class="form-group">
-        <label>Пароль</label>
-        <input type="password" v-model="password" required minlength="6" />
+        <label for="password">Пароль</label>
+        <input id="password" type="password" v-model="password" required minlength="8" placeholder="Не менее 8 символов, буквы и цифры" />
       </div>
       <div class="form-group">
-        <label>Полное имя</label>
-        <input type="text" v-model="fullName" />
+        <label for="fullName">Полное имя</label>
+        <input id="fullName" type="text" v-model="fullName" placeholder="Иван Иванов" />
       </div>
-      <button type="submit">Зарегистрироваться</button>
+      <button type="submit" class="btn-primary">Зарегистрироваться</button>
     </form>
     <div v-if="result" class="result">
       <pre>{{ JSON.stringify(result, null, 2) }}</pre>
@@ -50,47 +50,63 @@ const register = async () => {
 </script>
 
 <style scoped>
-.container {
+.form-card {
   max-width: 500px;
-  margin: 50px auto;
-  padding: 20px;
+  width: 100%;
   background: white;
-  border-radius: 10px;
-  box-shadow: 0 0 20px rgba(0,0,0,0.1);
+  padding: 2rem 2.5rem;
+  border-radius: 12px;
+  box-shadow: 0 10px 30px rgba(0,0,0,0.1);
+}
+.form-title {
+  text-align: center;
+  margin-bottom: 1.5rem;
+  font-size: 1.8rem;
+  color: #2c3e50;
 }
 .form-group {
-  margin-bottom: 15px;
+  margin-bottom: 1.2rem;
 }
 label {
   display: block;
-  margin-bottom: 5px;
-  font-weight: bold;
+  font-weight: 600;
+  margin-bottom: 0.4rem;
+  color: #333;
 }
 input {
   width: 100%;
-  padding: 8px;
-  box-sizing: border-box;
+  padding: 0.6rem 0.8rem;
+  font-size: 1rem;
   border: 1px solid #ddd;
-  border-radius: 4px;
+  border-radius: 6px;
+  transition: border 0.2s;
 }
-button {
+input:focus {
+  border-color: #3498db;
+  outline: none;
+}
+.btn-primary {
   width: 100%;
-  padding: 10px;
-  background: #007bff;
+  padding: 0.7rem;
+  background: #3498db;
   color: white;
+  font-size: 1.1rem;
   border: none;
-  border-radius: 4px;
+  border-radius: 6px;
   cursor: pointer;
-  font-size: 16px;
+  transition: background 0.2s;
 }
-button:hover {
-  background: #0056b3;
+.btn-primary:hover {
+  background: #2980b9;
 }
 .result {
-  margin-top: 20px;
-  padding: 10px;
+  margin-top: 1.5rem;
+  padding: 0.8rem;
   background: #f8f9fa;
-  border-radius: 5px;
+  border-radius: 6px;
+  font-size: 0.9rem;
   overflow-x: auto;
+  max-height: 200px;
+  overflow-y: auto;
 }
 </style>
