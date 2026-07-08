@@ -42,9 +42,10 @@ func main() {
     }
     log.Println("Connected to database successfully")
 
-    // Миграции
+    // Миграции (добавили EmailVerification)
     if err := db.AutoMigrate(
         &models.User{},
+        &models.EmailVerification{},
         &models.Form{},
         &models.Question{},
         &models.Response{},
@@ -66,10 +67,13 @@ func main() {
     r.GET("/ping", func(c *gin.Context) {
         c.String(http.StatusOK, "pong")
     })
-    r.POST("/api/register", handlers.Register(db))
+    r.POST("/api/register", handlers.RegisterWithEmail(db))
     r.POST("/api/login", handlers.Login(db, jwtSecret))
+    r.POST("/api/verify-email", handlers.VerifyEmail(db))
+    r.POST("/api/forgot-password", handlers.ForgotPassword(db))
+    r.POST("/api/reset-password", handlers.ResetPassword(db))
 
-    // Защищённые маршруты (JWT)
+    // Защищённые маршруты
     auth := r.Group("/api")
     auth.Use(func(c *gin.Context) {
         tokenString := c.GetHeader("Authorization")

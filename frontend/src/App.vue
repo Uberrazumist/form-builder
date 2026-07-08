@@ -1,3 +1,4 @@
+<!-- src/App.vue -->
 <template>
   <div id="app">
     <header class="header">
@@ -22,6 +23,7 @@
           <router-link to="/" class="nav-link" active-class="active" exact>Главная</router-link>
           <template v-if="isAuthenticated">
             <router-link to="/create" class="nav-link" active-class="active">Создать форму</router-link>
+            <router-link to="/my-forms" class="nav-link" active-class="active">Мои формы</router-link>
             <button @click="logout" class="nav-link logout-btn">Выйти</button>
           </template>
           <template v-else>
@@ -38,7 +40,8 @@
         <router-link to="/" class="nav-link" @click="menuOpen = false">Главная</router-link>
         <template v-if="isAuthenticated">
           <router-link to="/create" class="nav-link" @click="menuOpen = false">Создать форму</router-link>
-          <button @click="logout" class="nav-link logout-btn">Выйти</button>
+          <router-link to="/my-forms" class="nav-link" @click="menuOpen = false">Мои формы</router-link>
+          <button @click="handleLogout" class="nav-link logout-btn">Выйти</button>
         </template>
         <template v-else>
           <router-link to="/login" class="nav-link" @click="menuOpen = false">Вход</router-link>
@@ -90,6 +93,11 @@ const logout = () => {
   localStorage.removeItem('user')
   isAuthenticated.value = false
   window.location.reload()
+}
+
+const handleLogout = () => {
+  menuOpen.value = false
+  logout()
 }
 </script>
 

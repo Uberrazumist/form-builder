@@ -18,6 +18,10 @@
                 <Icon name="plus" />
                 Создать форму
               </router-link>
+              <router-link to="/my-forms" class="btn-secondary-large">
+                <Icon name="document" />
+                Мои формы
+              </router-link>
             </template>
             <template v-else>
               <router-link to="/login" class="btn-primary-large">Войти</router-link>
@@ -123,18 +127,8 @@
       </div>
     </section>
 
-    <!-- USER FORMS (для авторизованных) -->
-    <section v-if="isAuthenticated" class="user-forms">
-      <div class="section-header">
-        <span class="eyebrow">Мои формы</span>
-        <h2 class="section-title">Ваши созданные формы</h2>
-      </div>
-      
-      <FormList />
-    </section>
-
     <!-- CTA для неавторизованных -->
-    <section v-else class="cta">
+    <section v-if="!isAuthenticated" class="cta">
       <div class="cta-card">
         <h2>Готовы начать?</h2>
         <p>Зарегистрируйтесь и создайте свою первую форму за 5 минут</p>
@@ -150,7 +144,6 @@
 <script setup>
 import { ref, onMounted } from 'vue'
 import Icon from '../components/Icon.vue'
-import FormList from '../components/FormList.vue'
 
 const isAuthenticated = ref(false)
 
@@ -253,6 +246,12 @@ onMounted(() => {
 .btn-secondary-large:hover {
   background: var(--bg);
   border-color: #cfd6e3;
+}
+
+.btn-primary-large svg,
+.btn-secondary-large svg {
+  width: 18px;
+  height: 18px;
 }
 
 .hero-visual {
@@ -405,11 +404,6 @@ onMounted(() => {
   font-size: 0.95rem;
   color: var(--text-muted);
   line-height: 1.6;
-}
-
-/* USER FORMS */
-.user-forms {
-  animation: fadeUp 0.5s ease both;
 }
 
 /* CTA */

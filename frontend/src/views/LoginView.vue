@@ -1,4 +1,4 @@
-<!-- src/views/LoginView.vue -->
+<!-- src/views/LoginView.vue (обновлённый) -->
 <template>
   <div class="form-card">
     <div class="form-header">
@@ -32,6 +32,9 @@
       </button>
 
       <p class="form-foot">
+        <router-link to="/forgot-password">Забыли пароль?</router-link>
+      </p>
+      <p class="form-foot">
         Нет аккаунта? <router-link to="/register">Зарегистрироваться</router-link>
       </p>
     </form>
@@ -41,14 +44,38 @@
 </template>
 
 <script setup>
-import { ref } from 'vue'
+import { ref, onMounted } from 'vue'
+import { useRoute } from 'vue-router'
 import FormField from '../components/FormField.vue'
 import FormResult from '../components/FormResult.vue'
+
+const route = useRoute()
 
 const email = ref('')
 const password = ref('')
 const result = ref(null)
 const loading = ref(false)
+
+onMounted(() => {
+  // Показываем сообщение об успехе после подтверждения email или сброса пароля
+  const successType = route.query.success
+  if (successType === 'verified') {
+    result.value = { 
+      success: true, 
+      message: 'Email подтверждён! Теперь вы можете войти.' 
+    }
+  } else if (successType === 'reset') {
+    result.value = { 
+      success: true, 
+      message: 'Пароль успешно сброшен! Войдите с новым паролем.' 
+    }
+  } else if (successType === 'registered') {
+    result.value = { 
+      success: true, 
+      message: 'Регистрация успешна! Войдите в аккаунт.' 
+    }
+  }
+})
 
 const login = async () => {
   loading.value = true
@@ -75,13 +102,18 @@ const login = async () => {
     }
 
     const data = await response.json()
+    console.log('[Login] Success:', data)
+    
     localStorage.setItem('token', data.token)
     localStorage.setItem('user', JSON.stringify(data.user))
+    
     result.value = { success: true, message: 'Вход выполнен успешно' }
     
-    // Перезагрузка страницы для обновления навигации
-    setTimeout(() => window.location.reload(), 1000)
+    setTimeout(() => {
+      window.location.href = '/'
+    }, 800)
   } catch (error) {
+    console.error('[Login] Error:', error)
     if (import.meta.env.DEV) {
       result.value = {
         warning: 'Network error',

@@ -12,6 +12,17 @@ type User struct {
     Password  string    `gorm:"not null"`
     FullName  string
     Role      string    `gorm:"default:'viewer'"`
+    Verified  bool      `gorm:"default:false"`
+    CreatedAt time.Time
+}
+
+type EmailVerification struct {
+    ID        uuid.UUID `gorm:"type:uuid;primaryKey;default:gen_random_uuid()"`
+    Email     string    `gorm:"not null;index"`
+    Code      string    `gorm:"not null"`
+    Type      string    `gorm:"not null"` // 'registration' или 'reset_password'
+    ExpiresAt time.Time `gorm:"not null"`
+    Used      bool      `gorm:"default:false"`
     CreatedAt time.Time
 }
 
@@ -25,7 +36,7 @@ type Form struct {
     IsPublished bool      `gorm:"default:false"`
     IsPublic    bool      `gorm:"default:false"`
     Settings    datatypes.JSON `gorm:"type:jsonb"`
-    Questions   []Question `gorm:"foreignKey:FormID"`   // <-- добавлено
+    Questions   []Question `gorm:"foreignKey:FormID"`
 }
 
 type Question struct {
@@ -48,7 +59,6 @@ type Response struct {
     UserID    *uuid.UUID `gorm:"type:uuid"`
     Answers   datatypes.JSON `gorm:"type:jsonb"`
     CreatedAt time.Time
-    IPAddress string
 }
 
 type Class struct {

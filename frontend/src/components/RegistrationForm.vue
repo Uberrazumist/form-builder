@@ -1,3 +1,4 @@
+<!-- src/components/RegistrationForm.vue (обновлённый) -->
 <template>
   <div class="form-card">
     <div class="form-header">
@@ -18,7 +19,9 @@
         <span v-else class="spinner"></span>
       </button>
 
-      <p class="form-foot">Уже есть аккаунт? <router-link to="/login">Войти</router-link></p>
+      <p class="form-foot">
+        Уже есть аккаунт? <router-link to="/login">Войти</router-link>
+      </p>
     </form>
 
     <FormResult v-if="result" :result="result" />
@@ -27,8 +30,11 @@
 
 <script setup>
 import { ref, reactive } from 'vue'
+import { useRouter } from 'vue-router'
 import FormField from './FormField.vue'
 import FormResult from './FormResult.vue'
+
+const router = useRouter()
 
 const fields = [
   { id: 'email', type: 'email', icon: 'email', label: 'Email', placeholder: 'example@school123.ru', required: true },
@@ -41,6 +47,7 @@ const result = ref(null)
 const loading = ref(false)
 
 const register = async () => {
+  console.log('[Register] Submitting:', { email: formData.email, fullName: formData.fullName })
   loading.value = true
   result.value = null
   
@@ -65,22 +72,30 @@ const register = async () => {
             full_name: formData.fullName || 'Не указано' 
           }
         }
-      } else {
-        try {
-          const errorData = await response.json()
-          result.value = { 
-            error: errorData.error || errorData.message || `Ошибка ${response.status}` 
-          }
-        } catch {
-          result.value = { error: `Ошибка сервера: ${response.status}` }
-        }
+        return
       }
+      const errorData = await response.json()
+      result.value = { error: errorData.error || 'Ошибка регистрации' }
       return
     }
     
-    const data = await response.json()
-    result.value = data
+    // Сохраняем email для автоподстановки на странице подтверждения
+    localStorage.setItem('lastRegisteredEmail', formData.email)
+    
+    result.value = { 
+      success: true, 
+      message: 'Регистрация успешна! Перенаправляем на подтверждение email...' 
+    }
+    
+    // Редирект на страницу подтверждения email
+    setTimeout(() => {
+      router.push({ 
+        path: '/verify', 
+        query: { email: formData.email } 
+      })
+    }, 1500)
   } catch (error) {
+    console.error('[Register] Error:', error)
     if (import.meta.env.DEV) {
       result.value = {
         warning: 'Network error',
@@ -88,7 +103,7 @@ const register = async () => {
         details: error.message
       }
     } else {
-      result.value = { error: 'Не удалось связаться с сервером. Попробуйте позже.' }
+      result.value = { error: 'Ошибка сети. Попробуйте позже.' }
     }
   } finally {
     loading.value = false
@@ -105,10 +120,12 @@ const register = async () => {
   box-shadow: var(--shadow-lg);
   animation: fadeUp 0.5s ease both;
 }
+
 @keyframes fadeUp {
   from { opacity: 0; transform: translateY(12px); }
   to { opacity: 1; transform: translateY(0); }
 }
+
 .form-header { margin-bottom: 1.75rem; }
 .form-title {
   font-size: 1.5rem;
@@ -121,11 +138,13 @@ const register = async () => {
   color: var(--text-muted);
   font-size: 0.92rem;
 }
+
 .form {
   display: flex;
   flex-direction: column;
   gap: 1.1rem;
 }
+
 .btn-primary {
   margin-top: 0.5rem;
   width: 100%;
@@ -152,6 +171,7 @@ const register = async () => {
 }
 .btn-primary:active:not(:disabled) { transform: translateY(0); }
 .btn-primary:disabled { opacity: 0.7; cursor: not-allowed; }
+
 .spinner {
   width: 18px;
   height: 18px;
@@ -161,6 +181,7 @@ const register = async () => {
   animation: spin 0.7s linear infinite;
 }
 @keyframes spin { to { transform: rotate(360deg); } }
+
 .form-foot {
   text-align: center;
   font-size: 0.88rem;

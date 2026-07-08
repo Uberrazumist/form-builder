@@ -229,6 +229,7 @@ const loadForm = async () => {
 
   try {
     const formId = route.params.id
+    console.log('[EditForm] Loading form ID:', formId)
     const token = localStorage.getItem('token')
 
     const response = await fetch(`/api/forms/${formId}`, {
@@ -247,11 +248,27 @@ const loadForm = async () => {
     }
 
     const data = await response.json()
-    formData.title = data.title
-    formData.description = data.description || ''
-    formData.is_public = data.is_public || false
-    formData.questions = data.questions || []
+    console.log('[EditForm] Loaded form data:', data)
+
+    // Маппинг из формата бэкенда (заглавные поля) в локальный формат
+    formData.title = data.Title || ''
+    formData.description = data.Description || ''
+    formData.is_public = data.IsPublic || false
+    formData.questions = (data.Questions || [])
+      .sort((a, b) => (a.OrderIndex || 0) - (b.OrderIndex || 0))
+      .map(q => ({
+        id: q.ID,
+        type: q.Type || 'text',
+        title: q.Title || '',
+        required: q.Required || false,
+        options: q.Options || [],
+        rating_max: q.RatingMax || 5,
+        depends_on: q.DependsOn || null
+      }))
+    
+    console.log('[EditForm] Mapped formData:', formData)
   } catch (err) {
+    console.error('[EditForm] Load error:', err)
     error.value = 'Ошибка сети. Попробуйте позже.'
   } finally {
     loading.value = false
@@ -318,13 +335,32 @@ const submitForm = async () => {
     const formId = route.params.id
     const token = localStorage.getItem('token')
 
+    // Формируем payload в формате бэкенда (заглавные поля)
+    const payload = {
+      Title: formData.title,
+      Description: formData.description,
+      IsPublic: formData.is_public,
+      Questions: formData.questions.map((q, idx) => ({
+        ID: q.id || undefined, // undefined для новых вопросов
+        Type: q.type,
+        Title: q.title,
+        Required: q.required,
+        Options: q.options,
+        RatingMax: q.rating_max,
+        DependsOn: q.depends_on || null,
+        OrderIndex: idx
+      }))
+    }
+
+    console.log('[EditForm] Submitting payload:', payload)
+
     const response = await fetch(`/api/forms/${formId}`, {
       method: 'PUT',
       headers: {
         'Content-Type': 'application/json',
         'Authorization': `Bearer ${token}`
       },
-      body: JSON.stringify(formData)
+      body: JSON.stringify(payload)
     })
 
     if (!response.ok) {
@@ -332,7 +368,7 @@ const submitForm = async () => {
         result.value = {
           warning: 'Демо-режим',
           message: 'Бэкенд недоступен (404)',
-          data: formData
+          data: payload
         }
         setTimeout(() => router.push(`/form/${formId}`), 1500)
         return
@@ -342,10 +378,10 @@ const submitForm = async () => {
       return
     }
 
-    const data = await response.json()
     result.value = { success: true, message: 'Форма успешно обновлена' }
     setTimeout(() => router.push(`/form/${formId}`), 1000)
   } catch (err) {
+    console.error('[EditForm] Submit error:', err)
     if (import.meta.env.DEV) {
       result.value = {
         warning: 'Network error',

@@ -74,6 +74,11 @@ jobs:
             DB_NAME=formsdb
             DB_PORT=5432
             JWT_SECRET=${{ secrets.JWT_SECRET }}
+            SMTP_HOST=${{ secrets.SMTP_HOST }}
+            SMTP_PORT=${{ secrets.SMTP_PORT }}
+            SMTP_USER=${{ secrets.SMTP_USER }}
+            SMTP_PASSWORD=${{ secrets.SMTP_PASSWORD }}
+            SMTP_FROM=${{ secrets.SMTP_FROM }}
             EOF
 
       # --- ПЕРЕЗАПУСК КОНТЕЙНЕРОВ ---
