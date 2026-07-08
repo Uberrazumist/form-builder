@@ -1,14 +1,15 @@
 package handlers
 
 import (
+    "encoding/json"
     "net/http"
     "github.com/gin-gonic/gin"
     "github.com/google/uuid"
-    "github.com/Uberrazumist/form-builder/backend/internal/models"
+    "gorm.io/datatypes"
     "gorm.io/gorm"
+    "github.com/Uberrazumist/form-builder/backend/internal/models"
 )
 
-// ---------- Существующие функции (CreateForm, ListForms) ----------
 type CreateQuestionInput struct {
     Type          string   `json:"type" binding:"required"`
     Title         string   `json:"title" binding:"required"`
@@ -41,12 +42,14 @@ func CreateForm(db *gorm.DB) gin.HandlerFunc {
             return
         }
 
+        // Пустой JSON для Settings
+        emptyJSON := datatypes.JSON([]byte("{}"))
         form := models.Form{
             Title:       input.Title,
             Description: input.Description,
             CreatedBy:   uuid.MustParse(userID),
             IsPublic:    input.IsPublic,
-            Settings:    make(map[string]interface{}),
+            Settings:    emptyJSON,
         }
         if err := db.Create(&form).Error; err != nil {
             c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create form"})
@@ -54,6 +57,10 @@ func CreateForm(db *gorm.DB) gin.HandlerFunc {
         }
 
         for _, q := range input.Questions {
+            // Сериализуем Options и DependsValues в JSON
+            optsJSON, _ := json.Marshal(q.Options)
+            depValsJSON, _ := json.Marshal(q.DependsValues)
+
             question := models.Question{
                 FormID:        form.ID,
                 Type:          q.Type,
@@ -61,8 +68,8 @@ func CreateForm(db *gorm.DB) gin.HandlerFunc {
                 Description:   q.Description,
                 OrderIndex:    q.OrderIndex,
                 IsRequired:    q.IsRequired,
-                Options:       q.Options,
-                DependsValues: q.DependsValues,
+                Options:       datatypes.JSON(optsJSON),
+                DependsValues: datatypes.JSON(depValsJSON),
             }
             if q.DependsOn != nil {
                 dependsUUID := uuid.MustParse(*q.DependsOn)
@@ -101,13 +108,10 @@ func ListForms(db *gorm.DB) gin.HandlerFunc {
     }
 }
 
-// ---------- Новые функции ----------
-
-// GetForm возвращает форму с вопросами (доступна владельцу или публичная)
 func GetForm(db *gorm.DB) gin.HandlerFunc {
     return func(c *gin.Context) {
         formID := c.Param("id")
-        userID := c.GetString("userID") // может быть пустым, если не авторизован
+        userID := c.GetString("userID")
 
         var form models.Form
         if err := db.Preload("Questions").First(&form, "id = ?", formID).Error; err != nil {
@@ -115,11 +119,10 @@ func GetForm(db *gorm.DB) gin.HandlerFunc {
             return
         }
 
-        // Проверка доступа: владелец ИЛИ публичная
         if userID != "" && form.CreatedBy.String() == userID {
-            // Владелец – доступ разрешён
+            // владелец
         } else if form.IsPublic {
-            // Публичная – доступ разрешён
+            // публичная
         } else {
             c.JSON(http.StatusForbidden, gin.H{"error": "Access denied"})
             return
@@ -129,7 +132,6 @@ func GetForm(db *gorm.DB) gin.HandlerFunc {
     }
 }
 
-// SubmitResponse сохраняет ответы на форму
 func SubmitResponse(db *gorm.DB) gin.HandlerFunc {
     return func(c *gin.Context) {
         var input struct {
@@ -147,9 +149,10 @@ func SubmitResponse(db *gorm.DB) gin.HandlerFunc {
             return
         }
 
+        answersJSON, _ := json.Marshal(input.Answers)
         resp := models.Response{
             FormID:  uuid.MustParse(input.FormID),
-            Answers: input.Answers,
+            Answers: datatypes.JSON(answersJSON),
         }
 
         if userID, exists := c.Get("userID"); exists {
@@ -166,7 +169,6 @@ func SubmitResponse(db *gorm.DB) gin.HandlerFunc {
     }
 }
 
-// GetResponses возвращает все ответы на форму (только владелец)
 func GetResponses(db *gorm.DB) gin.HandlerFunc {
     return func(c *gin.Context) {
         formID := c.Param("id")
@@ -196,10 +198,8 @@ func GetResponses(db *gorm.DB) gin.HandlerFunc {
     }
 }
 
-// ---------- НОВЫЕ: UpdateForm и DeleteForm ----------
-
 type UpdateQuestionInput struct {
-    ID            *uuid.UUID `json:"id"`              // может быть nil для новых
+    ID            *uuid.UUID `json:"id"`
     Type          string     `json:"type" binding:"required"`
     Title         string     `json:"title" binding:"required"`
     Description   string     `json:"description"`
@@ -238,7 +238,6 @@ func UpdateForm(db *gorm.DB) gin.HandlerFunc {
             return
         }
 
-        // Обновляем поля формы
         form.Title = input.Title
         form.Description = input.Description
         form.IsPublic = input.IsPublic
@@ -247,8 +246,6 @@ func UpdateForm(db *gorm.DB) gin.HandlerFunc {
             return
         }
 
-        // Обновляем вопросы: сохраняем существующие, создаём новые, удаляем отсутствующие
-        // 1. Получаем текущие ID вопросов из БД
         var existingQuestions []models.Question
         db.Where("form_id = ?", form.ID).Find(&existingQuestions)
         existingIDs := make(map[uuid.UUID]bool)
@@ -256,7 +253,6 @@ func UpdateForm(db *gorm.DB) gin.HandlerFunc {
             existingIDs[q.ID] = true
         }
 
-        // 2. Собираем ID из входящих данных
         incomingIDs := make(map[uuid.UUID]bool)
         for _, qInput := range input.Questions {
             if qInput.ID != nil {
@@ -264,32 +260,28 @@ func UpdateForm(db *gorm.DB) gin.HandlerFunc {
             }
         }
 
-        // 3. Удаляем вопросы, которых нет во входящих данных
         for _, q := range existingQuestions {
             if !incomingIDs[q.ID] {
                 db.Delete(&q)
             }
         }
 
-        // 4. Обновляем или создаём вопросы
         for _, qInput := range input.Questions {
             var question models.Question
             if qInput.ID != nil {
-                // Существующий вопрос – обновляем
                 if err := db.First(&question, "id = ? AND form_id = ?", qInput.ID, form.ID).Error; err != nil {
-                    // если не найден, пропускаем (или создаём новый – но лучше создать)
-                    // Создаём новый с этим ID? Нет, если ID передан, но не найден, то это ошибка
                     c.JSON(http.StatusBadRequest, gin.H{"error": "Question with ID " + qInput.ID.String() + " not found"})
                     return
                 }
-                // Обновляем поля
                 question.Type = qInput.Type
                 question.Title = qInput.Title
                 question.Description = qInput.Description
                 question.OrderIndex = qInput.OrderIndex
                 question.IsRequired = qInput.IsRequired
-                question.Options = qInput.Options
-                question.DependsValues = qInput.DependsValues
+                optsJSON, _ := json.Marshal(qInput.Options)
+                depValsJSON, _ := json.Marshal(qInput.DependsValues)
+                question.Options = datatypes.JSON(optsJSON)
+                question.DependsValues = datatypes.JSON(depValsJSON)
                 if qInput.DependsOn != nil {
                     dependsUUID := uuid.MustParse(*qInput.DependsOn)
                     question.DependsOn = &dependsUUID
@@ -298,7 +290,8 @@ func UpdateForm(db *gorm.DB) gin.HandlerFunc {
                 }
                 db.Save(&question)
             } else {
-                // Новый вопрос – создаём
+                optsJSON, _ := json.Marshal(qInput.Options)
+                depValsJSON, _ := json.Marshal(qInput.DependsValues)
                 newQ := models.Question{
                     FormID:        form.ID,
                     Type:          qInput.Type,
@@ -306,8 +299,8 @@ func UpdateForm(db *gorm.DB) gin.HandlerFunc {
                     Description:   qInput.Description,
                     OrderIndex:    qInput.OrderIndex,
                     IsRequired:    qInput.IsRequired,
-                    Options:       qInput.Options,
-                    DependsValues: qInput.DependsValues,
+                    Options:       datatypes.JSON(optsJSON),
+                    DependsValues: datatypes.JSON(depValsJSON),
                 }
                 if qInput.DependsOn != nil {
                     dependsUUID := uuid.MustParse(*qInput.DependsOn)
@@ -336,13 +329,8 @@ func DeleteForm(db *gorm.DB) gin.HandlerFunc {
             return
         }
 
-        // Каскадное удаление: сначала удаляем связанные ответы (если нет ON DELETE CASCADE)
-        // Если в модели Response есть ForeignKey с OnDelete:CASCADE, то можно просто удалить форму.
-        // У нас в моделях нет явного каскада, поэтому удалим вручную.
         db.Where("form_id = ?", form.ID).Delete(&models.Response{})
-        // Удаляем вопросы (если не удаляются каскадно)
         db.Where("form_id = ?", form.ID).Delete(&models.Question{})
-        // Теперь удаляем саму форму
         db.Delete(&form)
 
         c.JSON(http.StatusOK, gin.H{"message": "Form deleted successfully"})

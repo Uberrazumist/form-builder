@@ -32,7 +32,7 @@
       </button>
 
       <p class="form-foot">
-        Нет аккаунта? <router-link to="/">Зарегистрироваться</router-link>
+        Нет аккаунта? <router-link to="/register">Зарегистрироваться</router-link>
       </p>
     </form>
 

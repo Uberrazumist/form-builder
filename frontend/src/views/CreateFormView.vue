@@ -266,13 +266,25 @@ const submitForm = async () => {
 
   try {
     const token = localStorage.getItem('token')
+    
+    // Подготовка payload с преобразованием depends_on в null
+    const payload = {
+      title: formData.title,
+      description: formData.description,
+      is_public: formData.is_public,
+      questions: formData.questions.map(q => ({
+        ...q,
+        depends_on: q.depends_on || null
+      }))
+    }
+    
     const response = await fetch('/api/forms', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
         'Authorization': `Bearer ${token}`
       },
-      body: JSON.stringify(formData)
+      body: JSON.stringify(payload)
     })
 
     if (!response.ok) {
@@ -292,7 +304,13 @@ const submitForm = async () => {
 
     const data = await response.json()
     result.value = { success: true, message: 'Форма успешно создана' }
-    setTimeout(() => router.push('/'), 1000)
+    
+    // Редирект на страницу просмотра созданной формы
+    if (data.id) {
+      setTimeout(() => router.push(`/form/${data.id}`), 1000)
+    } else {
+      setTimeout(() => router.push('/'), 1000)
+    }
   } catch (error) {
     if (import.meta.env.DEV) {
       result.value = {
