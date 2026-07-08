@@ -49,7 +49,6 @@ func sendEmail(to, subject, body string) error {
     var err error
 
     if smtpPort == "465" {
-        // SSL-соединение через TLS
         tlsConfig := &tls.Config{ServerName: smtpHost}
         conn, err := tls.Dial("tcp", addr, tlsConfig)
         if err != nil {
@@ -60,12 +59,11 @@ func sendEmail(to, subject, body string) error {
             return fmt.Errorf("SMTP client error: %v", err)
         }
     } else {
-        // STARTTLS (обычно порт 587)
         conn, err := smtp.Dial(addr)
         if err != nil {
             return fmt.Errorf("SMTP dial error: %v", err)
         }
-        client = conn // smtp.Dial возвращает *smtp.Client
+        client = conn
         if err = client.StartTLS(&tls.Config{ServerName: smtpHost}); err != nil {
             return fmt.Errorf("StartTLS error: %v", err)
         }
@@ -342,5 +340,58 @@ func ResetPassword(db *gorm.DB) gin.HandlerFunc {
         db.Save(&verification)
 
         c.JSON(http.StatusOK, gin.H{"message": "Password reset successfully"})
+    }
+}
+
+// ResendVerification – повторная отправка кода подтверждения
+func ResendVerification(db *gorm.DB) gin.HandlerFunc {
+    return func(c *gin.Context) {
+        var input struct {
+            Email string `json:"email" binding:"required,email"`
+        }
+        if err := c.ShouldBindJSON(&input); err != nil {
+            c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+            return
+        }
+
+        var user models.User
+        if err := db.Where("email = ?", input.Email).First(&user).Error; err != nil {
+            c.JSON(http.StatusNotFound, gin.H{"error": "User not found"})
+            return
+        }
+        if user.Verified {
+            c.JSON(http.StatusBadRequest, gin.H{"error": "Email already verified"})
+            return
+        }
+
+        if !canRequestCode(input.Email) {
+            c.JSON(http.StatusTooManyRequests, gin.H{"error": "Please wait 60 seconds before requesting a new code"})
+            return
+        }
+
+        code := generateCode()
+        expiresAt := time.Now().Add(15 * time.Minute)
+
+        verification := models.EmailVerification{
+            Email:     input.Email,
+            Code:      code,
+            Type:      "registration",
+            ExpiresAt: expiresAt,
+            Used:      false,
+        }
+        if err := db.Create(&verification).Error; err != nil {
+            c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create verification code"})
+            return
+        }
+
+        subject := "Подтверждение регистрации (повторная отправка)"
+        body := fmt.Sprintf("Ваш новый код подтверждения: %s\nКод действителен 15 минут.\nЕсли письмо не пришло, проверьте папку «Спам».", code)
+        if err := sendEmail(input.Email, subject, body); err != nil {
+            fmt.Printf("[ERROR] Failed to send email: %v\n", err)
+            c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to send email: " + err.Error()})
+            return
+        }
+
+        c.JSON(http.StatusOK, gin.H{"message": "New verification code sent to your email (check spam folder)"})
     }
 }

@@ -7,12 +7,82 @@
     </div>
 
     <form @submit.prevent="register" class="form" novalidate>
-      <FormField
-        v-for="field in fields"
-        :key="field.id"
-        v-bind="field"
-        v-model="formData[field.id]"
-      />
+      <div class="form-group">
+        <label for="email">
+          <Icon name="email" />
+          Email
+        </label>
+        <input
+          id="email"
+          type="email"
+          v-model="formData.email"
+          required
+          placeholder="example@1367.ru"
+        />
+      </div>
+
+      <div class="form-group">
+        <label for="fullName">
+          <Icon name="user" />
+          Полное имя
+        </label>
+        <input
+          id="fullName"
+          type="text"
+          v-model="formData.fullName"
+          placeholder="Иван Иванов"
+        />
+      </div>
+
+      <div class="form-group">
+        <label for="password">
+          <Icon name="lock" />
+          Пароль
+        </label>
+        <div class="password-wrapper">
+          <input
+            id="password"
+            :type="showPassword ? 'text' : 'password'"
+            v-model="formData.password"
+            required
+            minlength="8"
+            placeholder="Не менее 8 символов"
+          />
+          <button
+            type="button"
+            class="toggle-password"
+            @click="showPassword = !showPassword"
+            :aria-label="showPassword ? 'Скрыть пароль' : 'Показать пароль'"
+          >
+            <Icon :name="showPassword ? 'eye-off' : 'eye'" />
+          </button>
+        </div>
+        <span class="hint">Буквы и цифры</span>
+      </div>
+
+      <div class="form-group">
+        <label for="confirmPassword">
+          <Icon name="lock" />
+          Повторите пароль
+        </label>
+        <div class="password-wrapper">
+          <input
+            id="confirmPassword"
+            :type="showConfirmPassword ? 'text' : 'password'"
+            v-model="confirmPassword"
+            required
+            placeholder="Повторите пароль"
+          />
+          <button
+            type="button"
+            class="toggle-password"
+            @click="showConfirmPassword = !showConfirmPassword"
+            :aria-label="showConfirmPassword ? 'Скрыть пароль' : 'Показать пароль'"
+          >
+            <Icon :name="showConfirmPassword ? 'eye-off' : 'eye'" />
+          </button>
+        </div>
+      </div>
 
       <div class="domain-notice">
         <Icon name="lock" />
@@ -36,41 +106,19 @@
 <script setup>
 import { ref, reactive } from 'vue'
 import { useRouter } from 'vue-router'
-import FormField from './FormField.vue'
-import FormResult from './FormResult.vue'
 import Icon from './Icon.vue'
+import FormResult from './FormResult.vue'
 
 const router = useRouter()
 
-const fields = [
-  { 
-    id: 'email', 
-    type: 'email', 
-    icon: 'email', 
-    label: 'Email', 
-    placeholder: 'example@1367.ru', 
-    required: true 
-  },
-  { 
-    id: 'password', 
-    type: 'password', 
-    icon: 'lock', 
-    label: 'Пароль', 
-    placeholder: 'Не менее 8 символов', 
-    hint: 'Буквы и цифры', 
-    required: true, 
-    minlength: 8 
-  },
-  { 
-    id: 'fullName', 
-    type: 'text', 
-    icon: 'user', 
-    label: 'Полное имя', 
-    placeholder: 'Иван Иванов' 
-  }
-]
-
-const formData = reactive({ email: '', password: '', fullName: '' })
+const formData = reactive({ 
+  email: '', 
+  password: '', 
+  fullName: '' 
+})
+const confirmPassword = ref('')
+const showPassword = ref(false)
+const showConfirmPassword = ref(false)
 const result = ref(null)
 const loading = ref(false)
 
@@ -82,6 +130,18 @@ const register = async () => {
     result.value = { 
       error: 'Регистрация доступна только для сотрудников школы. Email должен заканчиваться на @1367.ru' 
     }
+    return
+  }
+  
+  // Валидация длины пароля
+  if (formData.password.length < 8) {
+    result.value = { error: 'Пароль должен содержать минимум 8 символов' }
+    return
+  }
+  
+  // Проверка совпадения паролей
+  if (formData.password !== confirmPassword.value) {
+    result.value = { error: 'Пароли не совпадают' }
     return
   }
   
@@ -116,7 +176,6 @@ const register = async () => {
       return
     }
     
-    // Сохраняем email для автоподстановки на странице подтверждения
     localStorage.setItem('lastRegisteredEmail', formData.email)
     
     result.value = { 
@@ -124,7 +183,6 @@ const register = async () => {
       message: 'Регистрация успешна! Перенаправляем на подтверждение email...' 
     }
     
-    // Редирект на страницу подтверждения email
     setTimeout(() => {
       router.push({ 
         path: '/verify', 
@@ -180,6 +238,97 @@ const register = async () => {
   display: flex;
   flex-direction: column;
   gap: 1.1rem;
+}
+
+.form-group {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.form-group label {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  font-size: 0.88rem;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.form-group label svg {
+  width: 15px;
+  height: 15px;
+  color: var(--text-muted);
+}
+
+input[type="email"],
+input[type="text"],
+input[type="password"] {
+  width: 100%;
+  padding: 0.75rem 0.95rem;
+  font-size: 0.95rem;
+  font-family: inherit;
+  color: var(--text);
+  background: var(--bg);
+  border: 1.5px solid var(--border);
+  border-radius: var(--radius-sm);
+  transition: border-color 0.2s, background 0.2s, box-shadow 0.2s;
+}
+
+input::placeholder {
+  color: #a6afbf;
+}
+
+input:hover {
+  border-color: #cfd6e3;
+}
+
+input:focus {
+  outline: none;
+  border-color: var(--primary);
+  background: var(--surface);
+  box-shadow: 0 0 0 4px rgba(47, 79, 138, 0.1);
+}
+
+.password-wrapper {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.password-wrapper input {
+  padding-right: 3rem;
+}
+
+.toggle-password {
+  position: absolute;
+  right: 0.5rem;
+  width: 36px;
+  height: 36px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  border-radius: 6px;
+  transition: color 0.2s, background 0.2s;
+}
+
+.toggle-password:hover {
+  color: var(--primary);
+  background: var(--primary-soft);
+}
+
+.toggle-password svg {
+  width: 18px;
+  height: 18px;
+}
+
+.hint {
+  font-size: 0.78rem;
+  color: var(--text-muted);
 }
 
 .domain-notice {

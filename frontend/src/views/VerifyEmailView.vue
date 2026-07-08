@@ -40,7 +40,7 @@
             class="code-input"
             autocomplete="one-time-code"
           />
-          <span class="hint">8-значный код из письма (буквы и цифры)</span>
+          <span class="hint">8-символьный код из письма (буквы и цифры)</span>
         </div>
 
         <button type="submit" class="btn-primary" :disabled="loading">
@@ -143,26 +143,43 @@ const resendCode = async () => {
   result.value = null
 
   try {
-    const response = await fetch('/api/register', {
+    const response = await fetch('/api/resend-verification', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ 
-        email: email.value, 
-        resend: true 
-      })
+      body: JSON.stringify({ email: email.value })
     })
 
     if (!response.ok) {
       const errorData = await response.json()
-      result.value = { error: errorData.error || 'Не удалось отправить код' }
+      const errorMsg = errorData.error || 'Не удалось отправить код'
+      
+      // Обработка специфичных ошибок
+      if (errorMsg.toLowerCase().includes('not found') || 
+          errorMsg.toLowerCase().includes('не найден')) {
+        result.value = { 
+          error: 'Пользователь с таким email не найден. Проверьте адрес или зарегистрируйтесь заново.' 
+        }
+      } else if (errorMsg.toLowerCase().includes('verified') || 
+                 errorMsg.toLowerCase().includes('подтвержд') ||
+                 errorMsg.toLowerCase().includes('уже')) {
+        result.value = { 
+          error: 'Email уже подтверждён. Вы можете войти в аккаунт.' 
+        }
+        setTimeout(() => {
+          router.push('/login')
+        }, 2000)
+      } else {
+        result.value = { error: errorMsg }
+      }
       return
     }
 
     result.value = { 
       success: true, 
-      message: 'Новый код отправлен на ваш email. Проверьте также папку «Спам».' 
+      message: 'Новый код отправлен на ваш email (проверьте спам).' 
     }
   } catch (error) {
+    console.error('[ResendVerification] Error:', error)
     result.value = { error: 'Ошибка сети. Попробуйте позже.' }
   } finally {
     resending.value = false

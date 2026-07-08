@@ -7,7 +7,6 @@
     </div>
 
     <form @submit.prevent="submitForm" class="form-builder" novalidate>
-      <!-- Основная информация -->
       <div class="form-card">
         <h2 class="card-title">Основная информация</h2>
         
@@ -49,7 +48,6 @@
         </div>
       </div>
 
-      <!-- Вопросы -->
       <div class="form-card">
         <div class="card-header">
           <h2 class="card-title">Вопросы</h2>
@@ -84,9 +82,6 @@
               <option value="checkbox">Несколько вариантов (checkbox)</option>
               <option value="select">Выбор из списка (select)</option>
               <option value="rating">Рейтинг (звёзды)</option>
-              <option value="class_choice">Выбор класса</option>
-              <option value="teacher_choice">Выбор учителя</option>
-              <option value="time_choice">Выбор времени</option>
             </select>
           </div>
 
@@ -100,7 +95,6 @@
             />
           </div>
 
-          <!-- Варианты ответов для radio/checkbox/select -->
           <div
             v-if="['radio', 'checkbox', 'select'].includes(question.type)"
             class="options-section"
@@ -136,7 +130,6 @@
             </button>
           </div>
 
-          <!-- Максимальный рейтинг для rating -->
           <div v-if="question.type === 'rating'" class="form-group">
             <label>Максимальный рейтинг</label>
             <select v-model="question.rating_max">
@@ -145,7 +138,6 @@
             </select>
           </div>
 
-          <!-- Зависимость от предыдущего вопроса -->
           <div v-if="index > 0" class="form-group">
             <label>
               <Icon name="link" />
@@ -172,7 +164,6 @@
         </div>
       </div>
 
-      <!-- Кнопки действий -->
       <div class="form-actions">
         <button type="button" class="btn-secondary" @click="$router.back()">
           Отмена
@@ -267,7 +258,6 @@ const submitForm = async () => {
   try {
     const token = localStorage.getItem('token')
     
-    // Подготовка payload с преобразованием depends_on в null
     const payload = {
       title: formData.title,
       description: formData.description,
@@ -305,9 +295,8 @@ const submitForm = async () => {
     const data = await response.json()
     result.value = { success: true, message: 'Форма успешно создана' }
     
-    // Редирект на страницу просмотра созданной формы
-    if (data.id) {
-      setTimeout(() => router.push(`/form/${data.id}`), 1000)
+    if (data.id || data.ID) {
+      setTimeout(() => router.push(`/form/${data.id || data.ID}`), 1000)
     } else {
       setTimeout(() => router.push('/'), 1000)
     }

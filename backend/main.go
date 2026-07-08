@@ -42,7 +42,6 @@ func main() {
     }
     log.Println("Connected to database successfully")
 
-    // Миграции (добавили EmailVerification)
     if err := db.AutoMigrate(
         &models.User{},
         &models.EmailVerification{},
@@ -70,6 +69,7 @@ func main() {
     r.POST("/api/register", handlers.RegisterWithEmail(db))
     r.POST("/api/login", handlers.Login(db, jwtSecret))
     r.POST("/api/verify-email", handlers.VerifyEmail(db))
+    r.POST("/api/resend-verification", handlers.ResendVerification(db))   // <-- новый эндпоинт
     r.POST("/api/forgot-password", handlers.ForgotPassword(db))
     r.POST("/api/reset-password", handlers.ResetPassword(db))
 

@@ -97,9 +97,6 @@
                 <option value="checkbox">Несколько вариантов (checkbox)</option>
                 <option value="select">Выбор из списка (select)</option>
                 <option value="rating">Рейтинг (звёзды)</option>
-                <option value="class_choice">Выбор класса</option>
-                <option value="teacher_choice">Выбор учителя</option>
-                <option value="time_choice">Выбор времени</option>
               </select>
             </div>
 
@@ -250,7 +247,6 @@ const loadForm = async () => {
     const data = await response.json()
     console.log('[EditForm] Loaded form data:', data)
 
-    // Маппинг из формата бэкенда (заглавные поля) в локальный формат
     formData.title = data.Title || ''
     formData.description = data.Description || ''
     formData.is_public = data.IsPublic || false
@@ -335,13 +331,12 @@ const submitForm = async () => {
     const formId = route.params.id
     const token = localStorage.getItem('token')
 
-    // Формируем payload в формате бэкенда (заглавные поля)
     const payload = {
       Title: formData.title,
       Description: formData.description,
       IsPublic: formData.is_public,
       Questions: formData.questions.map((q, idx) => ({
-        ID: q.id || undefined, // undefined для новых вопросов
+        ID: q.id || undefined,
         Type: q.type,
         Title: q.title,
         Required: q.required,

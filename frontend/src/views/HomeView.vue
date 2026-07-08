@@ -49,7 +49,7 @@
               </svg>
             </div>
             <h3>Гибкие настройки</h3>
-            <p>9 типов вопросов, зависимости, публичный доступ</p>
+            <p>6 типов вопросов, зависимости, публичный доступ</p>
           </div>
           <div class="visual-card">
             <div class="visual-icon">
@@ -101,7 +101,7 @@
             <Icon name="edit" />
           </div>
           <h3>Разные типы вопросов</h3>
-          <p>Текст, выбор из списка, рейтинг, выбор класса, учителя или времени</p>
+          <p>Текст, выбор из списка, рейтинг — всё для удобного сбора данных</p>
         </div>
         <div class="feature-card">
           <div class="feature-icon">
@@ -123,6 +123,104 @@
           </div>
           <h3>Валидация данных</h3>
           <p>Обязательные поля, проверка email, минимальная длина пароля</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- QUESTION TYPES GUIDE -->
+    <section class="question-types">
+      <div class="section-header">
+        <span class="eyebrow">Инструкция</span>
+        <h2 class="section-title">Типы вопросов в формах</h2>
+        <p class="section-subtitle">Выбирайте подходящий тип для каждой задачи</p>
+      </div>
+
+      <div class="types-grid">
+        <div class="type-card">
+          <div class="type-icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+              <line x1="17" y1="10" x2="3" y2="10"/>
+              <line x1="21" y1="6" x2="3" y2="6"/>
+              <line x1="21" y1="14" x2="3" y2="14"/>
+              <line x1="17" y1="18" x2="3" y2="18"/>
+            </svg>
+          </div>
+          <div class="type-content">
+            <h3>Текст (одна строка)</h3>
+            <p class="type-desc">Короткий ответ в одну строку</p>
+            <p class="type-example">Пример: имя, фамилия, номер телефона</p>
+          </div>
+        </div>
+
+        <div class="type-card">
+          <div class="type-icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+              <rect x="3" y="3" width="18" height="18" rx="2"/>
+              <line x1="7" y1="8" x2="17" y2="8"/>
+              <line x1="7" y1="12" x2="17" y2="12"/>
+              <line x1="7" y1="16" x2="13" y2="16"/>
+            </svg>
+          </div>
+          <div class="type-content">
+            <h3>Текст (несколько строк)</h3>
+            <p class="type-desc">Развёрнутый ответ в несколько строк</p>
+            <p class="type-example">Пример: отзыв, предложение, комментарий</p>
+          </div>
+        </div>
+
+        <div class="type-card">
+          <div class="type-icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+              <circle cx="12" cy="12" r="9"/>
+              <circle cx="12" cy="12" r="4" fill="currentColor"/>
+            </svg>
+          </div>
+          <div class="type-content">
+            <h3>Один вариант (radio)</h3>
+            <p class="type-desc">Выбор одного варианта из списка</p>
+            <p class="type-example">Пример: пол, класс, любимый предмет</p>
+          </div>
+        </div>
+
+        <div class="type-card">
+          <div class="type-icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+              <rect x="3" y="3" width="18" height="18" rx="2"/>
+              <path d="M9 12l2 2 4-4"/>
+            </svg>
+          </div>
+          <div class="type-content">
+            <h3>Несколько вариантов (checkbox)</h3>
+            <p class="type-desc">Выбор нескольких вариантов</p>
+            <p class="type-example">Пример: хобби, интересы, дни недели</p>
+          </div>
+        </div>
+
+        <div class="type-card">
+          <div class="type-icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+              <rect x="3" y="5" width="18" height="14" rx="2"/>
+              <path d="M7 10l5 5 5-5"/>
+            </svg>
+          </div>
+          <div class="type-content">
+            <h3>Выбор из списка (select)</h3>
+            <p class="type-desc">Выпадающий список с вариантами</p>
+            <p class="type-example">Пример: страна, категория, статус</p>
+          </div>
+        </div>
+
+        <div class="type-card">
+          <div class="type-icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+              <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" fill="currentColor"/>
+            </svg>
+          </div>
+          <div class="type-content">
+            <h3>Рейтинг (звёзды)</h3>
+            <p class="type-desc">Оценка по шкале от 1 до 5 или 10</p>
+            <p class="type-example">Пример: оценка мероприятия, качество обслуживания</p>
+          </div>
         </div>
       </div>
     </section>
@@ -355,6 +453,14 @@ onMounted(() => {
   font-weight: 700;
   color: var(--text);
   letter-spacing: -0.01em;
+  margin-bottom: 0.5rem;
+}
+
+.section-subtitle {
+  font-size: 1rem;
+  color: var(--text-muted);
+  max-width: 560px;
+  margin: 0 auto;
 }
 
 .features-grid {
@@ -404,6 +510,73 @@ onMounted(() => {
   font-size: 0.95rem;
   color: var(--text-muted);
   line-height: 1.6;
+}
+
+/* QUESTION TYPES */
+.types-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 1.25rem;
+}
+
+.type-card {
+  display: flex;
+  gap: 1.25rem;
+  padding: 1.5rem;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  transition: all 0.3s;
+}
+
+.type-card:hover {
+  transform: translateY(-3px);
+  box-shadow: var(--shadow-md);
+  border-color: var(--primary-soft);
+}
+
+.type-icon {
+  flex-shrink: 0;
+  width: 52px;
+  height: 52px;
+  background: var(--primary-soft);
+  color: var(--primary);
+  border-radius: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.type-icon svg {
+  width: 26px;
+  height: 26px;
+}
+
+.type-content {
+  flex: 1;
+  min-width: 0;
+}
+
+.type-content h3 {
+  font-size: 1.05rem;
+  font-weight: 700;
+  color: var(--text);
+  margin-bottom: 0.35rem;
+  letter-spacing: -0.01em;
+}
+
+.type-desc {
+  font-size: 0.92rem;
+  color: var(--text);
+  margin-bottom: 0.35rem;
+  line-height: 1.5;
+}
+
+.type-example {
+  font-size: 0.85rem;
+  color: var(--text-muted);
+  font-style: italic;
+  line-height: 1.4;
 }
 
 /* CTA */
@@ -472,6 +645,7 @@ onMounted(() => {
   .hero-actions { justify-content: center; }
   .stats-grid { grid-template-columns: repeat(2, 1fr); }
   .features-grid { grid-template-columns: 1fr; }
+  .types-grid { grid-template-columns: 1fr; }
 }
 
 @media (max-width: 560px) {
@@ -480,5 +654,9 @@ onMounted(() => {
   .btn-primary-large,
   .btn-secondary-large { width: 100%; justify-content: center; }
   .cta-actions { flex-direction: column; }
+  .type-card {
+    flex-direction: column;
+    gap: 1rem;
+  }
 }
 </style>
