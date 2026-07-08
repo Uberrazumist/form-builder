@@ -42,7 +42,6 @@
 
 <script setup>
 import { ref } from 'vue'
-import { useRouter } from 'vue-router'
 import FormField from '../components/FormField.vue'
 import FormResult from '../components/FormResult.vue'
 
@@ -50,7 +49,6 @@ const email = ref('')
 const password = ref('')
 const result = ref(null)
 const loading = ref(false)
-const router = useRouter()
 
 const login = async () => {
   loading.value = true
@@ -64,7 +62,6 @@ const login = async () => {
     })
 
     if (!response.ok) {
-      // Демо-режим только в dev при 404 (бэкенд не поднят)
       if (import.meta.env.DEV && response.status === 404) {
         result.value = {
           warning: 'Демо-режим',
@@ -81,7 +78,9 @@ const login = async () => {
     localStorage.setItem('token', data.token)
     localStorage.setItem('user', JSON.stringify(data.user))
     result.value = { success: true, message: 'Вход выполнен успешно' }
-    setTimeout(() => router.push('/'), 1000)
+    
+    // Перезагрузка страницы для обновления навигации
+    setTimeout(() => window.location.reload(), 1000)
   } catch (error) {
     if (import.meta.env.DEV) {
       result.value = {

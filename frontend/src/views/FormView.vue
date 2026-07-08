@@ -18,47 +18,47 @@
     <div v-else-if="form" class="form-container">
       <div class="form-header">
         <div class="header-top">
-          <h1 class="form-title">{{ form.title }}</h1>
-          <span class="badge" :class="form.is_public ? 'badge-public' : 'badge-private'">
-            {{ form.is_public ? 'Публичная' : 'Закрытая' }}
+          <h1 class="form-title">{{ form.Title }}</h1>
+          <span class="badge" :class="form.IsPublic ? 'badge-public' : 'badge-private'">
+            {{ form.IsPublic ? 'Публичная' : 'Закрытая' }}
           </span>
         </div>
-        <p v-if="form.description" class="form-description">{{ form.description }}</p>
+        <p v-if="form.Description" class="form-description">{{ form.Description }}</p>
         <div class="form-meta">
-          <span>{{ form.questions?.length || 0 }} вопросов</span>
+          <span>{{ form.Questions?.length || 0 }} вопросов</span>
           <span>•</span>
-          <span>{{ formatDate(form.created_at) }}</span>
+          <span>{{ formatDate(form.UpdatedAt) }}</span>
         </div>
       </div>
 
       <div class="form-card">
         <h2 class="card-title">Вопросы</h2>
         
-        <div v-if="!form.questions || form.questions.length === 0" class="empty-questions">
+        <div v-if="!form.Questions || form.Questions.length === 0" class="empty-questions">
           <p>В форме пока нет вопросов</p>
         </div>
 
         <div v-else class="questions-list">
           <div
-            v-for="(question, index) in form.questions"
-            :key="question.id"
+            v-for="(question, index) in form.Questions"
+            :key="question.ID"
             class="question-item"
           >
             <div class="question-header">
               <span class="question-number">{{ index + 1 }}.</span>
-              <span class="question-title">{{ question.title }}</span>
-              <span v-if="question.required" class="required-badge">Обязательный</span>
+              <span class="question-title">{{ question.Title }}</span>
+              <span v-if="question.Required" class="required-badge">Обязательный</span>
             </div>
             <div class="question-meta">
-              <span class="question-type">{{ getQuestionTypeName(question.type) }}</span>
-              <span v-if="question.depends_on" class="depends-on">
-                Зависит от вопроса #{{ getQuestionIndex(question.depends_on) + 1 }}
+              <span class="question-type">{{ getQuestionTypeName(question.Type) }}</span>
+              <span v-if="question.DependsOn" class="depends-on">
+                Зависит от вопроса #{{ getQuestionIndex(question.DependsOn) + 1 }}
               </span>
             </div>
-            <div v-if="['radio', 'checkbox', 'select'].includes(question.type)" class="question-options">
+            <div v-if="['radio', 'checkbox', 'select'].includes(question.Type)" class="question-options">
               <span class="options-label">Варианты:</span>
               <ul class="options-list">
-                <li v-for="(option, optIdx) in question.options" :key="optIdx">
+                <li v-for="(option, optIdx) in question.Options" :key="optIdx">
                   {{ option }}
                 </li>
               </ul>
@@ -72,11 +72,11 @@
           <Icon name="link" />
           Скопировать ссылку
         </button>
-        <router-link :to="`/responses/${form.id}`" class="btn-secondary">
+        <router-link :to="`/responses/${form.ID}`" class="btn-secondary">
           <Icon name="document" />
           Ответы
         </router-link>
-        <router-link :to="`/edit/${form.id}`" class="btn-primary">
+        <router-link :to="`/edit/${form.ID}`" class="btn-primary">
           <Icon name="edit" />
           Редактировать
         </router-link>
@@ -132,6 +132,8 @@ const loadForm = async () => {
 
   try {
     const formId = route.params.id
+    console.log('Form ID:', formId)
+    
     const token = localStorage.getItem('token')
 
     const response = await fetch(`/api/forms/${formId}`, {
@@ -173,21 +175,22 @@ const getQuestionTypeName = (type) => {
 }
 
 const getQuestionIndex = (questionId) => {
-  return form.value.questions.findIndex(q => q.id === questionId)
+  return form.value.Questions.findIndex(q => q.ID === questionId)
 }
 
 const formatDate = (dateStr) => {
   if (!dateStr) return ''
   const date = new Date(dateStr)
-  return date.toLocaleDateString('ru-RU', {
-    day: 'numeric',
-    month: 'short',
-    year: 'numeric'
-  })
+  const day = String(date.getDate()).padStart(2, '0')
+  const month = String(date.getMonth() + 1).padStart(2, '0')
+  const year = date.getFullYear()
+  const hours = String(date.getHours()).padStart(2, '0')
+  const minutes = String(date.getMinutes()).padStart(2, '0')
+  return `${day}.${month}.${year} ${hours}:${minutes}`
 }
 
 const copyLink = async () => {
-  const link = `${window.location.origin}/fill/${form.value.id}`
+  const link = `${window.location.origin}/fill/${form.value.ID}`
   try {
     await navigator.clipboard.writeText(link)
     result.value = { success: true, message: 'Ссылка скопирована в буфер обмена' }

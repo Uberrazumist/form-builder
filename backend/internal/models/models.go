@@ -24,7 +24,8 @@ type Form struct {
     UpdatedAt   time.Time
     IsPublished bool      `gorm:"default:false"`
     IsPublic    bool      `gorm:"default:false"`
-    Settings    datatypes.JSON `gorm:"type:jsonb"` // <-- исправлено
+    Settings    datatypes.JSON `gorm:"type:jsonb"`
+    Questions   []Question `gorm:"foreignKey:FormID"`   // <-- добавлено
 }
 
 type Question struct {
