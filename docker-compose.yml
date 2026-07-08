@@ -19,13 +19,10 @@ services:
     container_name: form-backend
     ports:
       - "8081:8080"
+    env_file:
+      - .env
     environment:
-      DB_HOST: db
-      DB_USER: ${DB_USER:-formuser}
-      DB_PASSWORD: ${DB_PASSWORD:-formpass}
-      DB_NAME: ${DB_NAME:-formsdb}
-      DB_PORT: 5432
-      JWT_SECRET: ${JWT_SECRET}
+      DB_HOST: db   # задаём явно, чтобы контейнер подключался к сервису db
     depends_on:
       - db
     restart: unless-stopped
