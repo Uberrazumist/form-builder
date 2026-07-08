@@ -104,6 +104,8 @@ func main() {
         auth.POST("/forms", handlers.CreateForm(db))
         auth.GET("/forms", handlers.ListForms(db))
         auth.GET("/forms/:id", handlers.GetForm(db))
+        auth.PUT("/forms/:id", handlers.UpdateForm(db))
+        auth.DELETE("/forms/:id", handlers.DeleteForm(db))
         auth.POST("/responses", handlers.SubmitResponse(db))
         auth.GET("/forms/:id/responses", handlers.GetResponses(db))
     }

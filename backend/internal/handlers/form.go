@@ -141,20 +141,17 @@ func SubmitResponse(db *gorm.DB) gin.HandlerFunc {
             return
         }
 
-        // Проверяем существование формы
         var form models.Form
         if err := db.First(&form, "id = ?", input.FormID).Error; err != nil {
             c.JSON(http.StatusNotFound, gin.H{"error": "Form not found"})
             return
         }
 
-        // Создаём ответ
         resp := models.Response{
             FormID:  uuid.MustParse(input.FormID),
             Answers: input.Answers,
         }
 
-        // Если пользователь авторизован, привязываем его ID
         if userID, exists := c.Get("userID"); exists {
             uid := uuid.MustParse(userID.(string))
             resp.UserID = &uid
@@ -179,7 +176,6 @@ func GetResponses(db *gorm.DB) gin.HandlerFunc {
             return
         }
 
-        // Проверяем, что пользователь – владелец
         var form models.Form
         if err := db.First(&form, "id = ?", formID).Error; err != nil {
             c.JSON(http.StatusNotFound, gin.H{"error": "Form not found"})
@@ -196,8 +192,159 @@ func GetResponses(db *gorm.DB) gin.HandlerFunc {
             return
         }
 
-        // Добавляем информацию о пользователе (если есть)
-        // Для простоты пока без preload, можно позже добавить связь
         c.JSON(http.StatusOK, gin.H{"responses": responses})
+    }
+}
+
+// ---------- НОВЫЕ: UpdateForm и DeleteForm ----------
+
+type UpdateQuestionInput struct {
+    ID            *uuid.UUID `json:"id"`              // может быть nil для новых
+    Type          string     `json:"type" binding:"required"`
+    Title         string     `json:"title" binding:"required"`
+    Description   string     `json:"description"`
+    OrderIndex    int        `json:"order_index"`
+    IsRequired    bool       `json:"is_required"`
+    Options       []string   `json:"options"`
+    DependsOn     *string    `json:"depends_on"`
+    DependsValues []string   `json:"depends_values"`
+}
+
+type UpdateFormInput struct {
+    Title       string               `json:"title" binding:"required"`
+    Description string               `json:"description"`
+    IsPublic    bool                 `json:"is_public"`
+    Questions   []UpdateQuestionInput `json:"questions" binding:"required"`
+}
+
+func UpdateForm(db *gorm.DB) gin.HandlerFunc {
+    return func(c *gin.Context) {
+        userID := c.GetString("userID")
+        if userID == "" {
+            c.JSON(http.StatusUnauthorized, gin.H{"error": "Unauthorized"})
+            return
+        }
+
+        formID := c.Param("id")
+        var form models.Form
+        if err := db.First(&form, "id = ? AND created_by = ?", formID, userID).Error; err != nil {
+            c.JSON(http.StatusNotFound, gin.H{"error": "Form not found or access denied"})
+            return
+        }
+
+        var input UpdateFormInput
+        if err := c.ShouldBindJSON(&input); err != nil {
+            c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+            return
+        }
+
+        // Обновляем поля формы
+        form.Title = input.Title
+        form.Description = input.Description
+        form.IsPublic = input.IsPublic
+        if err := db.Save(&form).Error; err != nil {
+            c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to update form"})
+            return
+        }
+
+        // Обновляем вопросы: сохраняем существующие, создаём новые, удаляем отсутствующие
+        // 1. Получаем текущие ID вопросов из БД
+        var existingQuestions []models.Question
+        db.Where("form_id = ?", form.ID).Find(&existingQuestions)
+        existingIDs := make(map[uuid.UUID]bool)
+        for _, q := range existingQuestions {
+            existingIDs[q.ID] = true
+        }
+
+        // 2. Собираем ID из входящих данных
+        incomingIDs := make(map[uuid.UUID]bool)
+        for _, qInput := range input.Questions {
+            if qInput.ID != nil {
+                incomingIDs[*qInput.ID] = true
+            }
+        }
+
+        // 3. Удаляем вопросы, которых нет во входящих данных
+        for _, q := range existingQuestions {
+            if !incomingIDs[q.ID] {
+                db.Delete(&q)
+            }
+        }
+
+        // 4. Обновляем или создаём вопросы
+        for _, qInput := range input.Questions {
+            var question models.Question
+            if qInput.ID != nil {
+                // Существующий вопрос – обновляем
+                if err := db.First(&question, "id = ? AND form_id = ?", qInput.ID, form.ID).Error; err != nil {
+                    // если не найден, пропускаем (или создаём новый – но лучше создать)
+                    // Создаём новый с этим ID? Нет, если ID передан, но не найден, то это ошибка
+                    c.JSON(http.StatusBadRequest, gin.H{"error": "Question with ID " + qInput.ID.String() + " not found"})
+                    return
+                }
+                // Обновляем поля
+                question.Type = qInput.Type
+                question.Title = qInput.Title
+                question.Description = qInput.Description
+                question.OrderIndex = qInput.OrderIndex
+                question.IsRequired = qInput.IsRequired
+                question.Options = qInput.Options
+                question.DependsValues = qInput.DependsValues
+                if qInput.DependsOn != nil {
+                    dependsUUID := uuid.MustParse(*qInput.DependsOn)
+                    question.DependsOn = &dependsUUID
+                } else {
+                    question.DependsOn = nil
+                }
+                db.Save(&question)
+            } else {
+                // Новый вопрос – создаём
+                newQ := models.Question{
+                    FormID:        form.ID,
+                    Type:          qInput.Type,
+                    Title:         qInput.Title,
+                    Description:   qInput.Description,
+                    OrderIndex:    qInput.OrderIndex,
+                    IsRequired:    qInput.IsRequired,
+                    Options:       qInput.Options,
+                    DependsValues: qInput.DependsValues,
+                }
+                if qInput.DependsOn != nil {
+                    dependsUUID := uuid.MustParse(*qInput.DependsOn)
+                    newQ.DependsOn = &dependsUUID
+                }
+                db.Create(&newQ)
+            }
+        }
+
+        c.JSON(http.StatusOK, gin.H{"message": "Form updated successfully"})
+    }
+}
+
+func DeleteForm(db *gorm.DB) gin.HandlerFunc {
+    return func(c *gin.Context) {
+        userID := c.GetString("userID")
+        if userID == "" {
+            c.JSON(http.StatusUnauthorized, gin.H{"error": "Unauthorized"})
+            return
+        }
+
+        formID := c.Param("id")
+        var form models.Form
+        if err := db.First(&form, "id = ? AND created_by = ?", formID, userID).Error; err != nil {
+            c.JSON(http.StatusNotFound, gin.H{"error": "Form not found or access denied"})
+            return
+        }
+
+        // Каскадное удаление: сначала удаляем связанные ответы (если нет ON DELETE CASCADE)
+        // Если в модели Response есть ForeignKey с OnDelete:CASCADE, то можно просто удалить форму.
+        // У нас в моделях нет явного каскада, поэтому удалим вручную.
+        db.Where("form_id = ?", form.ID).Delete(&models.Response{})
+        // Удаляем вопросы (если не удаляются каскадно)
+        db.Where("form_id = ?", form.ID).Delete(&models.Question{})
+        // Теперь удаляем саму форму
+        db.Delete(&form)
+
+        c.JSON(http.StatusOK, gin.H{"message": "Form deleted successfully"})
     }
 }

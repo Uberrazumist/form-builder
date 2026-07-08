@@ -1,0 +1,46 @@
+--- a/src/views/CreateFormView.vue
++++ b/src/views/CreateFormView.vue
+@@ -162,7 +162,14 @@ const submitForm = async () => {
+   loading.value = true
+   result.value = null
+ 
++  // Подготавливаем данные: depends_on -> null если пусто
++  const payload = {
++    ...formData,
++    questions: formData.questions.map(q => ({
++      ...q,
++      depends_on: q.depends_on || null
++    }))
++  }
+   try {
+     const token = localStorage.getItem('token')
+     const response = await fetch('/api/forms', {
+@@ -170,7 +177,7 @@ const submitForm = async () => {
+       headers: {
+         'Content-Type': 'application/json',
+         'Authorization': `Bearer ${token}`
+       },
+-      body: JSON.stringify(formData)
++      body: JSON.stringify(payload)
+     })
+ 
+     if (!response.ok) {
+@@ -180,7 +187,7 @@ const submitForm = async () => {
+           warning: 'Демо-режим',
+           message: 'Бэкенд недоступен (404)',
+           data: formData
+         })
+-        setTimeout(() => router.push('/'), 1500)
++        setTimeout(() => router.push(`/form/${data.id || 1}`), 1500)
+         return
+       }
+       const errorData = await response.json()
+@@ -190,7 +197,7 @@ const submitForm = async () => {
+ 
+     const data = await response.json()
+     result.value = { success: true, message: 'Форма успешно создана' }
+-    setTimeout(() => router.push('/'), 1000)
++    setTimeout(() => router.push(`/form/${data.id}`), 1000)
+   } catch (error) {
+     if (import.meta.env.DEV) {
+       result.value = {
