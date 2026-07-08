@@ -21,7 +21,7 @@
             type="email"
             v-model="email"
             required
-            placeholder="example@mail.com"
+            placeholder="example@1367.ru"
           />
         </div>
 
@@ -33,14 +33,14 @@
           <input
             id="code"
             type="text"
-            inputmode="numeric"
-            pattern="\d{6}"
-            maxlength="6"
+            maxlength="8"
             v-model="code"
             required
-            placeholder="000000"
+            placeholder="Введите 8-символьный код"
             class="code-input"
+            autocomplete="one-time-code"
           />
+          <span class="hint">8-значный код (буквы и цифры)</span>
         </div>
 
         <div class="form-group">
@@ -78,6 +78,11 @@
           <span v-else class="spinner"></span>
         </button>
 
+        <p class="spam-hint">
+          💡 Если письмо не пришло, проверьте папку «Спам» или
+          <router-link to="/forgot-password" class="spam-link">запросите код снова</router-link>.
+        </p>
+
         <p class="form-foot">
           Вспомнили пароль? <router-link to="/login">Войти</router-link>
         </p>
@@ -105,7 +110,6 @@ const result = ref(null)
 const loading = ref(false)
 
 onMounted(() => {
-  // Автоподстановка email из query-параметра
   const queryEmail = route.query.email
   if (queryEmail) {
     email.value = queryEmail
@@ -113,13 +117,14 @@ onMounted(() => {
 })
 
 const resetPassword = async () => {
+  // Валидация полей
   if (!email.value || !code.value || !newPassword.value || !confirmPassword.value) {
     result.value = { error: 'Заполните все поля' }
     return
   }
 
-  if (!/^\d{6}$/.test(code.value)) {
-    result.value = { error: 'Код должен состоять из 6 цифр' }
+  if (code.value.length !== 8) {
+    result.value = { error: 'Код должен состоять из 8 символов' }
     return
   }
 
@@ -168,6 +173,7 @@ const resetPassword = async () => {
     console.error('[ResetPassword] Error:', error)
     result.value = { error: 'Ошибка сети. Попробуйте позже.' }
   } finally {
+    // Гарантируем, что кнопка разблокируется после любой ситуации
     loading.value = false
   }
 }
@@ -286,16 +292,37 @@ input:focus {
 }
 
 .code-input {
-  font-size: 1.5rem !important;
+  font-size: 1.25rem !important;
   font-weight: 600;
-  letter-spacing: 0.5em;
+  letter-spacing: 0.3em;
   text-align: center;
   font-family: 'SF Mono', Menlo, monospace !important;
+  text-transform: uppercase;
 }
 
 .hint {
   font-size: 0.78rem;
   color: var(--text-muted);
+}
+
+.spam-hint {
+  text-align: center;
+  font-size: 0.85rem;
+  color: var(--text-muted);
+  background: var(--primary-soft);
+  padding: 0.65rem 1rem;
+  border-radius: var(--radius-sm);
+  margin-top: -0.25rem;
+}
+
+.spam-link {
+  color: var(--primary);
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.spam-link:hover {
+  text-decoration: underline;
 }
 
 .btn-primary {

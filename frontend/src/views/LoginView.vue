@@ -1,4 +1,4 @@
-<!-- src/views/LoginView.vue (обновлённый) -->
+<!-- src/views/LoginView.vue -->
 <template>
   <div class="form-card">
     <div class="form-header">
@@ -12,7 +12,7 @@
         type="email"
         icon="email"
         label="Email"
-        placeholder="example@mail.com"
+        placeholder="example@1367.ru"
         required
         v-model="email"
       />
@@ -57,7 +57,6 @@ const result = ref(null)
 const loading = ref(false)
 
 onMounted(() => {
-  // Показываем сообщение об успехе после подтверждения email или сброса пароля
   const successType = route.query.success
   if (successType === 'verified') {
     result.value = { 

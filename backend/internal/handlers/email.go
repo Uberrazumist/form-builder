@@ -8,6 +8,7 @@ import (
     "net/http"
     "net/smtp"
     "os"
+    "strings"
     "sync"
     "time"
 
@@ -24,7 +25,7 @@ var (
 )
 
 func generateCode() string {
-    b := make([]byte, 3)
+    b := make([]byte, 4)
     rand.Read(b)
     return hex.EncodeToString(b)
 }
@@ -48,6 +49,7 @@ func sendEmail(to, subject, body string) error {
     var err error
 
     if smtpPort == "465" {
+        // SSL-соединение через TLS
         tlsConfig := &tls.Config{ServerName: smtpHost}
         conn, err := tls.Dial("tcp", addr, tlsConfig)
         if err != nil {
@@ -55,13 +57,15 @@ func sendEmail(to, subject, body string) error {
         }
         client, err = smtp.NewClient(conn, smtpHost)
         if err != nil {
-            return fmt.Errorf("SMTP client creation error: %v", err)
+            return fmt.Errorf("SMTP client error: %v", err)
         }
     } else {
-        client, err = smtp.Dial(addr)
+        // STARTTLS (обычно порт 587)
+        conn, err := smtp.Dial(addr)
         if err != nil {
             return fmt.Errorf("SMTP dial error: %v", err)
         }
+        client = conn // smtp.Dial возвращает *smtp.Client
         if err = client.StartTLS(&tls.Config{ServerName: smtpHost}); err != nil {
             return fmt.Errorf("StartTLS error: %v", err)
         }
@@ -97,7 +101,6 @@ func sendEmail(to, subject, body string) error {
     return nil
 }
 
-// canRequestCode проверяет, можно ли запросить код для данного email (не чаще 1 раза в 60 сек)
 func canRequestCode(email string) bool {
     rateLimitMux.Lock()
     defer rateLimitMux.Unlock()
@@ -114,6 +117,11 @@ func RegisterWithEmail(db *gorm.DB) gin.HandlerFunc {
         var input RegisterInput
         if err := c.ShouldBindJSON(&input); err != nil {
             c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+            return
+        }
+
+        if !strings.HasSuffix(input.Email, "@1367.ru") {
+            c.JSON(http.StatusBadRequest, gin.H{"error": "Only emails with domain @1367.ru are allowed"})
             return
         }
 
@@ -180,7 +188,7 @@ func RegisterWithEmail(db *gorm.DB) gin.HandlerFunc {
         }
 
         subject := "Подтверждение регистрации"
-        body := fmt.Sprintf("Ваш код подтверждения: %s\nКод действителен 15 минут.", code)
+        body := fmt.Sprintf("Ваш код подтверждения: %s\nКод действителен 15 минут.\nЕсли письмо не пришло, проверьте папку «Спам».", code)
         if err := sendEmail(input.Email, subject, body); err != nil {
             fmt.Printf("[ERROR] Failed to send email: %v\n", err)
             c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to send email: " + err.Error()})
@@ -188,7 +196,7 @@ func RegisterWithEmail(db *gorm.DB) gin.HandlerFunc {
         }
 
         c.JSON(http.StatusCreated, gin.H{
-            "message": "Registration successful. Check your email for confirmation code.",
+            "message": "Registration successful. Check your email (and spam folder) for confirmation code.",
             "user": gin.H{
                 "id":       user.ID,
                 "email":    user.Email,
@@ -207,6 +215,11 @@ func VerifyEmail(db *gorm.DB) gin.HandlerFunc {
         }
         if err := c.ShouldBindJSON(&input); err != nil {
             c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+            return
+        }
+
+        if len(input.Code) != 8 {
+            c.JSON(http.StatusBadRequest, gin.H{"error": "Code must be exactly 8 characters"})
             return
         }
 
@@ -243,6 +256,11 @@ func ForgotPassword(db *gorm.DB) gin.HandlerFunc {
             return
         }
 
+        if !strings.HasSuffix(input.Email, "@1367.ru") {
+            c.JSON(http.StatusBadRequest, gin.H{"error": "Only emails with domain @1367.ru are allowed"})
+            return
+        }
+
         var user models.User
         if err := db.Where("email = ?", input.Email).First(&user).Error; err != nil {
             c.JSON(http.StatusNotFound, gin.H{"error": "User with this email not found"})
@@ -270,14 +288,14 @@ func ForgotPassword(db *gorm.DB) gin.HandlerFunc {
         }
 
         subject := "Сброс пароля"
-        body := fmt.Sprintf("Ваш код для сброса пароля: %s\nКод действителен 15 минут.", code)
+        body := fmt.Sprintf("Ваш код для сброса пароля: %s\nКод действителен 15 минут.\nЕсли письмо не пришло, проверьте папку «Спам».", code)
         if err := sendEmail(input.Email, subject, body); err != nil {
             fmt.Printf("[ERROR] Failed to send reset email: %v\n", err)
             c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to send email: " + err.Error()})
             return
         }
 
-        c.JSON(http.StatusOK, gin.H{"message": "Reset code sent to your email"})
+        c.JSON(http.StatusOK, gin.H{"message": "Reset code sent to your email (check spam folder)"})
     }
 }
 
@@ -290,6 +308,11 @@ func ResetPassword(db *gorm.DB) gin.HandlerFunc {
         }
         if err := c.ShouldBindJSON(&input); err != nil {
             c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+            return
+        }
+
+        if len(input.Code) != 8 {
+            c.JSON(http.StatusBadRequest, gin.H{"error": "Code must be exactly 8 characters"})
             return
         }
 

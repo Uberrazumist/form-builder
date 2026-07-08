@@ -1,4 +1,4 @@
-<!-- src/components/RegistrationForm.vue (обновлённый) -->
+<!-- src/components/RegistrationForm.vue -->
 <template>
   <div class="form-card">
     <div class="form-header">
@@ -13,6 +13,11 @@
         v-bind="field"
         v-model="formData[field.id]"
       />
+
+      <div class="domain-notice">
+        <Icon name="lock" />
+        <span>Только для сотрудников школы (email <strong>@1367.ru</strong>)</span>
+      </div>
 
       <button type="submit" class="btn-primary" :disabled="loading">
         <span v-if="!loading">Зарегистрироваться</span>
@@ -33,13 +38,36 @@ import { ref, reactive } from 'vue'
 import { useRouter } from 'vue-router'
 import FormField from './FormField.vue'
 import FormResult from './FormResult.vue'
+import Icon from './Icon.vue'
 
 const router = useRouter()
 
 const fields = [
-  { id: 'email', type: 'email', icon: 'email', label: 'Email', placeholder: 'example@school123.ru', required: true },
-  { id: 'password', type: 'password', icon: 'lock', label: 'Пароль', placeholder: 'Не менее 8 символов', hint: 'Буквы и цифры', required: true, minlength: 8 },
-  { id: 'fullName', type: 'text', icon: 'user', label: 'Полное имя', placeholder: 'Иван Иванов' }
+  { 
+    id: 'email', 
+    type: 'email', 
+    icon: 'email', 
+    label: 'Email', 
+    placeholder: 'example@1367.ru', 
+    required: true 
+  },
+  { 
+    id: 'password', 
+    type: 'password', 
+    icon: 'lock', 
+    label: 'Пароль', 
+    placeholder: 'Не менее 8 символов', 
+    hint: 'Буквы и цифры', 
+    required: true, 
+    minlength: 8 
+  },
+  { 
+    id: 'fullName', 
+    type: 'text', 
+    icon: 'user', 
+    label: 'Полное имя', 
+    placeholder: 'Иван Иванов' 
+  }
 ]
 
 const formData = reactive({ email: '', password: '', fullName: '' })
@@ -48,6 +76,15 @@ const loading = ref(false)
 
 const register = async () => {
   console.log('[Register] Submitting:', { email: formData.email, fullName: formData.fullName })
+  
+  // Валидация домена email
+  if (!formData.email.endsWith('@1367.ru')) {
+    result.value = { 
+      error: 'Регистрация доступна только для сотрудников школы. Email должен заканчиваться на @1367.ru' 
+    }
+    return
+  }
+  
   loading.value = true
   result.value = null
   
@@ -143,6 +180,28 @@ const register = async () => {
   display: flex;
   flex-direction: column;
   gap: 1.1rem;
+}
+
+.domain-notice {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.75rem 1rem;
+  background: var(--primary-soft);
+  border-radius: var(--radius-sm);
+  font-size: 0.88rem;
+  color: var(--primary);
+  line-height: 1.4;
+}
+
+.domain-notice svg {
+  width: 18px;
+  height: 18px;
+  flex-shrink: 0;
+}
+
+.domain-notice strong {
+  font-weight: 700;
 }
 
 .btn-primary {

@@ -21,7 +21,7 @@
             type="email"
             v-model="email"
             required
-            placeholder="example@mail.com"
+            placeholder="example@1367.ru"
           />
         </div>
 
@@ -33,21 +33,24 @@
           <input
             id="code"
             type="text"
-            inputmode="numeric"
-            pattern="\d{6}"
-            maxlength="6"
+            maxlength="8"
             v-model="code"
             required
-            placeholder="000000"
+            placeholder="Введите 8-символьный код"
             class="code-input"
+            autocomplete="one-time-code"
           />
-          <span class="hint">6-значный код из письма</span>
+          <span class="hint">8-значный код из письма (буквы и цифры)</span>
         </div>
 
         <button type="submit" class="btn-primary" :disabled="loading">
           <span v-if="!loading">Подтвердить</span>
           <span v-else class="spinner"></span>
         </button>
+
+        <p class="spam-hint">
+          💡 Если письмо не пришло, проверьте папку «Спам».
+        </p>
 
         <p class="form-foot">
           Не получили код?
@@ -78,7 +81,6 @@ const loading = ref(false)
 const resending = ref(false)
 
 onMounted(() => {
-  // Автоподстановка email из query-параметра или localStorage
   const queryEmail = route.query.email
   if (queryEmail) {
     email.value = queryEmail
@@ -96,8 +98,8 @@ const verify = async () => {
     return
   }
 
-  if (!/^\d{6}$/.test(code.value)) {
-    result.value = { error: 'Код должен состоять из 6 цифр' }
+  if (code.value.length !== 8) {
+    result.value = { error: 'Код должен состоять из 8 символов' }
     return
   }
 
@@ -117,7 +119,6 @@ const verify = async () => {
       return
     }
 
-    // Очистка временных данных
     localStorage.removeItem('lastRegisteredEmail')
     
     result.value = { success: true, message: 'Email успешно подтверждён!' }
@@ -159,7 +160,7 @@ const resendCode = async () => {
 
     result.value = { 
       success: true, 
-      message: 'Новый код отправлен на ваш email' 
+      message: 'Новый код отправлен на ваш email. Проверьте также папку «Спам».' 
     }
   } catch (error) {
     result.value = { error: 'Ошибка сети. Попробуйте позже.' }
@@ -281,16 +282,27 @@ input:focus {
 }
 
 .code-input {
-  font-size: 1.5rem !important;
+  font-size: 1.25rem !important;
   font-weight: 600;
-  letter-spacing: 0.5em;
+  letter-spacing: 0.3em;
   text-align: center;
   font-family: 'SF Mono', Menlo, monospace !important;
+  text-transform: uppercase;
 }
 
 .hint {
   font-size: 0.78rem;
   color: var(--text-muted);
+}
+
+.spam-hint {
+  text-align: center;
+  font-size: 0.85rem;
+  color: var(--text-muted);
+  background: var(--primary-soft);
+  padding: 0.65rem 1rem;
+  border-radius: var(--radius-sm);
+  margin-top: -0.25rem;
 }
 
 .btn-primary {

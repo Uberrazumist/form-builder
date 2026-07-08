@@ -21,14 +21,19 @@
             type="email"
             v-model="email"
             required
-            placeholder="example@mail.com"
+            placeholder="example@1367.ru"
           />
+          <span class="hint">Используйте корпоративную почту @1367.ru</span>
         </div>
 
         <button type="submit" class="btn-primary" :disabled="loading">
           <span v-if="!loading">Отправить код</span>
           <span v-else class="spinner"></span>
         </button>
+
+        <p v-if="codeSent" class="spam-hint">
+          💡 Если письмо не пришло, проверьте папку «Спам».
+        </p>
 
         <p class="form-foot">
           Вспомнили пароль? <router-link to="/login">Войти</router-link>
@@ -51,10 +56,16 @@ const router = useRouter()
 const email = ref('')
 const result = ref(null)
 const loading = ref(false)
+const codeSent = ref(false)
 
 const sendCode = async () => {
   if (!email.value) {
     result.value = { error: 'Введите email' }
+    return
+  }
+
+  if (!email.value.endsWith('@1367.ru')) {
+    result.value = { error: 'Email должен заканчиваться на @1367.ru' }
     return
   }
 
@@ -74,6 +85,7 @@ const sendCode = async () => {
       return
     }
 
+    codeSent.value = true
     result.value = { 
       success: true, 
       message: 'Код отправлен на ваш email. Перенаправляем...' 
@@ -202,6 +214,21 @@ input:focus {
   border-color: var(--primary);
   background: var(--surface);
   box-shadow: 0 0 0 4px rgba(47, 79, 138, 0.1);
+}
+
+.hint {
+  font-size: 0.78rem;
+  color: var(--text-muted);
+}
+
+.spam-hint {
+  text-align: center;
+  font-size: 0.85rem;
+  color: var(--text-muted);
+  background: var(--primary-soft);
+  padding: 0.65rem 1rem;
+  border-radius: var(--radius-sm);
+  margin-top: -0.25rem;
 }
 
 .btn-primary {
