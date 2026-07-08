@@ -23,7 +23,6 @@ func getJWTSecret() string {
 }
 
 func main() {
-    // --- БД ---
     host := os.Getenv("DB_HOST")
     user := os.Getenv("DB_USER")
     password := os.Getenv("DB_PASSWORD")
@@ -43,7 +42,7 @@ func main() {
     }
     log.Println("Connected to database successfully")
 
-    // --- Миграции ---
+    // Миграции
     if err := db.AutoMigrate(
         &models.User{},
         &models.Form{},
@@ -59,19 +58,18 @@ func main() {
     }
     log.Println("Migration completed")
 
-    // --- Gin ---
     r := gin.Default()
 
     jwtSecret := getJWTSecret()
 
-    // --- Публичные маршруты ---
+    // Публичные маршруты
     r.GET("/ping", func(c *gin.Context) {
         c.String(http.StatusOK, "pong")
     })
     r.POST("/api/register", handlers.Register(db))
     r.POST("/api/login", handlers.Login(db, jwtSecret))
 
-    // --- Защищённые маршруты (JWT) ---
+    // Защищённые маршруты (JWT)
     auth := r.Group("/api")
     auth.Use(func(c *gin.Context) {
         tokenString := c.GetHeader("Authorization")
@@ -105,6 +103,9 @@ func main() {
     {
         auth.POST("/forms", handlers.CreateForm(db))
         auth.GET("/forms", handlers.ListForms(db))
+        auth.GET("/forms/:id", handlers.GetForm(db))
+        auth.POST("/responses", handlers.SubmitResponse(db))
+        auth.GET("/forms/:id/responses", handlers.GetResponses(db))
     }
 
     log.Println("Server starting on :8080")
