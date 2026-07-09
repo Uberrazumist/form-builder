@@ -12,6 +12,8 @@ import MyFormsView from '../views/MyFormsView.vue'
 import VerifyEmailView from '../views/VerifyEmailView.vue'
 import ForgotPasswordView from '../views/ForgotPasswordView.vue'
 import ResetPasswordView from '../views/ResetPasswordView.vue'
+import DictionariesView from '../views/DictionariesView.vue'
+import DictionaryItemsView from '../views/DictionaryItemsView.vue'
 
 const router = createRouter({
   history: createWebHistory(import.meta.env.BASE_URL),
@@ -75,6 +77,16 @@ const router = createRouter({
       path: '/my-forms',
       name: 'my-forms',
       component: MyFormsView
+    },
+    {
+      path: '/dictionaries',
+      name: 'dictionaries',
+      component: DictionariesView
+    },
+    {
+      path: '/dictionaries/:id/items',
+      name: 'dictionary-items',
+      component: DictionaryItemsView
     }
   ]
 })

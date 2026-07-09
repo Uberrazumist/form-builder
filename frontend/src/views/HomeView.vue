@@ -11,7 +11,7 @@
             Единый сервис для регистрации, опросов и сбора данных.
             Простой интерфейс, надёжная защита, удобный доступ для учеников и учителей.
           </p>
-          
+
           <div class="hero-actions">
             <template v-if="isAuthenticated">
               <router-link to="/create" class="btn-primary-large">
@@ -62,67 +62,6 @@
             <h3>Для всей школы</h3>
             <p>Ученики, учителя, администрация — все в одном месте</p>
           </div>
-        </div>
-      </div>
-    </section>
-
-    <!-- STATS -->
-    <section class="stats">
-      <div class="stats-grid">
-        <div class="stat-card">
-          <span class="stat-number">100+</span>
-          <span class="stat-label">Опросов создано</span>
-        </div>
-        <div class="stat-card">
-          <span class="stat-number">20+</span>
-          <span class="stat-label">Учителей используют</span>
-        </div>
-        <div class="stat-card">
-          <span class="stat-number">500+</span>
-          <span class="stat-label">Учеников участвуют</span>
-        </div>
-        <div class="stat-card">
-          <span class="stat-number">0 ₽</span>
-          <span class="stat-label">Бесплатно для школ</span>
-        </div>
-      </div>
-    </section>
-
-    <!-- FEATURES -->
-    <section class="features">
-      <div class="section-header">
-        <span class="eyebrow">Возможности</span>
-        <h2 class="section-title">Всё, что нужно для школы</h2>
-      </div>
-      
-      <div class="features-grid">
-        <div class="feature-card">
-          <div class="feature-icon">
-            <Icon name="edit" />
-          </div>
-          <h3>Разные типы вопросов</h3>
-          <p>Текст, выбор из списка, рейтинг — всё для удобного сбора данных</p>
-        </div>
-        <div class="feature-card">
-          <div class="feature-icon">
-            <Icon name="link" />
-          </div>
-          <h3>Зависимости вопросов</h3>
-          <p>Показывайте вопросы в зависимости от ответов на предыдущие</p>
-        </div>
-        <div class="feature-card">
-          <div class="feature-icon">
-            <Icon name="lock" />
-          </div>
-          <h3>Публичный доступ</h3>
-          <p>Делитесь ссылкой — форма доступна без регистрации</p>
-        </div>
-        <div class="feature-card">
-          <div class="feature-icon">
-            <Icon name="check" />
-          </div>
-          <h3>Валидация данных</h3>
-          <p>Обязательные поля, проверка email, минимальная длина пароля</p>
         </div>
       </div>
     </section>
@@ -407,42 +346,7 @@ onMounted(() => {
   line-height: 1.5;
 }
 
-/* STATS */
-.stats-grid {
-  display: grid;
-  grid-template-columns: repeat(4, 1fr);
-  gap: 1.5rem;
-}
-
-.stat-card {
-  background: var(--surface);
-  padding: 2rem 1.5rem;
-  border-radius: var(--radius);
-  border: 1px solid var(--border);
-  text-align: center;
-  transition: all 0.3s;
-}
-
-.stat-card:hover {
-  transform: translateY(-4px);
-  box-shadow: var(--shadow-md);
-}
-
-.stat-number {
-  display: block;
-  font-size: 2.5rem;
-  font-weight: 700;
-  color: var(--primary);
-  letter-spacing: -0.02em;
-  margin-bottom: 0.5rem;
-}
-
-.stat-label {
-  font-size: 0.9rem;
-  color: var(--text-muted);
-}
-
-/* FEATURES */
+/* QUESTION TYPES */
 .section-header {
   text-align: center;
   margin-bottom: 2.5rem;
@@ -463,56 +367,6 @@ onMounted(() => {
   margin: 0 auto;
 }
 
-.features-grid {
-  display: grid;
-  grid-template-columns: repeat(2, 1fr);
-  gap: 1.5rem;
-}
-
-.feature-card {
-  background: var(--surface);
-  padding: 2rem;
-  border-radius: var(--radius);
-  border: 1px solid var(--border);
-  transition: all 0.3s;
-}
-
-.feature-card:hover {
-  transform: translateY(-4px);
-  box-shadow: var(--shadow-md);
-}
-
-.feature-icon {
-  width: 56px;
-  height: 56px;
-  background: var(--primary-soft);
-  color: var(--primary);
-  border-radius: 14px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  margin-bottom: 1.25rem;
-}
-
-.feature-icon svg {
-  width: 28px;
-  height: 28px;
-}
-
-.feature-card h3 {
-  font-size: 1.2rem;
-  font-weight: 700;
-  color: var(--text);
-  margin-bottom: 0.75rem;
-}
-
-.feature-card p {
-  font-size: 0.95rem;
-  color: var(--text-muted);
-  line-height: 1.6;
-}
-
-/* QUESTION TYPES */
 .types-grid {
   display: grid;
   grid-template-columns: repeat(2, 1fr);
@@ -643,13 +497,10 @@ onMounted(() => {
   .hero-text { text-align: center; }
   .hero-desc { margin-left: auto; margin-right: auto; }
   .hero-actions { justify-content: center; }
-  .stats-grid { grid-template-columns: repeat(2, 1fr); }
-  .features-grid { grid-template-columns: 1fr; }
   .types-grid { grid-template-columns: 1fr; }
 }
 
 @media (max-width: 560px) {
-  .stats-grid { grid-template-columns: 1fr; }
   .hero-actions { flex-direction: column; }
   .btn-primary-large,
   .btn-secondary-large { width: 100%; justify-content: center; }

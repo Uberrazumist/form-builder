@@ -48,10 +48,12 @@ func main() {
         &models.Form{},
         &models.Question{},
         &models.Response{},
+        &models.Dictionary{},
+        &models.DictionaryItem{},
+        &models.Booking{},
         &models.Class{},
         &models.Teacher{},
         &models.TimeSlot{},
-        &models.Booking{},
         &models.FormPermission{},
     ); err != nil {
         log.Fatal("Migration failed:", err)
@@ -69,7 +71,7 @@ func main() {
     r.POST("/api/register", handlers.RegisterWithEmail(db))
     r.POST("/api/login", handlers.Login(db, jwtSecret))
     r.POST("/api/verify-email", handlers.VerifyEmail(db))
-    r.POST("/api/resend-verification", handlers.ResendVerification(db))   // <-- новый эндпоинт
+    r.POST("/api/resend-verification", handlers.ResendVerification(db))
     r.POST("/api/forgot-password", handlers.ForgotPassword(db))
     r.POST("/api/reset-password", handlers.ResetPassword(db))
 
@@ -105,6 +107,7 @@ func main() {
         c.Next()
     })
     {
+        // Формы
         auth.POST("/forms", handlers.CreateForm(db))
         auth.GET("/forms", handlers.ListForms(db))
         auth.GET("/forms/:id", handlers.GetForm(db))
@@ -112,6 +115,22 @@ func main() {
         auth.DELETE("/forms/:id", handlers.DeleteForm(db))
         auth.POST("/responses", handlers.SubmitResponse(db))
         auth.GET("/forms/:id/responses", handlers.GetResponses(db))
+
+        // Справочники
+        auth.GET("/dictionaries", handlers.ListDictionaries(db))
+        auth.POST("/dictionaries", handlers.CreateDictionary(db))
+        auth.GET("/dictionaries/:id", handlers.GetDictionary(db))
+        auth.PUT("/dictionaries/:id", handlers.UpdateDictionary(db))
+        auth.DELETE("/dictionaries/:id", handlers.DeleteDictionary(db))
+
+        // Элементы справочников
+        auth.GET("/dictionaries/:id/items", handlers.ListDictionaryItems(db))
+        auth.POST("/dictionaries/:id/items", handlers.CreateDictionaryItem(db))
+        auth.DELETE("/dictionaries/:id/items/:itemId", handlers.DeleteDictionaryItem(db))
+
+        // Проверка занятости
+        auth.GET("/bookings/check", handlers.CheckBooking(db))
+        // Создание записи (бронирование) будет в обработчике SubmitResponse
     }
 
     log.Println("Server starting on :8080")

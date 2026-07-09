@@ -82,6 +82,7 @@
               <option value="checkbox">Несколько вариантов (checkbox)</option>
               <option value="select">Выбор из списка (select)</option>
               <option value="rating">Рейтинг (звёзды)</option>
+              <option value="dictionary">Выбор из справочника</option>
             </select>
           </div>
 
@@ -95,6 +96,7 @@
             />
           </div>
 
+          <!-- Варианты ответов для radio/checkbox/select -->
           <div
             v-if="['radio', 'checkbox', 'select'].includes(question.type)"
             class="options-section"
@@ -128,6 +130,39 @@
               <Icon name="plus" />
               Добавить вариант
             </button>
+          </div>
+
+          <!-- Настройки для справочника -->
+          <div v-if="question.type === 'dictionary'" class="dictionary-section">
+            <div class="form-group">
+              <label>
+                <Icon name="book" />
+                Справочник <span class="required">*</span>
+              </label>
+              <select v-model="question.dictionary_id">
+                <option :value="null" disabled>Выберите справочник</option>
+                <option
+                  v-for="dict in dictionaries"
+                  :key="dict.ID"
+                  :value="dict.ID"
+                >
+                  {{ dict.Name }}
+                </option>
+              </select>
+              <span class="hint">
+                Справочники создаются в разделе «Справочники»
+              </span>
+            </div>
+
+            <div class="checkbox-group">
+              <label class="checkbox-label">
+                <input type="checkbox" v-model="question.is_booking" />
+                <span class="checkbox-text">
+                  Проверять занятость
+                  <span class="hint">Блокировать уже выбранные варианты (например, запись на время)</span>
+                </span>
+              </label>
+            </div>
           </div>
 
           <div v-if="question.type === 'rating'" class="form-group">
@@ -180,7 +215,7 @@
 </template>
 
 <script setup>
-import { ref, reactive } from 'vue'
+import { ref, reactive, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import Icon from '../components/Icon.vue'
 import FormResult from '../components/FormResult.vue'
@@ -194,9 +229,29 @@ const formData = reactive({
   questions: []
 })
 
+const dictionaries = ref([])
 const result = ref(null)
 const loading = ref(false)
 let questionIdCounter = 1
+
+onMounted(async () => {
+  await loadDictionaries()
+})
+
+const loadDictionaries = async () => {
+  try {
+    const token = localStorage.getItem('token')
+    const response = await fetch('/api/dictionaries', {
+      headers: { 'Authorization': `Bearer ${token}` }
+    })
+    if (response.ok) {
+      const data = await response.json()
+      dictionaries.value = data.dictionaries || data || []
+    }
+  } catch (error) {
+    console.error('[CreateForm] Failed to load dictionaries:', error)
+  }
+}
 
 const addQuestion = () => {
   formData.questions.push({
@@ -206,7 +261,9 @@ const addQuestion = () => {
     required: false,
     options: [],
     rating_max: 5,
-    depends_on: null
+    depends_on: null,
+    dictionary_id: null,
+    is_booking: false
   })
 }
 
@@ -250,6 +307,10 @@ const submitForm = async () => {
       result.value = { error: `Вопрос "${q.title}" должен иметь хотя бы один вариант ответа` }
       return
     }
+    if (q.type === 'dictionary' && !q.dictionary_id) {
+      result.value = { error: `Вопрос "${q.title}" должен иметь выбранный справочник` }
+      return
+    }
   }
 
   loading.value = true
@@ -264,7 +325,9 @@ const submitForm = async () => {
       is_public: formData.is_public,
       questions: formData.questions.map(q => ({
         ...q,
-        depends_on: q.depends_on || null
+        depends_on: q.depends_on || null,
+        dictionary_id: q.type === 'dictionary' ? q.dictionary_id : null,
+        is_booking: q.type === 'dictionary' ? q.is_booking : false
       }))
     }
     
@@ -522,16 +585,19 @@ select:focus {
   height: 18px;
 }
 
-.options-section {
+.options-section,
+.dictionary-section {
   margin-bottom: 1.25rem;
+  padding: 1rem;
+  background: var(--surface);
+  border-radius: var(--radius-sm);
+  border: 1px dashed var(--border);
 }
 
-.options-section > label {
-  display: block;
-  font-size: 0.88rem;
-  font-weight: 600;
-  color: var(--text);
-  margin-bottom: 0.5rem;
+.dictionary-section {
+  border-color: var(--primary-soft);
+  background: var(--primary-soft);
+  background: color-mix(in srgb, var(--primary-soft) 40%, var(--surface));
 }
 
 .options-list {

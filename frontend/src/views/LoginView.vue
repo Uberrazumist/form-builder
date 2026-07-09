@@ -7,24 +7,43 @@
     </div>
 
     <form @submit.prevent="login" class="form" novalidate>
-      <FormField
-        id="email"
-        type="email"
-        icon="email"
-        label="Email"
-        placeholder="example@1367.ru"
-        required
-        v-model="email"
-      />
-      <FormField
-        id="password"
-        type="password"
-        icon="lock"
-        label="Пароль"
-        placeholder="Введите пароль"
-        required
-        v-model="password"
-      />
+      <div class="form-group">
+        <label for="email">
+          <Icon name="email" />
+          Email
+        </label>
+        <input
+          id="email"
+          type="email"
+          v-model="email"
+          required
+          placeholder="example@1367.ru"
+        />
+      </div>
+
+      <div class="form-group">
+        <label for="password">
+          <Icon name="lock" />
+          Пароль
+        </label>
+        <div class="password-wrapper">
+          <input
+            id="password"
+            :type="showPassword ? 'text' : 'password'"
+            v-model="password"
+            required
+            placeholder="Введите пароль"
+          />
+          <button
+            type="button"
+            class="toggle-password"
+            @click="showPassword = !showPassword"
+            :aria-label="showPassword ? 'Скрыть пароль' : 'Показать пароль'"
+          >
+            <Icon :name="showPassword ? 'eye-off' : 'eye'" />
+          </button>
+        </div>
+      </div>
 
       <button type="submit" class="btn-primary" :disabled="loading">
         <span v-if="!loading">Войти</span>
@@ -46,13 +65,14 @@
 <script setup>
 import { ref, onMounted } from 'vue'
 import { useRoute } from 'vue-router'
-import FormField from '../components/FormField.vue'
+import Icon from '../components/Icon.vue'
 import FormResult from '../components/FormResult.vue'
 
 const route = useRoute()
 
 const email = ref('')
 const password = ref('')
+const showPassword = ref(false)
 const result = ref(null)
 const loading = ref(false)
 
@@ -162,6 +182,92 @@ const login = async () => {
   flex-direction: column;
   gap: 1.1rem;
 }
+
+.form-group {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.form-group label {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  font-size: 0.88rem;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.form-group label svg {
+  width: 15px;
+  height: 15px;
+  color: var(--text-muted);
+}
+
+input[type="email"],
+input[type="password"] {
+  width: 100%;
+  padding: 0.75rem 0.95rem;
+  font-size: 0.95rem;
+  font-family: inherit;
+  color: var(--text);
+  background: var(--bg);
+  border: 1.5px solid var(--border);
+  border-radius: var(--radius-sm);
+  transition: border-color 0.2s, background 0.2s, box-shadow 0.2s;
+}
+
+input::placeholder {
+  color: #a6afbf;
+}
+
+input:hover {
+  border-color: #cfd6e3;
+}
+
+input:focus {
+  outline: none;
+  border-color: var(--primary);
+  background: var(--surface);
+  box-shadow: 0 0 0 4px rgba(47, 79, 138, 0.1);
+}
+
+.password-wrapper {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.password-wrapper input {
+  padding-right: 3rem;
+}
+
+.toggle-password {
+  position: absolute;
+  right: 0.5rem;
+  width: 36px;
+  height: 36px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  border-radius: 6px;
+  transition: color 0.2s, background 0.2s;
+}
+
+.toggle-password:hover {
+  color: var(--primary);
+  background: var(--primary-soft);
+}
+
+.toggle-password svg {
+  width: 18px;
+  height: 18px;
+}
+
 .btn-primary {
   width: 100%;
   padding: 0.85rem;

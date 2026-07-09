@@ -97,6 +97,7 @@
                 <option value="checkbox">Несколько вариантов (checkbox)</option>
                 <option value="select">Выбор из списка (select)</option>
                 <option value="rating">Рейтинг (звёзды)</option>
+                <option value="dictionary">Выбор из справочника</option>
               </select>
             </div>
 
@@ -143,6 +144,36 @@
                 <Icon name="plus" />
                 Добавить вариант
               </button>
+            </div>
+
+            <!-- Настройки для справочника -->
+            <div v-if="question.type === 'dictionary'" class="dictionary-section">
+              <div class="form-group">
+                <label>
+                  <Icon name="book" />
+                  Справочник <span class="required">*</span>
+                </label>
+                <select v-model="question.dictionary_id">
+                  <option :value="null" disabled>Выберите справочник</option>
+                  <option
+                    v-for="dict in dictionaries"
+                    :key="dict.ID"
+                    :value="dict.ID"
+                  >
+                    {{ dict.Name }}
+                  </option>
+                </select>
+              </div>
+
+              <div class="checkbox-group">
+                <label class="checkbox-label">
+                  <input type="checkbox" v-model="question.is_booking" />
+                  <span class="checkbox-text">
+                    Проверять занятость
+                    <span class="hint">Блокировать уже выбранные варианты</span>
+                  </span>
+                </label>
+              </div>
             </div>
 
             <div v-if="question.type === 'rating'" class="form-group">
@@ -211,14 +242,30 @@ const formData = reactive({
   questions: []
 })
 
+const dictionaries = ref([])
 const loading = ref(true)
 const error = ref(null)
 const result = ref(null)
 const submitting = ref(false)
 
 onMounted(async () => {
-  await loadForm()
+  await Promise.all([loadForm(), loadDictionaries()])
 })
+
+const loadDictionaries = async () => {
+  try {
+    const token = localStorage.getItem('token')
+    const response = await fetch('/api/dictionaries', {
+      headers: { 'Authorization': `Bearer ${token}` }
+    })
+    if (response.ok) {
+      const data = await response.json()
+      dictionaries.value = data.dictionaries || data || []
+    }
+  } catch (err) {
+    console.error('[EditForm] Failed to load dictionaries:', err)
+  }
+}
 
 const loadForm = async () => {
   loading.value = true
@@ -226,7 +273,6 @@ const loadForm = async () => {
 
   try {
     const formId = route.params.id
-    console.log('[EditForm] Loading form ID:', formId)
     const token = localStorage.getItem('token')
 
     const response = await fetch(`/api/forms/${formId}`, {
@@ -245,7 +291,6 @@ const loadForm = async () => {
     }
 
     const data = await response.json()
-    console.log('[EditForm] Loaded form data:', data)
 
     formData.title = data.Title || ''
     formData.description = data.Description || ''
@@ -259,12 +304,11 @@ const loadForm = async () => {
         required: q.Required || false,
         options: q.Options || [],
         rating_max: q.RatingMax || 5,
-        depends_on: q.DependsOn || null
+        depends_on: q.DependsOn || null,
+        dictionary_id: q.DictionaryID || null,
+        is_booking: q.IsBooking || false
       }))
-    
-    console.log('[EditForm] Mapped formData:', formData)
   } catch (err) {
-    console.error('[EditForm] Load error:', err)
     error.value = 'Ошибка сети. Попробуйте позже.'
   } finally {
     loading.value = false
@@ -278,7 +322,9 @@ const addQuestion = () => {
     required: false,
     options: [],
     rating_max: 5,
-    depends_on: null
+    depends_on: null,
+    dictionary_id: null,
+    is_booking: false
   })
 }
 
@@ -322,6 +368,10 @@ const submitForm = async () => {
       result.value = { error: `Вопрос "${q.title}" должен иметь хотя бы один вариант ответа` }
       return
     }
+    if (q.type === 'dictionary' && !q.dictionary_id) {
+      result.value = { error: `Вопрос "${q.title}" должен иметь выбранный справочник` }
+      return
+    }
   }
 
   submitting.value = true
@@ -343,11 +393,11 @@ const submitForm = async () => {
         Options: q.options,
         RatingMax: q.rating_max,
         DependsOn: q.depends_on || null,
+        DictionaryID: q.type === 'dictionary' ? q.dictionary_id : null,
+        IsBooking: q.type === 'dictionary' ? q.is_booking : false,
         OrderIndex: idx
       }))
     }
-
-    console.log('[EditForm] Submitting payload:', payload)
 
     const response = await fetch(`/api/forms/${formId}`, {
       method: 'PUT',
@@ -376,7 +426,6 @@ const submitForm = async () => {
     result.value = { success: true, message: 'Форма успешно обновлена' }
     setTimeout(() => router.push(`/form/${formId}`), 1000)
   } catch (err) {
-    console.error('[EditForm] Submit error:', err)
     if (import.meta.env.DEV) {
       result.value = {
         warning: 'Network error',
@@ -628,11 +677,6 @@ select:focus {
   animation: fadeUp 0.3s ease both;
 }
 
-@keyframes fadeUp {
-  from { opacity: 0; transform: translateY(8px); }
-  to { opacity: 1; transform: translateY(0); }
-}
-
 .question-header {
   display: flex;
   justify-content: space-between;
@@ -671,16 +715,18 @@ select:focus {
   height: 18px;
 }
 
-.options-section {
+.options-section,
+.dictionary-section {
   margin-bottom: 1.25rem;
+  padding: 1rem;
+  background: var(--surface);
+  border-radius: var(--radius-sm);
+  border: 1px dashed var(--border);
 }
 
-.options-section > label {
-  display: block;
-  font-size: 0.88rem;
-  font-weight: 600;
-  color: var(--text);
-  margin-bottom: 0.5rem;
+.dictionary-section {
+  border-color: var(--primary-soft);
+  background: color-mix(in srgb, var(--primary-soft) 40%, var(--surface));
 }
 
 .options-list {
@@ -790,6 +836,11 @@ select:focus {
 .btn-primary:disabled {
   opacity: 0.7;
   cursor: not-allowed;
+}
+
+@keyframes fadeUp {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
 }
 
 @media (max-width: 720px) {

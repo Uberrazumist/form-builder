@@ -3,12 +3,10 @@ package handlers
 import (
     "encoding/json"
     "net/http"
-
     "github.com/gin-gonic/gin"
     "github.com/google/uuid"
     "gorm.io/datatypes"
     "gorm.io/gorm"
-
     "github.com/Uberrazumist/form-builder/backend/internal/models"
 )
 
@@ -21,8 +19,6 @@ type CreateQuestionInput struct {
     Options       []string `json:"options"`
     DependsOn     *string  `json:"depends_on"`
     DependsValues []string `json:"depends_values"`
-    DictionaryID  *string  `json:"dictionary_id"`
-    IsBooking     bool     `json:"is_booking"`
 }
 
 type CreateFormInput struct {
@@ -46,6 +42,7 @@ func CreateForm(db *gorm.DB) gin.HandlerFunc {
             return
         }
 
+        // Пустой JSON для Settings
         emptyJSON := datatypes.JSON([]byte("{}"))
         form := models.Form{
             Title:       input.Title,
@@ -60,6 +57,7 @@ func CreateForm(db *gorm.DB) gin.HandlerFunc {
         }
 
         for _, q := range input.Questions {
+            // Сериализуем Options и DependsValues в JSON
             optsJSON, _ := json.Marshal(q.Options)
             depValsJSON, _ := json.Marshal(q.DependsValues)
 
@@ -72,15 +70,10 @@ func CreateForm(db *gorm.DB) gin.HandlerFunc {
                 IsRequired:    q.IsRequired,
                 Options:       datatypes.JSON(optsJSON),
                 DependsValues: datatypes.JSON(depValsJSON),
-                IsBooking:     q.IsBooking,
             }
             if q.DependsOn != nil {
                 dependsUUID := uuid.MustParse(*q.DependsOn)
                 question.DependsOn = &dependsUUID
-            }
-            if q.DictionaryID != nil {
-                dictUUID := uuid.MustParse(*q.DictionaryID)
-                question.DictionaryID = &dictUUID
             }
             if err := db.Create(&question).Error; err != nil {
                 c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create question"})
@@ -151,85 +144,25 @@ func SubmitResponse(db *gorm.DB) gin.HandlerFunc {
         }
 
         var form models.Form
-        if err := db.Preload("Questions").First(&form, "id = ?", input.FormID).Error; err != nil {
+        if err := db.First(&form, "id = ?", input.FormID).Error; err != nil {
             c.JSON(http.StatusNotFound, gin.H{"error": "Form not found"})
             return
         }
 
-        // Проверка занятости для is_booking
-        for _, q := range form.Questions {
-            if q.IsBooking && q.DictionaryID != nil {
-                val, exists := input.Answers[q.ID.String()]
-                if !exists {
-                    if q.IsRequired {
-                        c.JSON(http.StatusBadRequest, gin.H{"error": "Required booking question not answered"})
-                        return
-                    }
-                    continue
-                }
-                itemIDStr, ok := val.(string)
-                if !ok {
-                    c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid booking value format"})
-                    return
-                }
-                itemID, err := uuid.Parse(itemIDStr)
-                if err != nil {
-                    c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid booking value"})
-                    return
-                }
-                var count int64
-                if err := db.Model(&models.Booking{}).Where("dictionary_item_id = ? AND form_id = ?", itemID, form.ID).Count(&count).Error; err != nil {
-                    c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to check booking"})
-                    return
-                }
-                if count > 0 {
-                    c.JSON(http.StatusConflict, gin.H{"error": "Selected item is already booked"})
-                    return
-                }
-            }
-        }
-
-        // Сохраняем ответ
         answersJSON, _ := json.Marshal(input.Answers)
         resp := models.Response{
             FormID:  uuid.MustParse(input.FormID),
             Answers: datatypes.JSON(answersJSON),
         }
+
         if userID, exists := c.Get("userID"); exists {
             uid := uuid.MustParse(userID.(string))
             resp.UserID = &uid
         }
+
         if err := db.Create(&resp).Error; err != nil {
             c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to save response"})
             return
-        }
-
-        // Создаём Booking для is_booking вопросов
-        for _, q := range form.Questions {
-            if q.IsBooking && q.DictionaryID != nil {
-                val, exists := input.Answers[q.ID.String()]
-                if !exists {
-                    continue
-                }
-                itemIDStr, ok := val.(string)
-                if !ok {
-                    continue
-                }
-                itemID, err := uuid.Parse(itemIDStr)
-                if err != nil {
-                    continue
-                }
-                userID := resp.UserID
-                if userID == nil {
-                    continue
-                }
-                booking := models.Booking{
-                    DictionaryItemID: itemID,
-                    FormID:           resp.FormID,
-                    UserID:           *userID,
-                }
-                db.Create(&booking)
-            }
         }
 
         c.JSON(http.StatusCreated, gin.H{"message": "Response saved successfully"})
@@ -275,8 +208,6 @@ type UpdateQuestionInput struct {
     Options       []string   `json:"options"`
     DependsOn     *string    `json:"depends_on"`
     DependsValues []string   `json:"depends_values"`
-    DictionaryID  *string    `json:"dictionary_id"`
-    IsBooking     bool       `json:"is_booking"`
 }
 
 type UpdateFormInput struct {
@@ -329,7 +260,6 @@ func UpdateForm(db *gorm.DB) gin.HandlerFunc {
             }
         }
 
-        // Удаляем отсутствующие
         for _, q := range existingQuestions {
             if !incomingIDs[q.ID] {
                 db.Delete(&q)
@@ -337,14 +267,10 @@ func UpdateForm(db *gorm.DB) gin.HandlerFunc {
         }
 
         for _, qInput := range input.Questions {
-            optsJSON, _ := json.Marshal(qInput.Options)
-            depValsJSON, _ := json.Marshal(qInput.DependsValues)
-
+            var question models.Question
             if qInput.ID != nil {
-                // Обновляем существующий
-                var question models.Question
                 if err := db.First(&question, "id = ? AND form_id = ?", qInput.ID, form.ID).Error; err != nil {
-                    c.JSON(http.StatusBadRequest, gin.H{"error": "Question not found"})
+                    c.JSON(http.StatusBadRequest, gin.H{"error": "Question with ID " + qInput.ID.String() + " not found"})
                     return
                 }
                 question.Type = qInput.Type
@@ -352,24 +278,20 @@ func UpdateForm(db *gorm.DB) gin.HandlerFunc {
                 question.Description = qInput.Description
                 question.OrderIndex = qInput.OrderIndex
                 question.IsRequired = qInput.IsRequired
+                optsJSON, _ := json.Marshal(qInput.Options)
+                depValsJSON, _ := json.Marshal(qInput.DependsValues)
                 question.Options = datatypes.JSON(optsJSON)
                 question.DependsValues = datatypes.JSON(depValsJSON)
-                question.IsBooking = qInput.IsBooking
                 if qInput.DependsOn != nil {
                     dependsUUID := uuid.MustParse(*qInput.DependsOn)
                     question.DependsOn = &dependsUUID
                 } else {
                     question.DependsOn = nil
                 }
-                if qInput.DictionaryID != nil {
-                    dictUUID := uuid.MustParse(*qInput.DictionaryID)
-                    question.DictionaryID = &dictUUID
-                } else {
-                    question.DictionaryID = nil
-                }
                 db.Save(&question)
             } else {
-                // Создаём новый
+                optsJSON, _ := json.Marshal(qInput.Options)
+                depValsJSON, _ := json.Marshal(qInput.DependsValues)
                 newQ := models.Question{
                     FormID:        form.ID,
                     Type:          qInput.Type,
@@ -379,15 +301,10 @@ func UpdateForm(db *gorm.DB) gin.HandlerFunc {
                     IsRequired:    qInput.IsRequired,
                     Options:       datatypes.JSON(optsJSON),
                     DependsValues: datatypes.JSON(depValsJSON),
-                    IsBooking:     qInput.IsBooking,
                 }
                 if qInput.DependsOn != nil {
                     dependsUUID := uuid.MustParse(*qInput.DependsOn)
                     newQ.DependsOn = &dependsUUID
-                }
-                if qInput.DictionaryID != nil {
-                    dictUUID := uuid.MustParse(*qInput.DictionaryID)
-                    newQ.DictionaryID = &dictUUID
                 }
                 db.Create(&newQ)
             }

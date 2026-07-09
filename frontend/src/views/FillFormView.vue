@@ -17,121 +17,177 @@
 
     <div v-else-if="form" class="form-container">
       <div class="form-header">
-        <h1 class="form-title">{{ form.title }}</h1>
-        <p v-if="form.description" class="form-description">{{ form.description }}</p>
+        <h1 class="form-title">{{ form.Title }}</h1>
+        <p v-if="form.Description" class="form-description">{{ form.Description }}</p>
       </div>
 
       <form @submit.prevent="submitResponses" class="form-body" novalidate>
         <div
-          v-for="(question, index) in form.questions"
-          :key="question.id"
+          v-for="(question, index) in form.Questions"
+          :key="question.ID"
           class="question-block"
         >
           <label class="question-label">
             <span class="question-number">{{ index + 1 }}.</span>
-            {{ question.title }}
-            <span v-if="question.required" class="required">*</span>
+            {{ question.Title }}
+            <span v-if="question.Required" class="required">*</span>
           </label>
 
           <!-- Text -->
           <input
-            v-if="question.type === 'text'"
+            v-if="question.Type === 'text'"
             type="text"
-            v-model="answers[question.id]"
-            :required="question.required"
+            v-model="answers[question.ID]"
+            :required="question.Required"
             placeholder="Введите ответ"
             class="form-input"
           />
 
           <!-- Textarea -->
           <textarea
-            v-else-if="question.type === 'textarea'"
-            v-model="answers[question.id]"
-            :required="question.required"
+            v-else-if="question.Type === 'textarea'"
+            v-model="answers[question.ID]"
+            :required="question.Required"
             placeholder="Введите ответ"
             rows="4"
             class="form-textarea"
           ></textarea>
 
           <!-- Radio -->
-          <div v-else-if="question.type === 'radio'" class="options-group">
+          <div v-else-if="question.Type === 'radio'" class="options-group">
             <label
-              v-for="(option, optIdx) in question.options"
+              v-for="(option, optIdx) in question.Options"
               :key="optIdx"
               class="option-label"
+              :class="{ disabled: isOptionBusy(question, option) }"
             >
               <input
                 type="radio"
-                :name="'q_' + question.id"
-                :value="option"
-                v-model="answers[question.id]"
-                :required="question.required"
+                :name="'q_' + question.ID"
+                :value="option.Value !== undefined ? option.Value : option"
+                v-model="answers[question.ID]"
+                :required="question.Required"
+                :disabled="isOptionBusy(question, option)"
+                @change="onAnswerChange(question)"
               />
-              <span>{{ option }}</span>
+              <span class="option-text">
+                {{ option.Value !== undefined ? option.Label || option.Value : option }}
+                <span v-if="isOptionBusy(question, option)" class="busy-badge">Занято</span>
+                <span v-else-if="isCheckingBusy(question, option)" class="checking-badge">Проверка...</span>
+              </span>
             </label>
+            <div v-if="question.IsBooking && !dictionaryItems[question.ID]" class="loading-hint">
+              <div class="spinner-small"></div>
+              <span>Загрузка вариантов...</span>
+            </div>
           </div>
 
           <!-- Checkbox -->
-          <div v-else-if="question.type === 'checkbox'" class="options-group">
+          <div v-else-if="question.Type === 'checkbox'" class="options-group">
             <label
-              v-for="(option, optIdx) in question.options"
+              v-for="(option, optIdx) in question.Options"
               :key="optIdx"
               class="option-label"
+              :class="{ disabled: isOptionBusy(question, option) }"
             >
               <input
                 type="checkbox"
-                :value="option"
-                v-model="answers[question.id]"
+                :value="option.Value !== undefined ? option.Value : option"
+                v-model="answers[question.ID]"
+                :disabled="isOptionBusy(question, option) && !answers[question.ID]?.includes(option.Value !== undefined ? option.Value : option)"
+                @change="onAnswerChange(question)"
               />
-              <span>{{ option }}</span>
+              <span class="option-text">
+                {{ option.Value !== undefined ? option.Label || option.Value : option }}
+                <span v-if="isOptionBusy(question, option)" class="busy-badge">Занято</span>
+              </span>
             </label>
           </div>
 
           <!-- Select -->
           <select
-            v-else-if="question.type === 'select'"
-            v-model="answers[question.id]"
-            :required="question.required"
+            v-else-if="question.Type === 'select'"
+            v-model="answers[question.ID]"
+            :required="question.Required"
             class="form-select"
+            @change="onAnswerChange(question)"
           >
             <option value="" disabled>Выберите вариант</option>
-            <option
-              v-for="(option, optIdx) in question.options"
-              :key="optIdx"
-              :value="option"
-            >
-              {{ option }}
-            </option>
+            <template v-if="question.Type === 'select' && isDictionaryQuestion(question) && dictionaryItems[question.ID]">
+              <option
+                v-for="item in dictionaryItems[question.ID]"
+                :key="item.ID"
+                :value="item.Value || item.ID"
+                :disabled="question.IsBooking && bookingStatus[question.ID]?.[item.ID] === 'busy'"
+              >
+                {{ item.Label || item.Value }}
+                <template v-if="question.IsBooking && bookingStatus[question.ID]?.[item.ID] === 'busy'"> (занято)</template>
+              </option>
+            </template>
+            <template v-else>
+              <option
+                v-for="(option, optIdx) in question.Options"
+                :key="optIdx"
+                :value="option"
+              >
+                {{ option }}
+              </option>
+            </template>
           </select>
 
+          <!-- Dictionary (отображается как radio/select с динамической загрузкой) -->
+          <div v-else-if="question.Type === 'dictionary'" class="dictionary-options">
+            <div v-if="!dictionaryItems[question.ID]" class="loading-hint">
+              <div class="spinner-small"></div>
+              <span>Загрузка вариантов из справочника...</span>
+            </div>
+            <div v-else-if="dictionaryItems[question.ID].length === 0" class="empty-hint">
+              <Icon name="alert" />
+              <span>Нет доступных вариантов. {{ question.DependsOn ? 'Сначала выберите значение в предыдущем вопросе.' : '' }}</span>
+            </div>
+            <div v-else class="options-group">
+              <label
+                v-for="item in dictionaryItems[question.ID]"
+                :key="item.ID"
+                class="option-label"
+                :class="{ disabled: question.IsBooking && bookingStatus[question.ID]?.[item.ID] === 'busy' }"
+              >
+                <input
+                  type="radio"
+                  :name="'q_' + question.ID"
+                  :value="item.Value || item.ID"
+                  v-model="answers[question.ID]"
+                  :required="question.Required"
+                  :disabled="question.IsBooking && bookingStatus[question.ID]?.[item.ID] === 'busy'"
+                  @change="onAnswerChange(question)"
+                />
+                <span class="option-text">
+                  {{ item.Label || item.Value }}
+                  <span v-if="question.IsBooking && bookingStatus[question.ID]?.[item.ID] === 'busy'" class="busy-badge">Занято</span>
+                  <span v-else-if="question.IsBooking && checkingItems[question.ID + '_' + item.ID]" class="checking-badge">Проверка...</span>
+                </span>
+              </label>
+            </div>
+          </div>
+
           <!-- Rating -->
-          <div v-else-if="question.type === 'rating'" class="rating-group">
+          <div v-else-if="question.Type === 'rating'" class="rating-group">
             <div class="stars">
               <button
-                v-for="star in question.rating_max || 5"
+                v-for="star in question.RatingMax || 5"
                 :key="star"
                 type="button"
-                @click="answers[question.id] = star"
+                @click="answers[question.ID] = star"
                 class="star-btn"
-                :class="{ active: answers[question.id] >= star }"
+                :class="{ active: answers[question.ID] >= star }"
               >
                 ★
               </button>
             </div>
-            <span v-if="answers[question.id]" class="rating-value">
-              {{ answers[question.id] }} из {{ question.rating_max || 5 }}
+            <span v-if="answers[question.ID]" class="rating-value">
+              {{ answers[question.ID] }} из {{ question.RatingMax || 5 }}
             </span>
           </div>
-
-          <!-- Class/Teacher/Time choice (пока как текст) -->
-          <input
-            v-else-if="['class_choice', 'teacher_choice', 'time_choice'].includes(question.type)"
-            type="text"
-            v-model="answers[question.id]"
-            :required="question.required"
-            :placeholder="getPlaceholder(question.type)"
-            class="form-input"
-          />
         </div>
 
         <div class="form-actions">
@@ -148,7 +204,7 @@
 </template>
 
 <script setup>
-import { ref, reactive, onMounted } from 'vue'
+import { ref, reactive, onMounted, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import Icon from '../components/Icon.vue'
 import FormResult from '../components/FormResult.vue'
@@ -158,6 +214,9 @@ const router = useRouter()
 
 const form = ref(null)
 const answers = reactive({})
+const dictionaryItems = reactive({})
+const bookingStatus = reactive({}) // { questionId: { itemId: 'free'|'busy' } }
+const checkingItems = reactive({}) // { "questionId_itemId": true }
 const loading = ref(true)
 const error = ref(null)
 const result = ref(null)
@@ -166,6 +225,8 @@ const submitting = ref(false)
 onMounted(async () => {
   await loadForm()
 })
+
+const isDictionaryQuestion = (q) => q.Type === 'dictionary'
 
 const loadForm = async () => {
   loading.value = true
@@ -176,20 +237,14 @@ const loadForm = async () => {
     const token = localStorage.getItem('token')
     
     const headers = {}
-    if (token) {
-      headers['Authorization'] = `Bearer ${token}`
-    }
+    if (token) headers['Authorization'] = `Bearer ${token}`
     
     const response = await fetch(`/api/forms/${formId}`, { headers })
     
     if (!response.ok) {
-      if (response.status === 404) {
-        error.value = 'Форма не найдена'
-      } else if (response.status === 403) {
-        error.value = 'У вас нет доступа к этой форме'
-      } else {
-        error.value = 'Не удалось загрузить форму'
-      }
+      if (response.status === 404) error.value = 'Форма не найдена'
+      else if (response.status === 403) error.value = 'У вас нет доступа к этой форме'
+      else error.value = 'Не удалось загрузить форму'
       return
     }
     
@@ -197,13 +252,20 @@ const loadForm = async () => {
     form.value = data
     
     // Инициализация ответов
-    form.value.questions.forEach(q => {
-      if (q.type === 'checkbox') {
-        answers[q.id] = []
+    form.value.Questions.forEach(q => {
+      if (q.Type === 'checkbox') {
+        answers[q.ID] = []
       } else {
-        answers[q.id] = ''
+        answers[q.ID] = ''
       }
     })
+    
+    // Загрузка элементов справочников для всех dictionary-вопросов
+    for (const q of form.value.Questions) {
+      if (q.Type === 'dictionary' && q.DictionaryID) {
+        await loadDictionaryItems(q)
+      }
+    }
   } catch (err) {
     error.value = 'Ошибка сети. Попробуйте позже.'
   } finally {
@@ -211,22 +273,104 @@ const loadForm = async () => {
   }
 }
 
-const getPlaceholder = (type) => {
-  const placeholders = {
-    class_choice: 'Например: 9А',
-    teacher_choice: 'Введите имя учителя',
-    time_choice: 'Например: 14:30'
+const loadDictionaryItems = async (question) => {
+  try {
+    // Определяем значение родительского вопроса, если есть зависимость
+    let parentValue = null
+    if (question.DependsOn) {
+      parentValue = answers[question.DependsOn]
+      if (!parentValue) {
+        dictionaryItems[question.ID] = []
+        return
+      }
+    }
+    
+    const url = new URL(`/api/dictionaries/${question.DictionaryID}/items`, window.location.origin)
+    if (parentValue) {
+      url.searchParams.append('parent', parentValue)
+    }
+    
+    const response = await fetch(url.toString())
+    if (response.ok) {
+      const data = await response.json()
+      dictionaryItems[question.ID] = data.items || data || []
+      
+      // Если включена проверка занятости — проверяем все элементы
+      if (question.IsBooking) {
+        for (const item of dictionaryItems[question.ID]) {
+          await checkBooking(question, item)
+        }
+      }
+    }
+  } catch (err) {
+    console.error('[FillForm] Failed to load dictionary items:', err)
+    dictionaryItems[question.ID] = []
   }
-  return placeholders[type] || 'Введите значение'
+}
+
+const checkBooking = async (question, item) => {
+  const key = question.ID + '_' + item.ID
+  checkingItems[key] = true
+  
+  try {
+    const url = `/api/bookings/check?item_id=${item.ID}&form_id=${route.params.id}`
+    const response = await fetch(url)
+    
+    if (!bookingStatus[question.ID]) {
+      bookingStatus[question.ID] = {}
+    }
+    
+    if (response.ok) {
+      const data = await response.json()
+      bookingStatus[question.ID][item.ID] = data.is_busy ? 'busy' : 'free'
+    } else {
+      bookingStatus[question.ID][item.ID] = 'free'
+    }
+  } catch (err) {
+    if (!bookingStatus[question.ID]) bookingStatus[question.ID] = {}
+    bookingStatus[question.ID][item.ID] = 'free'
+  } finally {
+    checkingItems[key] = false
+  }
+}
+
+const isOptionBusy = (question, option) => {
+  if (!question.IsBooking) return false
+  const itemId = option.Value !== undefined ? option.Value : option
+  return bookingStatus[question.ID]?.[itemId] === 'busy'
+}
+
+const isCheckingBusy = (question, option) => {
+  const itemId = option.Value !== undefined ? option.Value : option
+  return checkingItems[question.ID + '_' + itemId]
+}
+
+// Watch за изменениями ответов для обновления зависимых вопросов
+watch(
+  () => JSON.stringify(answers),
+  async () => {
+    if (!form.value) return
+    
+    // Находим вопросы, которые зависят от изменённого
+    for (const q of form.value.Questions) {
+      if (q.DependsOn && q.Type === 'dictionary') {
+        await loadDictionaryItems(q)
+      }
+    }
+  },
+  { deep: true }
+)
+
+const onAnswerChange = async (question) => {
+  // Обновление зависимых вопросов уже обрабатывается через watch
 }
 
 const submitResponses = async () => {
-  // Валидация обязательных полей
-  for (const q of form.value.questions) {
-    if (q.required) {
-      const answer = answers[q.id]
+  for (const q of form.value.Questions) {
+    if (q.Required) {
+      const answer = answers[q.ID]
       if (!answer || (Array.isArray(answer) && answer.length === 0)) {
-        result.value = { error: `Пожалуйста, ответьте на вопрос: "${q.title}"` }
+        result.value = { error: `Пожалуйста, ответьте на вопрос: "${q.Title}"` }
         return
       }
     }
@@ -240,9 +384,7 @@ const submitResponses = async () => {
     const token = localStorage.getItem('token')
     
     const headers = { 'Content-Type': 'application/json' }
-    if (token) {
-      headers['Authorization'] = `Bearer ${token}`
-    }
+    if (token) headers['Authorization'] = `Bearer ${token}`
 
     const response = await fetch('/api/responses', {
       method: 'POST',
@@ -259,15 +401,13 @@ const submitResponses = async () => {
       return
     }
 
-    const data = await response.json()
     result.value = { success: true, message: 'Спасибо! Ваши ответы успешно отправлены.' }
     
-    // Очистка формы
-    form.value.questions.forEach(q => {
-      if (q.type === 'checkbox') {
-        answers[q.id] = []
+    form.value.Questions.forEach(q => {
+      if (q.Type === 'checkbox') {
+        answers[q.ID] = []
       } else {
-        answers[q.id] = ''
+        answers[q.ID] = ''
       }
     })
   } catch (err) {
@@ -307,6 +447,15 @@ const submitResponses = async () => {
   border-radius: 50%;
   animation: spin 0.7s linear infinite;
   margin: 0 auto 1rem;
+}
+
+.spinner-small {
+  width: 16px;
+  height: 16px;
+  border: 2px solid var(--border);
+  border-top-color: var(--primary);
+  border-radius: 50%;
+  animation: spin 0.7s linear infinite;
 }
 
 @keyframes spin {
@@ -468,9 +617,15 @@ const submitResponses = async () => {
   transition: all 0.2s;
 }
 
-.option-label:hover {
+.option-label:hover:not(.disabled) {
   border-color: var(--primary);
   background: var(--surface);
+}
+
+.option-label.disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+  background: #f8f8f8;
 }
 
 .option-label input[type="radio"],
@@ -479,6 +634,64 @@ const submitResponses = async () => {
   height: 18px;
   cursor: pointer;
   accent-color: var(--primary);
+}
+
+.option-label.disabled input {
+  cursor: not-allowed;
+}
+
+.option-text {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex: 1;
+}
+
+.busy-badge {
+  font-size: 0.72rem;
+  font-weight: 600;
+  padding: 0.15rem 0.5rem;
+  background: #fdecec;
+  color: #c53030;
+  border-radius: 4px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.checking-badge {
+  font-size: 0.72rem;
+  font-weight: 600;
+  padding: 0.15rem 0.5rem;
+  background: var(--primary-soft);
+  color: var(--primary);
+  border-radius: 4px;
+}
+
+.loading-hint,
+.empty-hint {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.85rem 1rem;
+  background: var(--primary-soft);
+  border-radius: var(--radius-sm);
+  color: var(--primary);
+  font-size: 0.9rem;
+}
+
+.empty-hint {
+  background: #fff8e1;
+  color: #8a6d00;
+}
+
+.empty-hint svg {
+  width: 18px;
+  height: 18px;
+  flex-shrink: 0;
+}
+
+.dictionary-options {
+  margin-top: 0.5rem;
 }
 
 .rating-group {
