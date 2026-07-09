@@ -96,7 +96,6 @@
             />
           </div>
 
-          <!-- Варианты ответов для radio/checkbox/select -->
           <div
             v-if="['radio', 'checkbox', 'select'].includes(question.type)"
             class="options-section"
@@ -132,7 +131,6 @@
             </button>
           </div>
 
-          <!-- Настройки для справочника (ИСПРАВЛЕНО) -->
           <div v-if="question.type === 'dictionary'" class="dictionary-section">
             <div class="form-group">
               <label>
@@ -170,23 +168,6 @@
             <select v-model="question.rating_max">
               <option :value="5">5 звёзд</option>
               <option :value="10">10 звёзд</option>
-            </select>
-          </div>
-
-          <div v-if="index > 0" class="form-group">
-            <label>
-              <Icon name="link" />
-              Зависит от вопроса
-            </label>
-            <select v-model="question.depends_on">
-              <option :value="null">Нет зависимости</option>
-              <option
-                v-for="prevQ in getPreviousQuestions(index)"
-                :key="prevQ.id"
-                :value="prevQ.id"
-              >
-                Вопрос {{ prevQ.index + 1 }}: {{ prevQ.title || '(без текста)' }}
-              </option>
             </select>
           </div>
 
@@ -261,7 +242,6 @@ const addQuestion = () => {
     required: false,
     options: [],
     rating_max: 5,
-    depends_on: null,
     dictionary_id: null,
     is_booking: false
   })
@@ -277,14 +257,6 @@ const addOption = (question) => {
 
 const removeOption = (question, optIndex) => {
   question.options.splice(optIndex, 1)
-}
-
-const getPreviousQuestions = (currentIndex) => {
-  return formData.questions.slice(0, currentIndex).map((q, idx) => ({
-    id: q.id,
-    index: idx,
-    title: q.title
-  }))
 }
 
 const submitForm = async () => {
@@ -324,10 +296,14 @@ const submitForm = async () => {
       description: formData.description,
       is_public: formData.is_public,
       questions: formData.questions.map(q => ({
-        ...q,
-        depends_on: q.depends_on || null,
+        type: q.type,
+        title: q.title,
+        required: q.required,
+        options: q.options,
+        rating_max: q.rating_max,
         dictionary_id: q.type === 'dictionary' ? q.dictionary_id : null,
-        is_booking: q.type === 'dictionary' ? q.is_booking : false
+        is_booking: q.type === 'dictionary' ? q.is_booking : false,
+        depends_on: null // Зависимости настраиваются только при редактировании
       }))
     }
     

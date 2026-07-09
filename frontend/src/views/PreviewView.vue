@@ -120,11 +120,15 @@
 
           <!-- Dictionary -->
           <div v-else-if="question.Type === 'dictionary'" class="dictionary-options">
-            <div v-if="!dictionaryItems[question.ID]" class="loading-hint">
+            <div v-if="!dictionaryItems[question.ID] && question.DictionaryID" class="loading-hint">
               <div class="spinner-small"></div>
               <span>Загрузка вариантов...</span>
             </div>
-            <div v-else-if="dictionaryItems[question.ID].length === 0" class="empty-hint">
+            <div v-else-if="needsParentAnswer(question)" class="empty-hint">
+              <Icon name="alert" />
+              <span>Сначала выберите значение в предыдущем вопросе</span>
+            </div>
+            <div v-else-if="dictionaryItems[question.ID]?.length === 0" class="empty-hint">
               <Icon name="alert" />
               <span>Нет доступных вариантов</span>
             </div>
@@ -141,7 +145,7 @@
                   v-model="answers[question.ID]"
                   :required="question.Required"
                 />
-                <span>{{ item.Label || item.Value }}</span>
+                <span>{{ item.Name || item.Label || item.Value }}</span>
               </label>
             </div>
           </div>
@@ -246,7 +250,7 @@ const loadForm = async () => {
     })
     
     for (const q of form.value.Questions) {
-      if (q.Type === 'dictionary' && q.DictionaryID) {
+      if (q.Type === 'dictionary' && q.DictionaryID && !q.DependsOn) {
         await loadDictionaryItems(q)
       }
     }
@@ -257,19 +261,64 @@ const loadForm = async () => {
   }
 }
 
+const needsParentAnswer = (question) => {
+  if (!question.DependsOn) return false
+  const parentValue = answers[question.DependsOn]
+  return !parentValue || (Array.isArray(parentValue) && parentValue.length === 0)
+}
+
+const getMetadataKey = (parentQuestion) => {
+  if (!parentQuestion || !parentQuestion.DictionaryID) return null
+  
+  const dictKeyMap = {
+    'учителя': 'teacher_id',
+    'учитель': 'teacher_id',
+    'teachers': 'teacher_id',
+    'teacher': 'teacher_id',
+    'классы': 'class_id',
+    'класс': 'class_id',
+    'classes': 'class_id',
+    'class': 'class_id',
+    'предметы': 'subject_id',
+    'предмет': 'subject_id',
+    'subjects': 'subject_id',
+    'subject': 'subject_id',
+    'кабинеты': 'room_id',
+    'кабинет': 'room_id',
+    'rooms': 'room_id',
+    'room': 'room_id'
+  }
+  
+  return `dict_${parentQuestion.DictionaryID}_id`
+}
+
 const loadDictionaryItems = async (question) => {
   try {
     let parentValue = null
+    let filterMetadata = null
+    
     if (question.DependsOn) {
       parentValue = answers[question.DependsOn]
-      if (!parentValue) {
+      
+      if (!parentValue || (Array.isArray(parentValue) && parentValue.length === 0)) {
         dictionaryItems[question.ID] = []
         return
+      }
+      
+      const parentQuestion = form.value.Questions.find(q => q.ID === question.DependsOn)
+      
+      if (parentQuestion && parentQuestion.DictionaryID) {
+        const metadataKey = getMetadataKey(parentQuestion)
+        if (metadataKey) {
+          filterMetadata = { [metadataKey]: parentValue }
+        }
       }
     }
     
     const url = new URL(`/api/dictionaries/${question.DictionaryID}/items`, window.location.origin)
-    if (parentValue) {
+    if (filterMetadata) {
+      url.searchParams.append('filter_metadata', JSON.stringify(filterMetadata))
+    } else if (parentValue) {
       url.searchParams.append('parent', parentValue)
     }
     
@@ -286,10 +335,20 @@ const loadDictionaryItems = async (question) => {
 
 watch(
   () => JSON.stringify(answers),
-  async () => {
-    if (!form.value) return
+  async (newVal, oldVal) => {
+    if (!form.value || newVal === oldVal) return
+    
     for (const q of form.value.Questions) {
       if (q.DependsOn && q.Type === 'dictionary') {
+        const parentAnswer = answers[q.DependsOn]
+        const oldAnswers = oldVal ? JSON.parse(oldVal) : {}
+        if (oldAnswers[q.DependsOn] !== parentAnswer) {
+          if (q.Type === 'checkbox') {
+            answers[q.ID] = []
+          } else {
+            answers[q.ID] = ''
+          }
+        }
         await loadDictionaryItems(q)
       }
     }

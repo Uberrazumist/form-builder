@@ -146,7 +146,6 @@
               </button>
             </div>
 
-            <!-- Настройки для справочника (ИСПРАВЛЕНО) -->
             <div v-if="question.type === 'dictionary'" class="dictionary-section">
               <div class="form-group">
                 <label>
@@ -294,6 +293,7 @@ const loadForm = async () => {
     }
 
     const data = await response.json()
+    console.log('[EditForm] Loaded form:', data)
 
     formData.title = data.Title || ''
     formData.description = data.Description || ''
@@ -312,6 +312,7 @@ const loadForm = async () => {
         is_booking: q.IsBooking || false
       }))
   } catch (err) {
+    console.error('[EditForm] Load error:', err)
     error.value = 'Ошибка сети. Попробуйте позже.'
   } finally {
     loading.value = false
@@ -402,6 +403,8 @@ const submitForm = async () => {
       }))
     }
 
+    console.log('[EditForm] Submitting:', payload)
+
     const response = await fetch(`/api/forms/${formId}`, {
       method: 'PUT',
       headers: {
@@ -429,6 +432,7 @@ const submitForm = async () => {
     result.value = { success: true, message: 'Форма успешно обновлена' }
     setTimeout(() => router.push(`/form/${formId}`), 1000)
   } catch (err) {
+    console.error('[EditForm] Submit error:', err)
     if (import.meta.env.DEV) {
       result.value = {
         warning: 'Network error',

@@ -12,8 +12,7 @@ import (
     "github.com/Uberrazumist/form-builder/backend/internal/models"
 )
 
-// --- CRUD для справочников ---
-
+// --- Справочники ---
 func ListDictionaries(db *gorm.DB) gin.HandlerFunc {
     return func(c *gin.Context) {
         var dicts []models.Dictionary
@@ -89,7 +88,6 @@ func UpdateDictionary(db *gorm.DB) gin.HandlerFunc {
 func DeleteDictionary(db *gorm.DB) gin.HandlerFunc {
     return func(c *gin.Context) {
         id := c.Param("id")
-        // Удаляем все элементы справочника, затем сам справочник
         if err := db.Where("dictionary_id = ?", id).Delete(&models.DictionaryItem{}).Error; err != nil {
             c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to delete items"})
             return
@@ -103,15 +101,30 @@ func DeleteDictionary(db *gorm.DB) gin.HandlerFunc {
 }
 
 // --- Элементы справочника ---
-
 func ListDictionaryItems(db *gorm.DB) gin.HandlerFunc {
     return func(c *gin.Context) {
         dictID := c.Param("id")
         parentID := c.Query("parent")
+        filterMetadata := c.Query("filter_metadata")
+
         query := db.Where("dictionary_id = ?", dictID)
         if parentID != "" {
             query = query.Where("parent_id = ?", parentID)
         }
+        if filterMetadata != "" {
+            var meta map[string]interface{}
+            if err := json.Unmarshal([]byte(filterMetadata), &meta); err == nil {
+                for k, v := range meta {
+                    // Используем оператор @> для проверки вхождения ключа
+                    valStr, ok := v.(string)
+                    if !ok {
+                        continue
+                    }
+                    query = query.Where("metadata @> ?", datatypes.JSON([]byte(`{"`+k+`":"`+valStr+`"}`)))
+                }
+            }
+        }
+
         var items []models.DictionaryItem
         if err := query.Find(&items).Error; err != nil {
             c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch items"})
@@ -125,15 +138,16 @@ func CreateDictionaryItem(db *gorm.DB) gin.HandlerFunc {
     return func(c *gin.Context) {
         dictID := c.Param("id")
         var input struct {
-            ParentID *string                `json:"parent_id"`
-            Name     string                 `json:"name" binding:"required"`
-            Code     string                 `json:"code"`
-            Metadata map[string]interface{} `json:"metadata"`
+            ParentID *string                 `json:"parent_id"`
+            Name     string                  `json:"name" binding:"required"`
+            Code     string                  `json:"code"`
+            Metadata map[string]interface{}  `json:"metadata"`
         }
         if err := c.ShouldBindJSON(&input); err != nil {
             c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
             return
         }
+
         item := models.DictionaryItem{
             DictionaryID: uuid.MustParse(dictID),
             Name:         input.Name,

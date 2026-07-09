@@ -68,7 +68,6 @@
                 v-model="answers[question.ID]"
                 :required="question.Required"
                 :disabled="isOptionBusy(question, option)"
-                @change="onAnswerChange(question)"
               />
               <span class="option-text">
                 {{ option.Value !== undefined ? option.Label || option.Value : option }}
@@ -76,7 +75,7 @@
                 <span v-else-if="isCheckingBusy(question, option)" class="checking-badge">Проверка...</span>
               </span>
             </label>
-            <div v-if="question.IsBooking && !dictionaryItems[question.ID]" class="loading-hint">
+            <div v-if="question.Type === 'dictionary' && !dictionaryItems[question.ID] && question.DictionaryID" class="loading-hint">
               <div class="spinner-small"></div>
               <span>Загрузка вариантов...</span>
             </div>
@@ -95,7 +94,6 @@
                 :value="option.Value !== undefined ? option.Value : option"
                 v-model="answers[question.ID]"
                 :disabled="isOptionBusy(question, option) && !answers[question.ID]?.includes(option.Value !== undefined ? option.Value : option)"
-                @change="onAnswerChange(question)"
               />
               <span class="option-text">
                 {{ option.Value !== undefined ? option.Label || option.Value : option }}
@@ -110,40 +108,30 @@
             v-model="answers[question.ID]"
             :required="question.Required"
             class="form-select"
-            @change="onAnswerChange(question)"
           >
             <option value="" disabled>Выберите вариант</option>
-            <template v-if="question.Type === 'select' && isDictionaryQuestion(question) && dictionaryItems[question.ID]">
-              <option
-                v-for="item in dictionaryItems[question.ID]"
-                :key="item.ID"
-                :value="item.Value || item.ID"
-                :disabled="question.IsBooking && bookingStatus[question.ID]?.[item.ID] === 'busy'"
-              >
-                {{ item.Label || item.Value }}
-                <template v-if="question.IsBooking && bookingStatus[question.ID]?.[item.ID] === 'busy'"> (занято)</template>
-              </option>
-            </template>
-            <template v-else>
-              <option
-                v-for="(option, optIdx) in question.Options"
-                :key="optIdx"
-                :value="option"
-              >
-                {{ option }}
-              </option>
-            </template>
+            <option
+              v-for="(option, optIdx) in question.Options"
+              :key="optIdx"
+              :value="option"
+            >
+              {{ option }}
+            </option>
           </select>
 
-          <!-- Dictionary (отображается как radio/select с динамической загрузкой) -->
+          <!-- Dictionary -->
           <div v-else-if="question.Type === 'dictionary'" class="dictionary-options">
-            <div v-if="!dictionaryItems[question.ID]" class="loading-hint">
+            <div v-if="!dictionaryItems[question.ID] && question.DictionaryID" class="loading-hint">
               <div class="spinner-small"></div>
               <span>Загрузка вариантов из справочника...</span>
             </div>
-            <div v-else-if="dictionaryItems[question.ID].length === 0" class="empty-hint">
+            <div v-else-if="needsParentAnswer(question)" class="empty-hint">
               <Icon name="alert" />
-              <span>Нет доступных вариантов. {{ question.DependsOn ? 'Сначала выберите значение в предыдущем вопросе.' : '' }}</span>
+              <span>Сначала выберите значение в предыдущем вопросе, чтобы увидеть доступные варианты</span>
+            </div>
+            <div v-else-if="dictionaryItems[question.ID]?.length === 0" class="empty-hint">
+              <Icon name="alert" />
+              <span>Нет доступных вариантов для выбранного значения</span>
             </div>
             <div v-else class="options-group">
               <label
@@ -159,10 +147,9 @@
                   v-model="answers[question.ID]"
                   :required="question.Required"
                   :disabled="question.IsBooking && bookingStatus[question.ID]?.[item.ID] === 'busy'"
-                  @change="onAnswerChange(question)"
                 />
                 <span class="option-text">
-                  {{ item.Label || item.Value }}
+                  {{ item.Name || item.Label || item.Value }}
                   <span v-if="question.IsBooking && bookingStatus[question.ID]?.[item.ID] === 'busy'" class="busy-badge">Занято</span>
                   <span v-else-if="question.IsBooking && checkingItems[question.ID + '_' + item.ID]" class="checking-badge">Проверка...</span>
                 </span>
@@ -215,8 +202,8 @@ const router = useRouter()
 const form = ref(null)
 const answers = reactive({})
 const dictionaryItems = reactive({})
-const bookingStatus = reactive({}) // { questionId: { itemId: 'free'|'busy' } }
-const checkingItems = reactive({}) // { "questionId_itemId": true }
+const bookingStatus = reactive({})
+const checkingItems = reactive({})
 const loading = ref(true)
 const error = ref(null)
 const result = ref(null)
@@ -225,8 +212,6 @@ const submitting = ref(false)
 onMounted(async () => {
   await loadForm()
 })
-
-const isDictionaryQuestion = (q) => q.Type === 'dictionary'
 
 const loadForm = async () => {
   loading.value = true
@@ -251,7 +236,6 @@ const loadForm = async () => {
     const data = await response.json()
     form.value = data
     
-    // Инициализация ответов
     form.value.Questions.forEach(q => {
       if (q.Type === 'checkbox') {
         answers[q.ID] = []
@@ -260,9 +244,9 @@ const loadForm = async () => {
       }
     })
     
-    // Загрузка элементов справочников для всех dictionary-вопросов
+    // Загружаем элементы справочников для вопросов без зависимостей
     for (const q of form.value.Questions) {
-      if (q.Type === 'dictionary' && q.DictionaryID) {
+      if (q.Type === 'dictionary' && q.DictionaryID && !q.DependsOn) {
         await loadDictionaryItems(q)
       }
     }
@@ -273,27 +257,87 @@ const loadForm = async () => {
   }
 }
 
+// Определяет, нужно ли значение из родительского вопроса
+const needsParentAnswer = (question) => {
+  if (!question.DependsOn) return false
+  const parentValue = answers[question.DependsOn]
+  return !parentValue || (Array.isArray(parentValue) && parentValue.length === 0)
+}
+
+// Определяет ключ метаданных на основе названия справочника родителя
+const getMetadataKey = (parentQuestion) => {
+  if (!parentQuestion || !parentQuestion.DictionaryID) return null
+  
+  // Получаем справочник родителя из формы
+  const parentDictId = parentQuestion.DictionaryID
+  
+  // Универсальное правило: берём название справочника и формируем ключ
+  // Например: "Учителя" -> "teacher_id", "Классы" -> "class_id"
+  // Для простоты используем словарь соответствий
+  const dictKeyMap = {
+    'учителя': 'teacher_id',
+    'учитель': 'teacher_id',
+    'teachers': 'teacher_id',
+    'teacher': 'teacher_id',
+    'классы': 'class_id',
+    'класс': 'class_id',
+    'classes': 'class_id',
+    'class': 'class_id',
+    'предметы': 'subject_id',
+    'предмет': 'subject_id',
+    'subjects': 'subject_id',
+    'subject': 'subject_id',
+    'кабинеты': 'room_id',
+    'кабинет': 'room_id',
+    'rooms': 'room_id',
+    'room': 'room_id'
+  }
+  
+  // Ищем справочник в вопросах формы, чтобы получить его название
+  // Для простоты возвращаем ключ на основе ID справочника
+  // В реальном приложении нужно загрузить название справочника
+  return `dict_${parentDictId}_id`
+}
+
 const loadDictionaryItems = async (question) => {
   try {
-    // Определяем значение родительского вопроса, если есть зависимость
     let parentValue = null
+    let filterMetadata = null
+    
     if (question.DependsOn) {
       parentValue = answers[question.DependsOn]
-      if (!parentValue) {
+      
+      if (!parentValue || (Array.isArray(parentValue) && parentValue.length === 0)) {
         dictionaryItems[question.ID] = []
         return
+      }
+      
+      // Находим родительский вопрос
+      const parentQuestion = form.value.Questions.find(q => q.ID === question.DependsOn)
+      
+      if (parentQuestion && parentQuestion.DictionaryID) {
+        const metadataKey = getMetadataKey(parentQuestion)
+        if (metadataKey) {
+          filterMetadata = { [metadataKey]: parentValue }
+        }
       }
     }
     
     const url = new URL(`/api/dictionaries/${question.DictionaryID}/items`, window.location.origin)
-    if (parentValue) {
+    if (filterMetadata) {
+      url.searchParams.append('filter_metadata', JSON.stringify(filterMetadata))
+    } else if (parentValue) {
+      // Fallback: передаём parent, если filter_metadata не определён
       url.searchParams.append('parent', parentValue)
     }
+    
+    console.log('[FillForm] Loading dictionary items:', url.toString())
     
     const response = await fetch(url.toString())
     if (response.ok) {
       const data = await response.json()
       dictionaryItems[question.ID] = data.items || data || []
+      console.log('[FillForm] Loaded items for question', question.ID, ':', dictionaryItems[question.ID])
       
       // Если включена проверка занятости — проверяем все элементы
       if (question.IsBooking) {
@@ -348,22 +392,28 @@ const isCheckingBusy = (question, option) => {
 // Watch за изменениями ответов для обновления зависимых вопросов
 watch(
   () => JSON.stringify(answers),
-  async () => {
-    if (!form.value) return
+  async (newVal, oldVal) => {
+    if (!form.value || newVal === oldVal) return
     
     // Находим вопросы, которые зависят от изменённого
     for (const q of form.value.Questions) {
       if (q.DependsOn && q.Type === 'dictionary') {
+        // Сбрасываем ответ в зависимом вопросе, если изменился родительский
+        const parentAnswer = answers[q.DependsOn]
+        const oldAnswers = oldVal ? JSON.parse(oldVal) : {}
+        if (oldAnswers[q.DependsOn] !== parentAnswer) {
+          if (q.Type === 'checkbox') {
+            answers[q.ID] = []
+          } else {
+            answers[q.ID] = ''
+          }
+        }
         await loadDictionaryItems(q)
       }
     }
   },
   { deep: true }
 )
-
-const onAnswerChange = async (question) => {
-  // Обновление зависимых вопросов уже обрабатывается через watch
-}
 
 const submitResponses = async () => {
   for (const q of form.value.Questions) {

@@ -49,23 +49,38 @@
       </div>
 
       <div v-else class="items-list">
+        <div class="list-header">
+          <div class="col-name">Название</div>
+          <div class="col-value">Значение</div>
+          <div class="col-parent">Родитель</div>
+          <div class="col-actions"></div>
+        </div>
         <div
           v-for="item in items"
           :key="item.ID"
           class="item-card"
         >
-          <div class="item-main">
-            <div class="item-label">{{ item.Label || item.Value }}</div>
-            <div v-if="item.Value && item.Label !== item.Value" class="item-value">
-              Значение: <code>{{ item.Value }}</code>
-            </div>
-            <div v-if="item.ParentID" class="item-parent">
-              Входит в: {{ getParentLabel(item.ParentID) }}
-            </div>
+          <div class="col-name">
+            <div class="item-label">{{ item.Name }}</div>
           </div>
-          <button @click="deleteItem(item.ID)" class="btn-danger-small" title="Удалить элемент">
-            <Icon name="trash" />
-          </button>
+          <div class="col-value">
+            <div v-if="item.Value" class="item-value">
+              <code>{{ item.Value }}</code>
+            </div>
+            <div v-else class="item-value-empty">—</div>
+          </div>
+          <div class="col-parent">
+            <div v-if="item.ParentID" class="item-parent">
+              <Icon name="link" />
+              {{ getParentName(item.ParentID) }}
+            </div>
+            <div v-else class="item-parent-empty">—</div>
+          </div>
+          <div class="col-actions">
+            <button @click="deleteItem(item.ID)" class="btn-danger-small" title="Удалить элемент">
+              <Icon name="trash" />
+            </button>
+          </div>
         </div>
       </div>
 
@@ -80,7 +95,7 @@
               <label>Название <span class="required">*</span></label>
               <input
                 type="text"
-                v-model="newItem.Label"
+                v-model="newItem.Name"
                 required
                 placeholder="Например: 9А, Иванова М.П."
               />
@@ -95,19 +110,35 @@
               />
               <span class="hint">Необязательно. Используется для связей между справочниками</span>
             </div>
-            <div v-if="parentItems.length > 0" class="form-group">
-              <label>Входит в группу</label>
+            <div v-if="items.length > 0" class="form-group">
+              <label>Родительский элемент</label>
               <select v-model="newItem.ParentID">
                 <option :value="null">Нет (самостоятельный элемент)</option>
                 <option
-                  v-for="parent in parentItems"
+                  v-for="parent in items.filter(i => !i.ParentID)"
                   :key="parent.ID"
                   :value="parent.ID"
                 >
-                  {{ parent.Label || parent.Value }}
+                  {{ parent.Name }}
                 </option>
               </select>
-              <span class="hint">Например, учитель может входить в группу «Математика»</span>
+              <span class="hint">
+                Если этот элемент является частью другого (например, учитель относится к классу), 
+                выберите родительский элемент из списка
+              </span>
+            </div>
+            <div class="form-group">
+              <label>Дополнительные свойства</label>
+              <textarea
+                v-model="newItem.Metadata"
+                placeholder='Например: {"teacher_id": "123"}'
+                rows="3"
+              ></textarea>
+              <span class="hint">
+                Дополнительные свойства элемента в формате JSON. Например, для времени можно указать 
+                teacher_id, чтобы привязать время к конкретному учителю. Оставьте пустым, если не нужно.
+              </span>
+              <span v-if="metadataError" class="error-hint">{{ metadataError }}</span>
             </div>
             <div class="modal-actions">
               <button type="button" @click="showCreateModal = false" class="btn-secondary">Отмена</button>
@@ -124,7 +155,7 @@
 </template>
 
 <script setup>
-import { ref, reactive, computed, onMounted } from 'vue'
+import { ref, reactive, onMounted, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import Icon from '../components/Icon.vue'
 import FormResult from '../components/FormResult.vue'
@@ -138,12 +169,24 @@ const error = ref(null)
 const result = ref(null)
 const showCreateModal = ref(false)
 const creating = ref(false)
-const newItem = reactive({ Label: '', Value: '', ParentID: null })
-
-const parentItems = computed(() => items.value.filter(i => !i.ParentID))
+const newItem = reactive({ Name: '', Value: '', ParentID: null, Metadata: '' })
+const metadataError = ref('')
 
 onMounted(async () => {
   await loadData()
+})
+
+watch(() => newItem.Metadata, (value) => {
+  if (!value.trim()) {
+    metadataError.value = ''
+    return
+  }
+  try {
+    JSON.parse(value)
+    metadataError.value = ''
+  } catch (e) {
+    metadataError.value = 'Неверный формат JSON. Пример: {"ключ": "значение"}'
+  }
 })
 
 const loadData = async () => {
@@ -166,8 +209,10 @@ const loadData = async () => {
     if (itemsResponse.ok) {
       const data = await itemsResponse.json()
       items.value = data.items || data || []
+      console.log('[DictionaryItems] Loaded items:', items.value)
     }
   } catch (err) {
+    console.error('[DictionaryItems] Load error:', err)
     error.value = 'Ошибка сети'
   } finally {
     loading.value = false
@@ -175,8 +220,13 @@ const loadData = async () => {
 }
 
 const createItem = async () => {
-  if (!newItem.Label.trim()) {
+  if (!newItem.Name.trim()) {
     result.value = { error: 'Введите название элемента' }
+    return
+  }
+
+  if (newItem.Metadata && metadataError.value) {
+    result.value = { error: 'Исправьте ошибку в дополнительных свойствах' }
     return
   }
 
@@ -188,10 +238,13 @@ const createItem = async () => {
     const token = localStorage.getItem('token')
     
     const payload = {
-      Name: newItem.Label,
+      Name: newItem.Name,
       Value: newItem.Value || undefined,
-      ParentID: newItem.ParentID || undefined
+      ParentID: newItem.ParentID || undefined,
+      Metadata: newItem.Metadata ? JSON.parse(newItem.Metadata) : undefined
     }
+
+    console.log('[DictionaryItems] Creating item:', payload)
 
     const response = await fetch(`/api/dictionaries/${dictId}/items`, {
       method: 'POST',
@@ -210,11 +263,13 @@ const createItem = async () => {
 
     result.value = { success: true, message: 'Элемент добавлен' }
     showCreateModal.value = false
-    newItem.Label = ''
+    newItem.Name = ''
     newItem.Value = ''
     newItem.ParentID = null
+    newItem.Metadata = ''
     await loadData()
   } catch (err) {
+    console.error('[DictionaryItems] Create error:', err)
     result.value = { error: 'Ошибка сети' }
   } finally {
     creating.value = false
@@ -246,16 +301,16 @@ const deleteItem = async (id) => {
   }
 }
 
-const getParentLabel = (parentId) => {
+const getParentName = (parentId) => {
   const parent = items.value.find(i => i.ID === parentId)
-  return parent ? (parent.Label || parent.Value) : '—'
+  return parent ? parent.Name : '—'
 }
 </script>
 
 <style scoped>
 .items-page {
   width: 100%;
-  max-width: 900px;
+  max-width: 1000px;
   margin: 0 auto;
   animation: fadeUp 0.5s ease both;
 }
@@ -463,59 +518,90 @@ const getParentLabel = (parentId) => {
 }
 
 .items-list {
-  display: flex;
-  flex-direction: column;
-  gap: 0.75rem;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+
+.list-header {
+  display: grid;
+  grid-template-columns: 2fr 1.5fr 1.5fr 50px;
+  gap: 1rem;
+  padding: 1rem 1.5rem;
+  background: var(--bg);
+  border-bottom: 1px solid var(--border);
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
 }
 
 .item-card {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
+  display: grid;
+  grid-template-columns: 2fr 1.5fr 1.5fr 50px;
   gap: 1rem;
   padding: 1.25rem 1.5rem;
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
+  border-bottom: 1px solid var(--border);
   transition: all 0.2s;
   animation: fadeUp 0.3s ease both;
 }
 
-.item-card:hover {
-  border-color: var(--primary-soft);
-  box-shadow: var(--shadow-sm);
+.item-card:last-child {
+  border-bottom: none;
 }
 
-.item-main {
-  flex: 1;
-  min-width: 0;
+.item-card:hover {
+  background: var(--bg);
+}
+
+.col-name,
+.col-value,
+.col-parent {
+  display: flex;
+  align-items: center;
+}
+
+.col-actions {
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .item-label {
   font-size: 1rem;
   font-weight: 600;
   color: var(--text);
-  margin-bottom: 0.25rem;
-}
-
-.item-value {
-  font-size: 0.85rem;
-  color: var(--text-muted);
-  margin-bottom: 0.25rem;
 }
 
 .item-value code {
   background: var(--bg);
-  padding: 0.15rem 0.4rem;
+  padding: 0.2rem 0.5rem;
   border-radius: 4px;
-  font-size: 0.82rem;
+  font-size: 0.85rem;
   color: var(--primary);
+  font-family: 'SF Mono', Menlo, monospace;
+}
+
+.item-value-empty,
+.item-parent-empty {
+  color: var(--text-muted);
+  font-size: 0.9rem;
 }
 
 .item-parent {
-  font-size: 0.82rem;
-  color: var(--text-muted);
-  font-style: italic;
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.9rem;
+  color: var(--text);
+}
+
+.item-parent svg {
+  width: 14px;
+  height: 14px;
+  color: var(--primary);
 }
 
 .btn-danger-small {
@@ -628,6 +714,13 @@ select:focus {
 .hint {
   font-size: 0.78rem;
   color: var(--text-muted);
+  line-height: 1.4;
+}
+
+.error-hint {
+  font-size: 0.78rem;
+  color: #c53030;
+  font-weight: 500;
 }
 
 .modal-actions {
@@ -637,13 +730,23 @@ select:focus {
   margin-top: 0.5rem;
 }
 
-@media (max-width: 560px) {
+@media (max-width: 720px) {
   .header-top {
     flex-direction: column;
   }
   .btn-primary {
     width: 100%;
     justify-content: center;
+  }
+  .list-header {
+    display: none;
+  }
+  .item-card {
+    grid-template-columns: 1fr;
+    gap: 0.75rem;
+  }
+  .col-actions {
+    justify-content: flex-end;
   }
 }
 </style>
