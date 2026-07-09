@@ -1,5 +1,4 @@
-
-<!-- src/views/DictionaryItemsView.vue -->
+k<!-- src/views/DictionaryItemsView.vue -->
 <template>
   <div class="items-page">
     <div v-if="loading" class="loading-state">
@@ -53,7 +52,7 @@
         <div class="list-header">
           <div class="col-name">Название</div>
           <div class="col-value">Значение</div>
-          <div class="col-parent">Входит в группу</div>
+          <div class="col-parent">Связан с</div>
           <div class="col-actions"></div>
         </div>
         <div
@@ -73,7 +72,10 @@
           <div class="col-parent">
             <div v-if="item.ParentID" class="item-parent">
               <Icon name="link" />
-              {{ getParentName(item.ParentID) }}
+              <span>
+                <strong>{{ getParentDictionaryName(item.ParentID) }}</strong>
+                <span v-if="getParentItemName(item.ParentID)"> → {{ getParentItemName(item.ParentID) }}</span>
+              </span>
             </div>
             <div v-else class="item-parent-empty">—</div>
           </div>
@@ -101,54 +103,53 @@
                 type="text"
                 v-model="formData.Name"
                 required
-                placeholder="Например: 9А, Иванова М.П."
+                placeholder="Например: 9А, Иванова М.П., 14:00"
               />
               <span class="hint">То, что увидят пользователи в форме</span>
             </div>
+
             <div class="form-group">
               <label>Краткое обозначение</label>
               <input
                 type="text"
                 v-model="formData.Value"
-                placeholder="Например: 9A (латиницей)"
+                placeholder="Например: 9A, ivanova, 14:00"
               />
               <span class="hint">Необязательно. Используется для связей между справочниками</span>
             </div>
-            <div v-if="rootItems.length > 0" class="form-group">
-              <label>Входит в группу</label>
-              <select v-model="formData.ParentID">
-                <option :value="null">Нет (самостоятельный элемент)</option>
+
+            <!-- Универсальная привязка к другому справочнику -->
+            <div class="form-group">
+              <label>Привязать к элементу</label>
+              <select v-model="formData.parentDictionaryId" @change="onParentDictionaryChange">
+                <option :value="null">Нет (корневой элемент)</option>
                 <option
-                  v-for="parent in rootItems"
-                  :key="parent.ID"
-                  :value="parent.ID"
+                  v-for="dict in availableDictionaries"
+                  :key="dict.ID"
+                  :value="dict.ID"
                 >
-                  {{ parent.Name }}
+                  {{ dict.Name }}
                 </option>
               </select>
               <span class="hint">
-                Если этот элемент является частью другого (например, учитель относится к классу), 
-                выберите родительский элемент из списка
+                Если этот элемент связан с элементом другого справочника, выберите его здесь
               </span>
             </div>
 
-            <!-- Привязка к классу для справочника "Учителя" -->
-            <div v-if="isTeachersDictionary && classesList.length > 0" class="form-group">
-              <label>Принадлежит классу</label>
-              <select v-model="formData.class_id">
-                <option :value="null">Не указан</option>
+            <div v-if="formData.parentDictionaryId" class="form-group">
+              <label>Элемент в справочнике «{{ getParentDictionaryName(formData.parentDictionaryId) }}»</label>
+              <select v-model="formData.parentItemId" :disabled="loadingParentItems">
+                <option :value="null">— выберите элемент —</option>
                 <option
-                  v-for="cls in classesList"
-                  :key="cls.ID"
-                  :value="cls.ID"
+                  v-for="parentItem in parentItems"
+                  :key="parentItem.ID"
+                  :value="parentItem.ID"
                 >
-                  {{ cls.Name }}
+                  {{ parentItem.Name }}
                 </option>
               </select>
-              <span class="hint">
-                Если этот учитель ведёт занятия в определённом классе, выберите его здесь. 
-                Тогда при выборе класса в форме будут показаны только подходящие учителя.
-              </span>
+              <span v-if="loadingParentItems" class="hint">Загрузка элементов...</span>
+              <span v-else-if="parentItems.length === 0" class="hint">В этом справочнике нет элементов</span>
             </div>
 
             <!-- Дополнительные настройки (скрыты по умолчанию) -->
@@ -162,12 +163,11 @@
                   <label>Дополнительные свойства (JSON)</label>
                   <textarea
                     v-model="formData.Metadata"
-                    placeholder='Например: {"teacher_id": "123"}'
+                    placeholder='Например: {"duration": 45}'
                     rows="3"
                   ></textarea>
                   <span class="hint">
-                    Обычно оставляйте пустым. Используется для продвинутых сценариев, 
-                    например, привязки времени к учителю.
+                    Обычно оставляйте пустым. Используется для продвинутых сценариев.
                   </span>
                   <span v-if="metadataError" class="error-hint">{{ metadataError }}</span>
                 </div>
@@ -198,8 +198,12 @@ const route = useRoute()
 
 const dictionary = ref(null)
 const items = ref([])
-const classesList = ref([])
+const allDictionaries = ref([])
+const parentItems = ref([])
+const parentDictionaryNames = reactive({})
+const parentItemNames = reactive({})
 const loading = ref(true)
+const loadingParentItems = ref(false)
 const error = ref(null)
 const result = ref(null)
 const showModal = ref(false)
@@ -212,32 +216,18 @@ const metadataError = ref('')
 const formData = reactive({
   Name: '',
   Value: '',
-  ParentID: null,
-  Metadata: '',
-  class_id: null
+  parentDictionaryId: null,
+  parentItemId: null,
+  Metadata: ''
 })
 
-const rootItems = computed(() => 
-  items.value.filter(i => !i.ParentID && i.ID !== editingId.value)
+const availableDictionaries = computed(() => 
+  allDictionaries.value.filter(d => d.ID !== dictionary.value?.ID)
 )
-
-// Определяем, является ли текущий справочник справочником "Учителя"
-const isTeachersDictionary = computed(() => {
-  if (!dictionary.value?.Name) return false
-  const name = dictionary.value.Name.toLowerCase()
-  return (
-    name.includes('учитель') ||
-    name.includes('учителя') ||
-    name.includes('учителей') ||
-    name.includes('teacher')
-  )
-})
 
 onMounted(async () => {
   await loadData()
-  if (isTeachersDictionary.value) {
-    await loadClassesDictionary()
-  }
+  await loadAllDictionaries()
 })
 
 watch(() => formData.Metadata, (value) => {
@@ -273,6 +263,13 @@ const loadData = async () => {
     if (itemsResponse.ok) {
       const data = await itemsResponse.json()
       items.value = data.items || data || []
+      
+      // Загружаем информацию о родительских элементах
+      for (const item of items.value) {
+        if (item.ParentID) {
+          await loadParentInfo(item.ParentID)
+        }
+      }
     }
   } catch (err) {
     console.error('[DictionaryItems] Load error:', err)
@@ -282,43 +279,81 @@ const loadData = async () => {
   }
 }
 
-const loadClassesDictionary = async () => {
+const loadAllDictionaries = async () => {
+  try {
+    const token = localStorage.getItem('token')
+    const response = await fetch('/api/dictionaries', {
+      headers: { 'Authorization': `Bearer ${token}` }
+    })
+    if (response.ok) {
+      const data = await response.json()
+      allDictionaries.value = data.dictionaries || data || []
+    }
+  } catch (err) {
+    console.error('[DictionaryItems] Failed to load dictionaries:', err)
+  }
+}
+
+const loadParentItems = async (dictionaryId) => {
+  if (!dictionaryId) {
+    parentItems.value = []
+    return
+  }
+  
+  loadingParentItems.value = true
+  try {
+    const token = localStorage.getItem('token')
+    const response = await fetch(`/api/dictionaries/${dictionaryId}/items`, {
+      headers: { 'Authorization': `Bearer ${token}` }
+    })
+    if (response.ok) {
+      const data = await response.json()
+      parentItems.value = data.items || data || []
+    }
+  } catch (err) {
+    console.error('[DictionaryItems] Failed to load parent items:', err)
+    parentItems.value = []
+  } finally {
+    loadingParentItems.value = false
+  }
+}
+
+const loadParentInfo = async (parentId) => {
   try {
     const token = localStorage.getItem('token')
     const headers = { 'Authorization': `Bearer ${token}` }
     
-    const dictsResponse = await fetch('/api/dictionaries', { headers })
-    if (!dictsResponse.ok) return
-    
-    const dictsData = await dictsResponse.json()
-    const dicts = dictsData.dictionaries || dictsData || []
-    
-    const classesDict = dicts.find(d => {
-      const name = (d.Name || '').toLowerCase()
-      return name.includes('класс') || name.includes('class')
-    })
-    
-    if (!classesDict) {
-      console.log('[DictionaryItems] Classes dictionary not found')
-      return
-    }
-    
-    const itemsResponse = await fetch(`/api/dictionaries/${classesDict.ID}/items`, { headers })
-    if (itemsResponse.ok) {
-      const data = await itemsResponse.json()
-      classesList.value = data.items || data || []
+    // Ищем элемент во всех справочниках
+    for (const dict of allDictionaries.value) {
+      const response = await fetch(`/api/dictionaries/${dict.ID}/items`, { headers })
+      if (response.ok) {
+        const data = await response.json()
+        const items = data.items || data || []
+        const parentItem = items.find(i => i.ID === parentId)
+        if (parentItem) {
+          parentDictionaryNames[parentId] = dict.Name
+          parentItemNames[parentId] = parentItem.Name
+          return
+        }
+      }
     }
   } catch (err) {
-    console.error('[DictionaryItems] Failed to load classes:', err)
+    console.error('[DictionaryItems] Failed to load parent info:', err)
   }
+}
+
+const onParentDictionaryChange = () => {
+  formData.parentItemId = null
+  loadParentItems(formData.parentDictionaryId)
 }
 
 const resetForm = () => {
   formData.Name = ''
   formData.Value = ''
-  formData.ParentID = null
+  formData.parentDictionaryId = null
+  formData.parentItemId = null
   formData.Metadata = ''
-  formData.class_id = null
+  parentItems.value = []
   metadataError.value = ''
   showAdvanced.value = false
   isEditing.value = false
@@ -330,20 +365,38 @@ const openCreateModal = () => {
   showModal.value = true
 }
 
-const openEditModal = (item) => {
+const openEditModal = async (item) => {
   resetForm()
   isEditing.value = true
   editingId.value = item.ID
   formData.Name = item.Name || ''
   formData.Value = item.Value || ''
-  formData.ParentID = item.ParentID || null
   
+  // Восстанавливаем метаданные
   if (item.Metadata && typeof item.Metadata === 'object') {
-    formData.class_id = item.Metadata.class_id || null
-    const otherKeys = Object.keys(item.Metadata).filter(k => k !== 'class_id')
-    if (otherKeys.length > 0) {
-      formData.Metadata = JSON.stringify(item.Metadata, null, 2)
-      showAdvanced.value = true
+    formData.Metadata = JSON.stringify(item.Metadata, null, 2)
+    showAdvanced.value = Object.keys(item.Metadata).length > 0
+  }
+  
+  // Восстанавливаем родительский элемент
+  if (item.ParentID) {
+    // Находим справочник родителя
+    for (const dict of allDictionaries.value) {
+      const token = localStorage.getItem('token')
+      const response = await fetch(`/api/dictionaries/${dict.ID}/items`, {
+        headers: { 'Authorization': `Bearer ${token}` }
+      })
+      if (response.ok) {
+        const data = await response.json()
+        const items = data.items || data || []
+        const parentItem = items.find(i => i.ID === item.ParentID)
+        if (parentItem) {
+          formData.parentDictionaryId = dict.ID
+          await loadParentItems(dict.ID)
+          formData.parentItemId = item.ParentID
+          break
+        }
+      }
     }
   }
   
@@ -374,13 +427,9 @@ const saveItem = async () => {
     const token = localStorage.getItem('token')
     
     let metadata = null
-    if (formData.class_id) {
-      metadata = { class_id: formData.class_id }
-    }
     if (formData.Metadata?.trim()) {
       try {
-        const parsed = JSON.parse(formData.Metadata)
-        metadata = { ...metadata, ...parsed }
+        metadata = JSON.parse(formData.Metadata)
       } catch (e) {
         // уже проверено в watch
       }
@@ -389,7 +438,7 @@ const saveItem = async () => {
     const payload = {
       Name: formData.Name,
       Value: formData.Value || undefined,
-      ParentID: formData.ParentID || undefined,
+      ParentID: formData.parentItemId || undefined,
       Metadata: metadata || undefined
     }
 
@@ -452,9 +501,12 @@ const deleteItem = async (id) => {
   }
 }
 
-const getParentName = (parentId) => {
-  const parent = items.value.find(i => i.ID === parentId)
-  return parent ? parent.Name : '—'
+const getParentDictionaryName = (parentId) => {
+  return parentDictionaryNames[parentId] || 'Загрузка...'
+}
+
+const getParentItemName = (parentId) => {
+  return parentItemNames[parentId] || ''
 }
 </script>
 
@@ -677,7 +729,7 @@ const getParentName = (parentId) => {
 
 .list-header {
   display: grid;
-  grid-template-columns: 2fr 1.5fr 1.5fr 90px;
+  grid-template-columns: 2fr 1.5fr 2fr 90px;
   gap: 1rem;
   padding: 1rem 1.5rem;
   background: var(--bg);
@@ -691,7 +743,7 @@ const getParentName = (parentId) => {
 
 .item-card {
   display: grid;
-  grid-template-columns: 2fr 1.5fr 1.5fr 90px;
+  grid-template-columns: 2fr 1.5fr 2fr 90px;
   gap: 1rem;
   padding: 1.25rem 1.5rem;
   border-bottom: 1px solid var(--border);
@@ -753,6 +805,12 @@ const getParentName = (parentId) => {
 .item-parent svg {
   width: 14px;
   height: 14px;
+  color: var(--primary);
+  flex-shrink: 0;
+}
+
+.item-parent strong {
+  font-weight: 600;
   color: var(--primary);
 }
 
