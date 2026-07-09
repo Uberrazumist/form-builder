@@ -132,15 +132,15 @@
             </button>
           </div>
 
-          <!-- Настройки для справочника -->
+          <!-- Настройки для справочника (ИСПРАВЛЕНО) -->
           <div v-if="question.type === 'dictionary'" class="dictionary-section">
             <div class="form-group">
               <label>
                 <Icon name="book" />
-                Справочник <span class="required">*</span>
+                Выберите справочник <span class="required">*</span>
               </label>
               <select v-model="question.dictionary_id">
-                <option :value="null" disabled>Выберите справочник</option>
+                <option :value="null" disabled>— выберите справочник —</option>
                 <option
                   v-for="dict in dictionaries"
                   :key="dict.ID"
@@ -149,8 +149,8 @@
                   {{ dict.Name }}
                 </option>
               </select>
-              <span class="hint">
-                Справочники создаются в разделе «Справочники»
+              <span class="hint" v-if="dictionaries.length === 0">
+                Сначала создайте справочник в разделе «Справочники»
               </span>
             </div>
 
@@ -159,7 +159,7 @@
                 <input type="checkbox" v-model="question.is_booking" />
                 <span class="checkbox-text">
                   Проверять занятость
-                  <span class="hint">Блокировать уже выбранные варианты (например, запись на время)</span>
+                  <span class="hint">Включите, если это запись — например, на определённое время. Занятые варианты будут отмечены.</span>
                 </span>
               </label>
             </div>
@@ -596,7 +596,6 @@ select:focus {
 
 .dictionary-section {
   border-color: var(--primary-soft);
-  background: var(--primary-soft);
   background: color-mix(in srgb, var(--primary-soft) 40%, var(--surface));
 }
 

@@ -60,10 +60,10 @@
               Значение: <code>{{ item.Value }}</code>
             </div>
             <div v-if="item.ParentID" class="item-parent">
-              Родитель: {{ getParentLabel(item.ParentID) }}
+              Входит в: {{ getParentLabel(item.ParentID) }}
             </div>
           </div>
-          <button @click="deleteItem(item.ID)" class="btn-danger-small">
+          <button @click="deleteItem(item.ID)" class="btn-danger-small" title="Удалить элемент">
             <Icon name="trash" />
           </button>
         </div>
@@ -77,36 +77,37 @@
           <h3>Новый элемент</h3>
           <form @submit.prevent="createItem" class="modal-form">
             <div class="form-group">
-              <label>Название (отображаемое) <span class="required">*</span></label>
+              <label>Название <span class="required">*</span></label>
               <input
                 type="text"
                 v-model="newItem.Label"
                 required
-                placeholder="Например: 9А, Иванов И.И."
+                placeholder="Например: 9А, Иванова М.П."
               />
+              <span class="hint">То, что увидят пользователи в форме</span>
             </div>
             <div class="form-group">
-              <label>Значение (ID для API)</label>
+              <label>Краткое обозначение</label>
               <input
                 type="text"
                 v-model="newItem.Value"
-                placeholder="Оставьте пустым для автогенерации"
+                placeholder="Например: 9A (латиницей)"
               />
-              <span class="hint">Используется для зависимостей и API</span>
+              <span class="hint">Необязательно. Используется для связей между справочниками</span>
             </div>
-            <div v-if="items.length > 0" class="form-group">
-              <label>Родительский элемент</label>
+            <div v-if="parentItems.length > 0" class="form-group">
+              <label>Входит в группу</label>
               <select v-model="newItem.ParentID">
-                <option :value="null">Нет (корневой элемент)</option>
+                <option :value="null">Нет (самостоятельный элемент)</option>
                 <option
-                  v-for="parent in items.filter(i => !i.ParentID)"
+                  v-for="parent in parentItems"
                   :key="parent.ID"
                   :value="parent.ID"
                 >
                   {{ parent.Label || parent.Value }}
                 </option>
               </select>
-              <span class="hint">Для иерархических справочников</span>
+              <span class="hint">Например, учитель может входить в группу «Математика»</span>
             </div>
             <div class="modal-actions">
               <button type="button" @click="showCreateModal = false" class="btn-secondary">Отмена</button>
@@ -123,7 +124,7 @@
 </template>
 
 <script setup>
-import { ref, reactive, onMounted } from 'vue'
+import { ref, reactive, computed, onMounted } from 'vue'
 import { useRoute } from 'vue-router'
 import Icon from '../components/Icon.vue'
 import FormResult from '../components/FormResult.vue'
@@ -139,6 +140,8 @@ const showCreateModal = ref(false)
 const creating = ref(false)
 const newItem = reactive({ Label: '', Value: '', ParentID: null })
 
+const parentItems = computed(() => items.value.filter(i => !i.ParentID))
+
 onMounted(async () => {
   await loadData()
 })
@@ -152,7 +155,6 @@ const loadData = async () => {
     const token = localStorage.getItem('token')
     const headers = { 'Authorization': `Bearer ${token}` }
 
-    // Загружаем справочник
     const dictResponse = await fetch(`/api/dictionaries/${dictId}`, { headers })
     if (!dictResponse.ok) {
       error.value = dictResponse.status === 404 ? 'Справочник не найден' : 'Ошибка загрузки'
@@ -160,7 +162,6 @@ const loadData = async () => {
     }
     dictionary.value = await dictResponse.json()
 
-    // Загружаем элементы
     const itemsResponse = await fetch(`/api/dictionaries/${dictId}/items`, { headers })
     if (itemsResponse.ok) {
       const data = await itemsResponse.json()
@@ -187,9 +188,9 @@ const createItem = async () => {
     const token = localStorage.getItem('token')
     
     const payload = {
-      label: newItem.Label,
-      value: newItem.Value || undefined,
-      parent_id: newItem.ParentID || undefined
+      Name: newItem.Label,
+      Value: newItem.Value || undefined,
+      ParentID: newItem.ParentID || undefined
     }
 
     const response = await fetch(`/api/dictionaries/${dictId}/items`, {
@@ -203,7 +204,7 @@ const createItem = async () => {
 
     if (!response.ok) {
       const errorData = await response.json()
-      result.value = { error: errorData.error || 'Ошибка создания элемента' }
+      result.value = { error: errorData.error || 'Не удалось добавить элемент' }
       return
     }
 
@@ -234,7 +235,7 @@ const deleteItem = async (id) => {
 
     if (!response.ok) {
       const errorData = await response.json()
-      result.value = { error: errorData.error || 'Ошибка удаления' }
+      result.value = { error: errorData.error || 'Не удалось удалить элемент' }
       return
     }
 

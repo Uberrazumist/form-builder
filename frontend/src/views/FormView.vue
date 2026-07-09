@@ -67,23 +67,90 @@
         </div>
       </div>
 
-      <div class="form-actions">
-        <button @click="copyLink" class="btn-secondary">
-          <Icon name="link" />
-          Скопировать ссылку
-        </button>
-        <router-link :to="`/responses/${form.ID}`" class="btn-secondary">
-          <Icon name="document" />
-          Ответы
-        </router-link>
-        <router-link :to="`/edit/${form.ID}`" class="btn-primary">
-          <Icon name="edit" />
-          Редактировать
-        </router-link>
-        <button @click="showDeleteModal = true" class="btn-danger">
-          <Icon name="trash" />
-          Удалить
-        </button>
+      <!-- Блок ссылок -->
+      <div class="links-card">
+        <h2 class="card-title">Ссылки для работы с формой</h2>
+        <p class="links-hint">Нажмите на кнопку, чтобы скопировать ссылку и поделиться ей</p>
+        
+        <div class="links-grid">
+          <div class="link-item">
+            <div class="link-info">
+              <div class="link-icon fill">
+                <Icon name="edit" />
+              </div>
+              <div>
+                <h3>Ссылка для заполнения</h3>
+                <p>Отправьте её тем, кто должен заполнить форму</p>
+              </div>
+            </div>
+            <button @click="copyLink('fill')" class="btn-copy">
+              <Icon name="link" />
+              Скопировать
+            </button>
+          </div>
+
+          <div class="link-item">
+            <div class="link-info">
+              <div class="link-icon preview">
+                <Icon name="eye" />
+              </div>
+              <div>
+                <h3>Предпросмотр</h3>
+                <p>Посмотрите, как форма выглядит для заполняющего</p>
+              </div>
+            </div>
+            <router-link :to="`/preview/${form.ID}`" class="btn-copy">
+              <Icon name="eye" />
+              Открыть
+            </router-link>
+          </div>
+
+          <div class="link-item">
+            <div class="link-info">
+              <div class="link-icon responses">
+                <Icon name="document" />
+              </div>
+              <div>
+                <h3>Ссылка на ответы</h3>
+                <p>Здесь вы увидите все полученные ответы</p>
+              </div>
+            </div>
+            <button @click="copyLink('responses')" class="btn-copy">
+              <Icon name="link" />
+              Скопировать
+            </button>
+          </div>
+
+          <div class="link-item">
+            <div class="link-info">
+              <div class="link-icon edit">
+                <Icon name="edit" />
+              </div>
+              <div>
+                <h3>Ссылка для редактирования</h3>
+                <p>Для быстрого доступа к редактированию формы</p>
+              </div>
+            </div>
+            <button @click="copyLink('edit')" class="btn-copy">
+              <Icon name="link" />
+              Скопировать
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <div class="form-card">
+        <h2 class="card-title">Действия</h2>
+        <div class="form-actions">
+          <router-link :to="`/edit/${form.ID}`" class="btn-primary">
+            <Icon name="edit" />
+            Редактировать
+          </router-link>
+          <button @click="showDeleteModal = true" class="btn-danger">
+            <Icon name="trash" />
+            Удалить форму
+          </button>
+        </div>
       </div>
 
       <FormResult v-if="result" :result="result" />
@@ -132,8 +199,6 @@ const loadForm = async () => {
 
   try {
     const formId = route.params.id
-    console.log('Form ID:', formId)
-    
     const token = localStorage.getItem('token')
 
     const response = await fetch(`/api/forms/${formId}`, {
@@ -161,12 +226,13 @@ const loadForm = async () => {
 
 const getQuestionTypeName = (type) => {
   const names = {
-    text: 'Текст',
-    textarea: 'Текст (многострочный)',
+    text: 'Текст (одна строка)',
+    textarea: 'Текст (несколько строк)',
     radio: 'Один вариант',
     checkbox: 'Несколько вариантов',
     select: 'Выбор из списка',
     rating: 'Рейтинг',
+    dictionary: 'Выбор из справочника',
     class_choice: 'Выбор класса',
     teacher_choice: 'Выбор учителя',
     time_choice: 'Выбор времени'
@@ -189,15 +255,72 @@ const formatDate = (dateStr) => {
   return `${day}.${month}.${year} ${hours}:${minutes}`
 }
 
-const copyLink = async () => {
-  const link = `${window.location.origin}/fill/${form.value.ID}`
-  try {
-    await navigator.clipboard.writeText(link)
-    result.value = { success: true, message: 'Ссылка скопирована в буфер обмена' }
-    setTimeout(() => { result.value = null }, 3000)
-  } catch (err) {
-    result.value = { error: 'Не удалось скопировать ссылку' }
+const copyToClipboard = async (text) => {
+  // Пробуем современный способ
+  if (navigator.clipboard && window.isSecureContext) {
+    try {
+      await navigator.clipboard.writeText(text)
+      return true
+    } catch (err) {
+      console.warn('Clipboard API failed, trying fallback:', err)
+    }
   }
+  
+  // Fallback для HTTP или старых браузеров
+  try {
+    const textarea = document.createElement('textarea')
+    textarea.value = text
+    textarea.style.position = 'fixed'
+    textarea.style.left = '-9999px'
+    textarea.style.top = '-9999px'
+    textarea.style.opacity = '0'
+    document.body.appendChild(textarea)
+    textarea.focus()
+    textarea.select()
+    const success = document.execCommand('copy')
+    document.body.removeChild(textarea)
+    return success
+  } catch (err) {
+    console.error('Fallback copy failed:', err)
+    return false
+  }
+}
+
+const copyLink = async (type) => {
+  const formId = form.value.ID
+  let path = ''
+  let label = ''
+  
+  switch (type) {
+    case 'fill':
+      path = `/fill/${formId}`
+      label = 'ссылка для заполнения'
+      break
+    case 'responses':
+      path = `/responses/${formId}`
+      label = 'ссылка на ответы'
+      break
+    case 'edit':
+      path = `/edit/${formId}`
+      label = 'ссылка для редактирования'
+      break
+  }
+  
+  const url = `${window.location.origin}${path}`
+  const success = await copyToClipboard(url)
+  
+  if (success) {
+    result.value = { 
+      success: true, 
+      message: `${label.charAt(0).toUpperCase() + label.slice(1)} скопирована в буфер обмена` 
+    }
+  } else {
+    result.value = { 
+      error: `Не удалось скопировать. Скопируйте вручную: ${url}` 
+    }
+  }
+  
+  setTimeout(() => { result.value = null }, 3000)
 }
 
 const deleteForm = async () => {
@@ -250,6 +373,15 @@ const deleteForm = async () => {
   border-radius: 50%;
   animation: spin 0.7s linear infinite;
   margin: 0 auto 1rem;
+}
+
+.spinner-small {
+  width: 16px;
+  height: 16px;
+  border: 2px solid rgba(255,255,255,0.35);
+  border-top-color: #fff;
+  border-radius: 50%;
+  animation: spin 0.7s linear infinite;
 }
 
 @keyframes spin {
@@ -308,10 +440,13 @@ const deleteForm = async () => {
 
 .form-container {
   animation: fadeUp 0.5s ease both;
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
 }
 
 .form-header {
-  margin-bottom: 2rem;
+  margin-bottom: 0.5rem;
 }
 
 .header-top {
@@ -369,14 +504,135 @@ const deleteForm = async () => {
   border-radius: var(--radius);
   border: 1px solid var(--border);
   box-shadow: var(--shadow-sm);
-  margin-bottom: 2rem;
+}
+
+.links-card {
+  background: var(--surface);
+  padding: 2rem;
+  border-radius: var(--radius);
+  border: 1px solid var(--border);
+  box-shadow: var(--shadow-sm);
 }
 
 .card-title {
   font-size: 1.25rem;
   font-weight: 700;
   color: var(--text);
+  margin-bottom: 1rem;
+}
+
+.links-hint {
+  color: var(--text-muted);
+  font-size: 0.9rem;
   margin-bottom: 1.5rem;
+  margin-top: -0.5rem;
+}
+
+.links-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 0.85rem;
+}
+
+.link-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 1rem 1.25rem;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  transition: all 0.2s;
+}
+
+.link-item:hover {
+  border-color: var(--primary-soft);
+  background: var(--surface);
+}
+
+.link-info {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  flex: 1;
+  min-width: 0;
+}
+
+.link-icon {
+  flex-shrink: 0;
+  width: 40px;
+  height: 40px;
+  border-radius: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.link-icon svg {
+  width: 20px;
+  height: 20px;
+}
+
+.link-icon.fill {
+  background: #e8f5e8;
+  color: #2f855a;
+}
+
+.link-icon.preview {
+  background: #fff4e0;
+  color: #b7791f;
+}
+
+.link-icon.responses {
+  background: var(--primary-soft);
+  color: var(--primary);
+}
+
+.link-icon.edit {
+  background: #fdecec;
+  color: #c53030;
+}
+
+.link-info h3 {
+  font-size: 0.98rem;
+  font-weight: 700;
+  color: var(--text);
+  margin-bottom: 0.15rem;
+}
+
+.link-info p {
+  font-size: 0.82rem;
+  color: var(--text-muted);
+  line-height: 1.4;
+}
+
+.btn-copy {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.55rem 1rem;
+  background: var(--primary-soft);
+  color: var(--primary);
+  border: none;
+  border-radius: var(--radius-sm);
+  font-size: 0.85rem;
+  font-weight: 600;
+  text-decoration: none;
+  cursor: pointer;
+  transition: all 0.2s;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.btn-copy:hover {
+  background: var(--primary);
+  color: #fff;
+}
+
+.btn-copy svg {
+  width: 14px;
+  height: 14px;
 }
 
 .empty-questions {
@@ -536,15 +792,6 @@ const deleteForm = async () => {
   cursor: not-allowed;
 }
 
-.spinner-small {
-  width: 16px;
-  height: 16px;
-  border: 2px solid rgba(255,255,255,0.35);
-  border-top-color: #fff;
-  border-radius: 50%;
-  animation: spin 0.7s linear infinite;
-}
-
 /* Модальное окно */
 .modal-overlay {
   position: fixed;
@@ -599,7 +846,8 @@ const deleteForm = async () => {
 }
 
 @media (max-width: 720px) {
-  .form-card {
+  .form-card,
+  .links-card {
     padding: 1.5rem 1.25rem;
   }
   .form-title {
@@ -608,11 +856,17 @@ const deleteForm = async () => {
   .header-top {
     flex-direction: column;
   }
+  .link-item {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  .btn-copy {
+    justify-content: center;
+  }
   .form-actions {
     flex-direction: column;
   }
   .btn-primary,
-  .btn-secondary,
   .btn-danger {
     width: 100%;
     justify-content: center;

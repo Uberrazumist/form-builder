@@ -24,6 +24,7 @@
           <template v-if="isAuthenticated">
             <router-link to="/create" class="nav-link" active-class="active">Создать форму</router-link>
             <router-link to="/my-forms" class="nav-link" active-class="active">Мои формы</router-link>
+            <router-link to="/dictionaries" class="nav-link" active-class="active">Справочники</router-link>
             <button @click="logout" class="nav-link logout-btn">Выйти</button>
           </template>
           <template v-else>
@@ -41,6 +42,7 @@
         <template v-if="isAuthenticated">
           <router-link to="/create" class="nav-link" @click="menuOpen = false">Создать форму</router-link>
           <router-link to="/my-forms" class="nav-link" @click="menuOpen = false">Мои формы</router-link>
+          <router-link to="/dictionaries" class="nav-link" @click="menuOpen = false">Справочники</router-link>
           <button @click="handleLogout" class="nav-link logout-btn">Выйти</button>
         </template>
         <template v-else>
@@ -274,7 +276,7 @@ html, body {
   transition: max-height 0.3s ease, padding 0.3s ease;
 }
 .mobile-nav.open {
-  max-height: 300px;
+  max-height: 400px;
   padding-bottom: 1rem;
 }
 

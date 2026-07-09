@@ -7,6 +7,7 @@ import CreateFormView from '../views/CreateFormView.vue'
 import FormView from '../views/FormView.vue'
 import EditFormView from '../views/EditFormView.vue'
 import FillFormView from '../views/FillFormView.vue'
+import PreviewView from '../views/PreviewView.vue'
 import ResponsesView from '../views/ResponsesView.vue'
 import MyFormsView from '../views/MyFormsView.vue'
 import VerifyEmailView from '../views/VerifyEmailView.vue'
@@ -67,6 +68,11 @@ const router = createRouter({
       path: '/fill/:id',
       name: 'fill',
       component: FillFormView
+    },
+    {
+      path: '/preview/:id',
+      name: 'preview',
+      component: PreviewView
     },
     {
       path: '/responses/:id',

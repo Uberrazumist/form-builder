@@ -164,6 +164,77 @@
       </div>
     </section>
 
+    <!-- DICTIONARIES GUIDE -->
+    <section class="dictionaries-guide">
+      <div class="section-header">
+        <span class="eyebrow">Справочники</span>
+        <h2 class="section-title">Как работать со справочниками</h2>
+        <p class="section-subtitle">Справочники помогают не вводить одни и те же списки вручную в каждой форме</p>
+      </div>
+
+      <div class="guide-grid">
+        <div class="guide-card">
+          <div class="guide-icon">
+            <Icon name="book" />
+          </div>
+          <div class="guide-content">
+            <h3>Что такое справочник?</h3>
+            <p>Это список, который вы создаёте один раз и используете в разных формах. Например, список классов (9А, 9Б, 10А), список учителей или список доступного времени для записи.</p>
+          </div>
+        </div>
+
+        <div class="guide-card">
+          <div class="guide-icon">
+            <Icon name="plus" />
+          </div>
+          <div class="guide-content">
+            <h3>Как создать справочник?</h3>
+            <p>Перейдите в раздел «Справочники» в меню сверху, нажмите кнопку «Создать справочник» и дайте ему понятное название, например «Классы» или «Учителя математики».</p>
+          </div>
+        </div>
+
+        <div class="guide-card">
+          <div class="guide-icon">
+            <Icon name="document" />
+          </div>
+          <div class="guide-content">
+            <h3>Как добавить элементы?</h3>
+            <p>Откройте созданный справочник, нажмите «Добавить элемент» и введите название — например, «9А» или «Иванова Мария Петровна». Так можно собрать весь список.</p>
+          </div>
+        </div>
+
+        <div class="guide-card">
+          <div class="guide-icon">
+            <Icon name="edit" />
+          </div>
+          <div class="guide-content">
+            <h3>Как использовать в форме?</h3>
+            <p>В конструкторе формы добавьте вопрос, выберите тип «Выбор из справочника» и укажите нужный справочник. Варианты ответов подтянутся автоматически.</p>
+          </div>
+        </div>
+
+        <div class="guide-card">
+          <div class="guide-icon">
+            <Icon name="link" />
+          </div>
+          <div class="guide-content">
+            <h3>Зависимости между вопросами</h3>
+            <p>Если нужно, чтобы при выборе класса показывались только учителя этого класса — в вопросе с учителями выберите «Зависит от вопроса» и укажите вопрос с классом. Список автоматически отфильтруется.</p>
+          </div>
+        </div>
+
+        <div class="guide-card">
+          <div class="guide-icon">
+            <Icon name="calendar" />
+          </div>
+          <div class="guide-content">
+            <h3>Проверка занятости</h3>
+            <p>Если вы делаете форму для записи — например, к учителю на определённое время — включите в вопросе опцию «Проверять занятость». Тогда занятые слоты будут отмечены, и два человека не смогут записаться на одно и то же время.</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
     <!-- CTA для неавторизованных -->
     <section v-if="!isAuthenticated" class="cta">
       <div class="cta-card">
@@ -363,7 +434,7 @@ onMounted(() => {
 .section-subtitle {
   font-size: 1rem;
   color: var(--text-muted);
-  max-width: 560px;
+  max-width: 600px;
   margin: 0 auto;
 }
 
@@ -433,6 +504,65 @@ onMounted(() => {
   line-height: 1.4;
 }
 
+/* DICTIONARIES GUIDE */
+.guide-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 1.25rem;
+}
+
+.guide-card {
+  display: flex;
+  gap: 1.25rem;
+  padding: 1.75rem;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  transition: all 0.3s;
+}
+
+.guide-card:hover {
+  transform: translateY(-3px);
+  box-shadow: var(--shadow-md);
+  border-color: var(--primary-soft);
+}
+
+.guide-icon {
+  flex-shrink: 0;
+  width: 52px;
+  height: 52px;
+  background: var(--primary-soft);
+  color: var(--primary);
+  border-radius: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.guide-icon svg {
+  width: 26px;
+  height: 26px;
+}
+
+.guide-content {
+  flex: 1;
+  min-width: 0;
+}
+
+.guide-content h3 {
+  font-size: 1.1rem;
+  font-weight: 700;
+  color: var(--text);
+  margin-bottom: 0.5rem;
+  letter-spacing: -0.01em;
+}
+
+.guide-content p {
+  font-size: 0.93rem;
+  color: var(--text-muted);
+  line-height: 1.6;
+}
+
 /* CTA */
 .cta-card {
   background: linear-gradient(135deg, var(--primary) 0%, var(--primary-hover) 100%);
@@ -498,6 +628,7 @@ onMounted(() => {
   .hero-desc { margin-left: auto; margin-right: auto; }
   .hero-actions { justify-content: center; }
   .types-grid { grid-template-columns: 1fr; }
+  .guide-grid { grid-template-columns: 1fr; }
 }
 
 @media (max-width: 560px) {
@@ -505,7 +636,8 @@ onMounted(() => {
   .btn-primary-large,
   .btn-secondary-large { width: 100%; justify-content: center; }
   .cta-actions { flex-direction: column; }
-  .type-card {
+  .type-card,
+  .guide-card {
     flex-direction: column;
     gap: 1rem;
   }
