@@ -5,7 +5,7 @@
       <div class="header-top">
         <div>
           <h1 class="page-title">Справочники</h1>
-          <p class="page-subtitle">Управление справочниками для форм</p>
+          <p class="page-subtitle">Управляйте списками, которые используются в формах</p>
         </div>
         <button @click="showCreateModal = true" class="btn-primary">
           <Icon name="plus" />
@@ -47,9 +47,10 @@
           </div>
         </div>
         <div class="dict-meta">
-          <span>{{ dict.ItemsCount || 0 }} элементов</span>
-          <span>•</span>
-          <span>{{ formatDate(dict.UpdatedAt || dict.CreatedAt) }}</span>
+          <span v-if="itemsCount[dict.ID] !== undefined">
+            {{ itemsCount[dict.ID] }} {{ pluralize(itemsCount[dict.ID]) }}
+          </span>
+          <span v-else class="loading-count">Загрузка...</span>
         </div>
         <div class="dict-actions">
           <router-link :to="`/dictionaries/${dict.ID}/items`" class="btn-secondary-small">
@@ -76,14 +77,14 @@
               type="text"
               v-model="newDict.Name"
               required
-              placeholder="Например: Классы, Учителя"
+              placeholder="Например: Классы, Учителя, Время"
             />
           </div>
           <div class="form-group">
             <label>Описание</label>
             <textarea
               v-model="newDict.Description"
-              placeholder="Краткое описание (необязательно)"
+              placeholder="Кратко опишите, для чего нужен этот справочник"
               rows="3"
             ></textarea>
           </div>
@@ -106,6 +107,7 @@ import Icon from '../components/Icon.vue'
 import FormResult from '../components/FormResult.vue'
 
 const dictionaries = ref([])
+const itemsCount = reactive({})
 const loading = ref(true)
 const result = ref(null)
 const showCreateModal = ref(false)
@@ -131,11 +133,41 @@ const loadDictionaries = async () => {
     
     const data = await response.json()
     dictionaries.value = data.dictionaries || data || []
+    
+    // Параллельно загружаем количество элементов для каждого справочника
+    await Promise.all(
+      dictionaries.value.map(async (dict) => {
+        try {
+          const itemsResponse = await fetch(`/api/dictionaries/${dict.ID}/items`, {
+            headers: { 'Authorization': `Bearer ${token}` }
+          })
+          if (itemsResponse.ok) {
+            const itemsData = await itemsResponse.json()
+            const items = itemsData.items || itemsData || []
+            itemsCount[dict.ID] = items.length
+          } else {
+            itemsCount[dict.ID] = 0
+          }
+        } catch (err) {
+          console.error(`[Dictionaries] Failed to load items for ${dict.ID}:`, err)
+          itemsCount[dict.ID] = 0
+        }
+      })
+    )
   } catch (err) {
     result.value = { error: 'Ошибка сети' }
   } finally {
     loading.value = false
   }
+}
+
+const pluralize = (count) => {
+  const n = Math.abs(count) % 100
+  const n1 = n % 10
+  if (n > 10 && n < 20) return 'элементов'
+  if (n1 > 1 && n1 < 5) return 'элемента'
+  if (n1 === 1) return 'элемент'
+  return 'элементов'
 }
 
 const createDictionary = async () => {
@@ -200,16 +232,6 @@ const deleteDictionary = async (id) => {
   } catch (err) {
     result.value = { error: 'Ошибка сети' }
   }
-}
-
-const formatDate = (dateStr) => {
-  if (!dateStr) return ''
-  const date = new Date(dateStr)
-  return date.toLocaleDateString('ru-RU', {
-    day: '2-digit',
-    month: '2-digit',
-    year: 'numeric'
-  })
 }
 </script>
 
@@ -407,9 +429,17 @@ const formatDate = (dateStr) => {
 .dict-meta {
   display: flex;
   gap: 0.5rem;
-  font-size: 0.85rem;
+  font-size: 0.88rem;
   color: var(--text-muted);
   margin-bottom: 1.25rem;
+  font-weight: 500;
+}
+
+.loading-count {
+  color: var(--text-muted);
+  opacity: 0.6;
+  font-style: italic;
+  font-weight: 400;
 }
 
 .dict-actions {

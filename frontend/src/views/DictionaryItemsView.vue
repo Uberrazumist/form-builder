@@ -1,3 +1,4 @@
+
 <!-- src/views/DictionaryItemsView.vue -->
 <template>
   <div class="items-page">
@@ -29,7 +30,7 @@
             <h1 class="page-title">{{ dictionary?.Name }}</h1>
             <p v-if="dictionary?.Description" class="page-subtitle">{{ dictionary.Description }}</p>
           </div>
-          <button @click="showCreateModal = true" class="btn-primary">
+          <button @click="openCreateModal" class="btn-primary">
             <Icon name="plus" />
             Добавить элемент
           </button>
@@ -42,7 +43,7 @@
         </div>
         <h3>Пока нет элементов</h3>
         <p>Добавьте первый элемент в справочник</p>
-        <button @click="showCreateModal = true" class="btn-primary">
+        <button @click="openCreateModal" class="btn-primary">
           <Icon name="plus" />
           Добавить элемент
         </button>
@@ -52,7 +53,7 @@
         <div class="list-header">
           <div class="col-name">Название</div>
           <div class="col-value">Значение</div>
-          <div class="col-parent">Родитель</div>
+          <div class="col-parent">Входит в группу</div>
           <div class="col-actions"></div>
         </div>
         <div
@@ -77,6 +78,9 @@
             <div v-else class="item-parent-empty">—</div>
           </div>
           <div class="col-actions">
+            <button @click="openEditModal(item)" class="btn-edit-small" title="Редактировать">
+              <Icon name="edit" />
+            </button>
             <button @click="deleteItem(item.ID)" class="btn-danger-small" title="Удалить элемент">
               <Icon name="trash" />
             </button>
@@ -86,16 +90,16 @@
 
       <FormResult v-if="result" :result="result" />
 
-      <!-- Модальное окно создания элемента -->
-      <div v-if="showCreateModal" class="modal-overlay" @click="showCreateModal = false">
+      <!-- Модальное окно создания/редактирования -->
+      <div v-if="showModal" class="modal-overlay" @click="closeModal">
         <div class="modal-content" @click.stop>
-          <h3>Новый элемент</h3>
-          <form @submit.prevent="createItem" class="modal-form">
+          <h3>{{ isEditing ? 'Редактирование элемента' : 'Новый элемент' }}</h3>
+          <form @submit.prevent="saveItem" class="modal-form">
             <div class="form-group">
               <label>Название <span class="required">*</span></label>
               <input
                 type="text"
-                v-model="newItem.Name"
+                v-model="formData.Name"
                 required
                 placeholder="Например: 9А, Иванова М.П."
               />
@@ -105,17 +109,17 @@
               <label>Краткое обозначение</label>
               <input
                 type="text"
-                v-model="newItem.Value"
+                v-model="formData.Value"
                 placeholder="Например: 9A (латиницей)"
               />
               <span class="hint">Необязательно. Используется для связей между справочниками</span>
             </div>
-            <div v-if="items.length > 0" class="form-group">
-              <label>Родительский элемент</label>
-              <select v-model="newItem.ParentID">
+            <div v-if="rootItems.length > 0" class="form-group">
+              <label>Входит в группу</label>
+              <select v-model="formData.ParentID">
                 <option :value="null">Нет (самостоятельный элемент)</option>
                 <option
-                  v-for="parent in items.filter(i => !i.ParentID)"
+                  v-for="parent in rootItems"
                   :key="parent.ID"
                   :value="parent.ID"
                 >
@@ -127,23 +131,53 @@
                 выберите родительский элемент из списка
               </span>
             </div>
-            <div class="form-group">
-              <label>Дополнительные свойства</label>
-              <textarea
-                v-model="newItem.Metadata"
-                placeholder='Например: {"teacher_id": "123"}'
-                rows="3"
-              ></textarea>
+
+            <!-- Привязка к классу для справочника "Учителя" -->
+            <div v-if="isTeachersDictionary && classesList.length > 0" class="form-group">
+              <label>Принадлежит классу</label>
+              <select v-model="formData.class_id">
+                <option :value="null">Не указан</option>
+                <option
+                  v-for="cls in classesList"
+                  :key="cls.ID"
+                  :value="cls.ID"
+                >
+                  {{ cls.Name }}
+                </option>
+              </select>
               <span class="hint">
-                Дополнительные свойства элемента в формате JSON. Например, для времени можно указать 
-                teacher_id, чтобы привязать время к конкретному учителю. Оставьте пустым, если не нужно.
+                Если этот учитель ведёт занятия в определённом классе, выберите его здесь. 
+                Тогда при выборе класса в форме будут показаны только подходящие учителя.
               </span>
-              <span v-if="metadataError" class="error-hint">{{ metadataError }}</span>
             </div>
+
+            <!-- Дополнительные настройки (скрыты по умолчанию) -->
+            <div class="advanced-section">
+              <button type="button" class="advanced-toggle" @click="showAdvanced = !showAdvanced">
+                <Icon :name="showAdvanced ? 'close' : 'plus'" />
+                {{ showAdvanced ? 'Скрыть' : 'Показать' }} дополнительные настройки
+              </button>
+              <div v-if="showAdvanced" class="advanced-content">
+                <div class="form-group">
+                  <label>Дополнительные свойства (JSON)</label>
+                  <textarea
+                    v-model="formData.Metadata"
+                    placeholder='Например: {"teacher_id": "123"}'
+                    rows="3"
+                  ></textarea>
+                  <span class="hint">
+                    Обычно оставляйте пустым. Используется для продвинутых сценариев, 
+                    например, привязки времени к учителю.
+                  </span>
+                  <span v-if="metadataError" class="error-hint">{{ metadataError }}</span>
+                </div>
+              </div>
+            </div>
+
             <div class="modal-actions">
-              <button type="button" @click="showCreateModal = false" class="btn-secondary">Отмена</button>
-              <button type="submit" class="btn-primary" :disabled="creating">
-                <span v-if="!creating">Добавить</span>
+              <button type="button" @click="closeModal" class="btn-secondary">Отмена</button>
+              <button type="submit" class="btn-primary" :disabled="saving">
+                <span v-if="!saving">{{ isEditing ? 'Сохранить' : 'Добавить' }}</span>
                 <span v-else class="spinner-small"></span>
               </button>
             </div>
@@ -155,7 +189,7 @@
 </template>
 
 <script setup>
-import { ref, reactive, onMounted, watch } from 'vue'
+import { ref, reactive, computed, onMounted, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import Icon from '../components/Icon.vue'
 import FormResult from '../components/FormResult.vue'
@@ -164,20 +198,50 @@ const route = useRoute()
 
 const dictionary = ref(null)
 const items = ref([])
+const classesList = ref([])
 const loading = ref(true)
 const error = ref(null)
 const result = ref(null)
-const showCreateModal = ref(false)
-const creating = ref(false)
-const newItem = reactive({ Name: '', Value: '', ParentID: null, Metadata: '' })
+const showModal = ref(false)
+const showAdvanced = ref(false)
+const isEditing = ref(false)
+const editingId = ref(null)
+const saving = ref(false)
 const metadataError = ref('')
+
+const formData = reactive({
+  Name: '',
+  Value: '',
+  ParentID: null,
+  Metadata: '',
+  class_id: null
+})
+
+const rootItems = computed(() => 
+  items.value.filter(i => !i.ParentID && i.ID !== editingId.value)
+)
+
+// Определяем, является ли текущий справочник справочником "Учителя"
+const isTeachersDictionary = computed(() => {
+  if (!dictionary.value?.Name) return false
+  const name = dictionary.value.Name.toLowerCase()
+  return (
+    name.includes('учитель') ||
+    name.includes('учителя') ||
+    name.includes('учителей') ||
+    name.includes('teacher')
+  )
+})
 
 onMounted(async () => {
   await loadData()
+  if (isTeachersDictionary.value) {
+    await loadClassesDictionary()
+  }
 })
 
-watch(() => newItem.Metadata, (value) => {
-  if (!value.trim()) {
+watch(() => formData.Metadata, (value) => {
+  if (!value?.trim()) {
     metadataError.value = ''
     return
   }
@@ -209,7 +273,6 @@ const loadData = async () => {
     if (itemsResponse.ok) {
       const data = await itemsResponse.json()
       items.value = data.items || data || []
-      console.log('[DictionaryItems] Loaded items:', items.value)
     }
   } catch (err) {
     console.error('[DictionaryItems] Load error:', err)
@@ -219,35 +282,124 @@ const loadData = async () => {
   }
 }
 
-const createItem = async () => {
-  if (!newItem.Name.trim()) {
+const loadClassesDictionary = async () => {
+  try {
+    const token = localStorage.getItem('token')
+    const headers = { 'Authorization': `Bearer ${token}` }
+    
+    const dictsResponse = await fetch('/api/dictionaries', { headers })
+    if (!dictsResponse.ok) return
+    
+    const dictsData = await dictsResponse.json()
+    const dicts = dictsData.dictionaries || dictsData || []
+    
+    const classesDict = dicts.find(d => {
+      const name = (d.Name || '').toLowerCase()
+      return name.includes('класс') || name.includes('class')
+    })
+    
+    if (!classesDict) {
+      console.log('[DictionaryItems] Classes dictionary not found')
+      return
+    }
+    
+    const itemsResponse = await fetch(`/api/dictionaries/${classesDict.ID}/items`, { headers })
+    if (itemsResponse.ok) {
+      const data = await itemsResponse.json()
+      classesList.value = data.items || data || []
+    }
+  } catch (err) {
+    console.error('[DictionaryItems] Failed to load classes:', err)
+  }
+}
+
+const resetForm = () => {
+  formData.Name = ''
+  formData.Value = ''
+  formData.ParentID = null
+  formData.Metadata = ''
+  formData.class_id = null
+  metadataError.value = ''
+  showAdvanced.value = false
+  isEditing.value = false
+  editingId.value = null
+}
+
+const openCreateModal = () => {
+  resetForm()
+  showModal.value = true
+}
+
+const openEditModal = (item) => {
+  resetForm()
+  isEditing.value = true
+  editingId.value = item.ID
+  formData.Name = item.Name || ''
+  formData.Value = item.Value || ''
+  formData.ParentID = item.ParentID || null
+  
+  if (item.Metadata && typeof item.Metadata === 'object') {
+    formData.class_id = item.Metadata.class_id || null
+    const otherKeys = Object.keys(item.Metadata).filter(k => k !== 'class_id')
+    if (otherKeys.length > 0) {
+      formData.Metadata = JSON.stringify(item.Metadata, null, 2)
+      showAdvanced.value = true
+    }
+  }
+  
+  showModal.value = true
+}
+
+const closeModal = () => {
+  showModal.value = false
+  resetForm()
+}
+
+const saveItem = async () => {
+  if (!formData.Name.trim()) {
     result.value = { error: 'Введите название элемента' }
     return
   }
 
-  if (newItem.Metadata && metadataError.value) {
+  if (formData.Metadata && metadataError.value) {
     result.value = { error: 'Исправьте ошибку в дополнительных свойствах' }
     return
   }
 
-  creating.value = true
+  saving.value = true
   result.value = null
 
   try {
     const dictId = route.params.id
     const token = localStorage.getItem('token')
     
+    let metadata = null
+    if (formData.class_id) {
+      metadata = { class_id: formData.class_id }
+    }
+    if (formData.Metadata?.trim()) {
+      try {
+        const parsed = JSON.parse(formData.Metadata)
+        metadata = { ...metadata, ...parsed }
+      } catch (e) {
+        // уже проверено в watch
+      }
+    }
+    
     const payload = {
-      Name: newItem.Name,
-      Value: newItem.Value || undefined,
-      ParentID: newItem.ParentID || undefined,
-      Metadata: newItem.Metadata ? JSON.parse(newItem.Metadata) : undefined
+      Name: formData.Name,
+      Value: formData.Value || undefined,
+      ParentID: formData.ParentID || undefined,
+      Metadata: metadata || undefined
     }
 
-    console.log('[DictionaryItems] Creating item:', payload)
+    const url = isEditing.value 
+      ? `/api/dictionaries/${dictId}/items/${editingId.value}`
+      : `/api/dictionaries/${dictId}/items`
+    const method = isEditing.value ? 'PUT' : 'POST'
 
-    const response = await fetch(`/api/dictionaries/${dictId}/items`, {
-      method: 'POST',
+    const response = await fetch(url, {
+      method,
       headers: {
         'Content-Type': 'application/json',
         'Authorization': `Bearer ${token}`
@@ -257,22 +409,21 @@ const createItem = async () => {
 
     if (!response.ok) {
       const errorData = await response.json()
-      result.value = { error: errorData.error || 'Не удалось добавить элемент' }
+      result.value = { error: errorData.error || (isEditing.value ? 'Не удалось сохранить' : 'Не удалось добавить') }
       return
     }
 
-    result.value = { success: true, message: 'Элемент добавлен' }
-    showCreateModal.value = false
-    newItem.Name = ''
-    newItem.Value = ''
-    newItem.ParentID = null
-    newItem.Metadata = ''
+    result.value = { 
+      success: true, 
+      message: isEditing.value ? 'Элемент обновлён' : 'Элемент добавлен' 
+    }
+    closeModal()
     await loadData()
   } catch (err) {
-    console.error('[DictionaryItems] Create error:', err)
+    console.error('[DictionaryItems] Save error:', err)
     result.value = { error: 'Ошибка сети' }
   } finally {
-    creating.value = false
+    saving.value = false
   }
 }
 
@@ -526,7 +677,7 @@ const getParentName = (parentId) => {
 
 .list-header {
   display: grid;
-  grid-template-columns: 2fr 1.5fr 1.5fr 50px;
+  grid-template-columns: 2fr 1.5fr 1.5fr 90px;
   gap: 1rem;
   padding: 1rem 1.5rem;
   background: var(--bg);
@@ -540,7 +691,7 @@ const getParentName = (parentId) => {
 
 .item-card {
   display: grid;
-  grid-template-columns: 2fr 1.5fr 1.5fr 50px;
+  grid-template-columns: 2fr 1.5fr 1.5fr 90px;
   gap: 1rem;
   padding: 1.25rem 1.5rem;
   border-bottom: 1px solid var(--border);
@@ -567,6 +718,7 @@ const getParentName = (parentId) => {
   display: flex;
   align-items: center;
   justify-content: center;
+  gap: 0.35rem;
 }
 
 .item-label {
@@ -604,12 +756,12 @@ const getParentName = (parentId) => {
   color: var(--primary);
 }
 
+.btn-edit-small,
 .btn-danger-small {
   width: 36px;
   height: 36px;
   border: 1.5px solid var(--border);
   background: var(--surface);
-  color: #c53030;
   cursor: pointer;
   border-radius: var(--radius-sm);
   display: flex;
@@ -619,17 +771,71 @@ const getParentName = (parentId) => {
   flex-shrink: 0;
 }
 
+.btn-edit-small {
+  color: var(--primary);
+}
+
+.btn-edit-small:hover {
+  background: var(--primary-soft);
+  border-color: var(--primary);
+}
+
+.btn-danger-small {
+  color: #c53030;
+}
+
 .btn-danger-small:hover {
   background: #fdecec;
   border-color: #c53030;
 }
 
+.btn-edit-small svg,
 .btn-danger-small svg {
   width: 16px;
   height: 16px;
 }
 
-/* Модальное окно */
+.advanced-section {
+  border-top: 1px solid var(--border);
+  padding-top: 0.75rem;
+  margin-top: 0.25rem;
+}
+
+.advanced-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.5rem 0.75rem;
+  background: transparent;
+  color: var(--text-muted);
+  border: 1px dashed var(--border);
+  border-radius: var(--radius-sm);
+  font-size: 0.85rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s;
+  font-family: inherit;
+}
+
+.advanced-toggle:hover {
+  color: var(--primary);
+  border-color: var(--primary-soft);
+  background: var(--primary-soft);
+}
+
+.advanced-toggle svg {
+  width: 14px;
+  height: 14px;
+}
+
+.advanced-content {
+  margin-top: 1rem;
+  padding: 1rem;
+  background: var(--bg);
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+}
+
 .modal-overlay {
   position: fixed;
   top: 0;
@@ -653,8 +859,10 @@ const getParentName = (parentId) => {
   background: var(--surface);
   padding: 2rem;
   border-radius: var(--radius);
-  max-width: 500px;
+  max-width: 540px;
   width: 90%;
+  max-height: 90vh;
+  overflow-y: auto;
   box-shadow: var(--shadow-lg);
 }
 

@@ -12,7 +12,7 @@ import (
     "github.com/Uberrazumist/form-builder/backend/internal/models"
 )
 
-// --- Справочники ---
+// --- CRUD для справочников ---
 func ListDictionaries(db *gorm.DB) gin.HandlerFunc {
     return func(c *gin.Context) {
         var dicts []models.Dictionary
@@ -108,19 +108,20 @@ func ListDictionaryItems(db *gorm.DB) gin.HandlerFunc {
         filterMetadata := c.Query("filter_metadata")
 
         query := db.Where("dictionary_id = ?", dictID)
+
         if parentID != "" {
             query = query.Where("parent_id = ?", parentID)
         }
+
         if filterMetadata != "" {
-            var meta map[string]interface{}
-            if err := json.Unmarshal([]byte(filterMetadata), &meta); err == nil {
-                for k, v := range meta {
-                    // Используем оператор @> для проверки вхождения ключа
-                    valStr, ok := v.(string)
-                    if !ok {
-                        continue
-                    }
-                    query = query.Where("metadata @> ?", datatypes.JSON([]byte(`{"`+k+`":"`+valStr+`"}`)))
+            // Парсим JSON фильтра
+            var filters map[string]interface{}
+            if err := json.Unmarshal([]byte(filterMetadata), &filters); err == nil {
+                // Ищем элементы, у которых metadata содержит все ключи-значения из фильтра
+                // Для PostgreSQL используем оператор @> (contains)
+                for key, val := range filters {
+                    // Используем jsonb @> для проверки наличия пары ключ-значение
+                    query = query.Where("metadata @> ?", datatypes.JSON([]byte(`{"`+key+`":"`+val.(string)+`"}`)))
                 }
             }
         }
@@ -138,10 +139,10 @@ func CreateDictionaryItem(db *gorm.DB) gin.HandlerFunc {
     return func(c *gin.Context) {
         dictID := c.Param("id")
         var input struct {
-            ParentID *string                 `json:"parent_id"`
-            Name     string                  `json:"name" binding:"required"`
-            Code     string                  `json:"code"`
-            Metadata map[string]interface{}  `json:"metadata"`
+            ParentID *string                `json:"parent_id"`
+            Name     string                 `json:"Name" binding:"required"` // с заглавной
+            Code     string                 `json:"code"`
+            Metadata map[string]interface{} `json:"metadata"`
         }
         if err := c.ShouldBindJSON(&input); err != nil {
             c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
