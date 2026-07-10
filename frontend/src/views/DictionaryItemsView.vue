@@ -52,7 +52,7 @@
         <div class="list-header">
           <div class="col-name">Название</div>
           <div class="col-value">Значение</div>
-          <div class="col-meta">Дополнительно</div>
+          <div class="col-links">Связи</div>
           <div class="col-actions"></div>
         </div>
         <div
@@ -69,13 +69,10 @@
             </div>
             <div v-else class="item-value-empty">—</div>
           </div>
-          <div class="col-meta">
-            <div v-if="isTeachersDictionary && getClassNamesForTeacher(item).length > 0" class="item-classes">
-              <Icon name="book" />
-              <span>{{ getClassNamesForTeacher(item).join(', ') }}</span>
-            </div>
-            <div v-else-if="item.Metadata && hasOtherMetadata(item)" class="item-metadata-hint">
-              Есть доп. свойства
+          <div class="col-links">
+            <div v-if="getLinkedNames(item).length > 0" class="item-links">
+              <Icon name="link" />
+              <span>{{ getLinkedNames(item).join(', ') }}</span>
             </div>
             <div v-else class="item-value-empty">—</div>
           </div>
@@ -118,45 +115,58 @@
               <span class="hint">Необязательно. Используется для связей между справочниками</span>
             </div>
 
-            <!-- Мультивыбор классов для учителя -->
-            <div v-if="isTeachersDictionary && classesList.length > 0" class="form-group">
-              <label>Классы, которые ведёт учитель</label>
-              <div class="multi-select">
-                <button
-                  type="button"
-                  class="multi-select-toggle"
-                  @click="showClassesDropdown = !showClassesDropdown"
-                >
-                  <span v-if="formData.class_ids.length === 0" class="multi-select-placeholder">
-                    Выберите классы...
-                  </span>
-                  <span v-else class="multi-select-value">
-                    Выбрано классов: {{ formData.class_ids.length }}
-                  </span>
-                  <Icon :name="showClassesDropdown ? 'eye-off' : 'eye'" />
-                </button>
-                <div v-if="showClassesDropdown" class="multi-select-dropdown">
+            <!-- Универсальная привязка к элементам другого справочника -->
+            <div v-if="availableDictionaries.length > 0" class="links-section">
+              <div class="links-header">
+                <Icon name="link" />
+                <h4>Связать с элементами другого справочника</h4>
+              </div>
+              <p class="links-description">
+                Выберите справочник и отметьте элементы, с которыми связан текущий элемент.
+                Это позволит фильтровать варианты в формах на основе предыдущих ответов.
+              </p>
+
+              <div class="form-group">
+                <label>Связанный справочник</label>
+                <select v-model="formData.linkedDictionaryId" @change="onLinkedDictionaryChange">
+                  <option :value="null">— не выбран —</option>
+                  <option
+                    v-for="dict in availableDictionaries"
+                    :key="dict.ID"
+                    :value="dict.ID"
+                  >
+                    {{ dict.Name }}
+                  </option>
+                </select>
+              </div>
+
+              <div v-if="formData.linkedDictionaryId" class="form-group">
+                <label>Элементы для связи</label>
+                <div v-if="loadingLinkedItems" class="links-loading">
+                  <div class="spinner-small"></div>
+                  <span>Загрузка элементов...</span>
+                </div>
+                <div v-else-if="linkedItems.length === 0" class="links-empty">
+                  В этом справочнике нет элементов
+                </div>
+                <div v-else class="multi-select-dropdown">
                   <label
-                    v-for="cls in classesList"
-                    :key="cls.ID"
+                    v-for="linkedItem in linkedItems"
+                    :key="linkedItem.ID"
                     class="multi-select-option"
                   >
                     <input
                       type="checkbox"
-                      :value="cls.ID"
-                      v-model="formData.class_ids"
+                      :value="linkedItem.ID"
+                      v-model="formData.linked_ids"
                     />
-                    <span>{{ cls.Name }}</span>
+                    <span>{{ linkedItem.Name }}</span>
                   </label>
-                  <div v-if="classesList.length === 0" class="multi-select-empty">
-                    Нет доступных классов
-                  </div>
                 </div>
+                <span v-if="formData.linked_ids.length > 0" class="hint">
+                  Выбрано элементов: {{ formData.linked_ids.length }}
+                </span>
               </div>
-              <span class="hint">
-                Отметьте все классы, в которых ведёт занятия этот учитель. 
-                Это позволит фильтровать учителей по классу в формах.
-              </span>
             </div>
 
             <!-- Дополнительные настройки (скрыты по умолчанию) -->
@@ -196,7 +206,7 @@
 </template>
 
 <script setup>
-import { ref, reactive, computed, onMounted, watch, onUnmounted } from 'vue'
+import { ref, reactive, computed, onMounted, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import Icon from '../components/Icon.vue'
 import FormResult from '../components/FormResult.vue'
@@ -205,13 +215,15 @@ const route = useRoute()
 
 const dictionary = ref(null)
 const items = ref([])
-const classesList = ref([])
+const allDictionaries = ref([])
+const linkedItems = ref([])
+const linkedItemsCache = reactive({})
 const loading = ref(true)
+const loadingLinkedItems = ref(false)
 const error = ref(null)
 const result = ref(null)
 const showModal = ref(false)
 const showAdvanced = ref(false)
-const showClassesDropdown = ref(false)
 const isEditing = ref(false)
 const editingId = ref(null)
 const saving = ref(false)
@@ -220,31 +232,17 @@ const metadataError = ref('')
 const formData = reactive({
   Name: '',
   Value: '',
-  Metadata: '',
-  class_ids: []
+  linkedDictionaryId: null,
+  linked_ids: [],
+  Metadata: ''
 })
 
-const isTeachersDictionary = computed(() => {
-  if (!dictionary.value?.Name) return false
-  const name = dictionary.value.Name.toLowerCase()
-  return (
-    name.includes('учитель') ||
-    name.includes('учителя') ||
-    name.includes('учителей') ||
-    name.includes('teacher')
-  )
-})
+const availableDictionaries = computed(() => 
+  allDictionaries.value.filter(d => d.ID !== dictionary.value?.ID)
+)
 
 onMounted(async () => {
-  await loadData()
-  if (isTeachersDictionary.value) {
-    await loadClassesDictionary()
-  }
-})
-
-onUnmounted(() => {
-  // Закрываем dropdown при размонтировании
-  showClassesDropdown.value = false
+  await Promise.all([loadData(), loadAllDictionaries()])
 })
 
 watch(() => formData.Metadata, (value) => {
@@ -289,63 +287,86 @@ const loadData = async () => {
   }
 }
 
-const loadClassesDictionary = async () => {
+const loadAllDictionaries = async () => {
   try {
     const token = localStorage.getItem('token')
-    const headers = { 'Authorization': `Bearer ${token}` }
-    
-    const dictsResponse = await fetch('/api/dictionaries', { headers })
-    if (!dictsResponse.ok) return
-    
-    const dictsData = await dictsResponse.json()
-    const dicts = dictsData.dictionaries || dictsData || []
-    
-    const classesDict = dicts.find(d => {
-      const name = (d.Name || '').toLowerCase()
-      return name.includes('класс') || name.includes('class')
+    const response = await fetch('/api/dictionaries', {
+      headers: { 'Authorization': `Bearer ${token}` }
     })
-    
-    if (!classesDict) {
-      console.log('[DictionaryItems] Classes dictionary not found')
-      return
-    }
-    
-    const itemsResponse = await fetch(`/api/dictionaries/${classesDict.ID}/items`, { headers })
-    if (itemsResponse.ok) {
-      const data = await itemsResponse.json()
-      classesList.value = data.items || data || []
+    if (response.ok) {
+      const data = await response.json()
+      allDictionaries.value = data.dictionaries || data || []
     }
   } catch (err) {
-    console.error('[DictionaryItems] Failed to load classes:', err)
+    console.error('[DictionaryItems] Failed to load dictionaries:', err)
   }
 }
 
-const getClassNamesForTeacher = (teacher) => {
-  if (!teacher.Metadata?.class_ids || !Array.isArray(teacher.Metadata.class_ids)) {
+const loadLinkedItems = async (dictionaryId) => {
+  if (!dictionaryId) {
+    linkedItems.value = []
+    return
+  }
+  
+  if (linkedItemsCache[dictionaryId]) {
+    linkedItems.value = linkedItemsCache[dictionaryId]
+    return
+  }
+  
+  loadingLinkedItems.value = true
+  try {
+    const token = localStorage.getItem('token')
+    const response = await fetch(`/api/dictionaries/${dictionaryId}/items`, {
+      headers: { 'Authorization': `Bearer ${token}` }
+    })
+    if (response.ok) {
+      const data = await response.json()
+      const items = data.items || data || []
+      linkedItemsCache[dictionaryId] = items
+      linkedItems.value = items
+    }
+  } catch (err) {
+    console.error('[DictionaryItems] Failed to load linked items:', err)
+    linkedItems.value = []
+  } finally {
+    loadingLinkedItems.value = false
+  }
+}
+
+const onLinkedDictionaryChange = () => {
+  formData.linked_ids = []
+  loadLinkedItems(formData.linkedDictionaryId)
+}
+
+const getLinkedNames = (item) => {
+  if (!item.Metadata?.linked_ids || !Array.isArray(item.Metadata.linked_ids)) {
     return []
   }
-  return teacher.Metadata.class_ids
-    .map(classId => {
-      const cls = classesList.value.find(c => c.ID === classId)
-      return cls ? cls.Name : null
-    })
-    .filter(Boolean)
-}
-
-const hasOtherMetadata = (item) => {
-  if (!item.Metadata || typeof item.Metadata !== 'object') return false
-  const keys = Object.keys(item.Metadata)
-  return keys.length > 0
+  
+  // Пытаемся найти имена в кэше
+  const names = []
+  for (const linkedId of item.Metadata.linked_ids) {
+    for (const dictId in linkedItemsCache) {
+      const found = linkedItemsCache[dictId].find(i => i.ID === linkedId)
+      if (found) {
+        names.push(found.Name)
+        break
+      }
+    }
+  }
+  
+  return names.length > 0 ? names : [`Связано элементов: ${item.Metadata.linked_ids.length}`]
 }
 
 const resetForm = () => {
   formData.Name = ''
   formData.Value = ''
+  formData.linkedDictionaryId = null
+  formData.linked_ids = []
   formData.Metadata = ''
-  formData.class_ids = []
+  linkedItems.value = []
   metadataError.value = ''
   showAdvanced.value = false
-  showClassesDropdown.value = false
   isEditing.value = false
   editingId.value = null
 }
@@ -362,15 +383,25 @@ const openEditModal = (item) => {
   formData.Name = item.Name || ''
   formData.Value = item.Value || ''
   
-  // Восстанавливаем метаданные
   if (item.Metadata && typeof item.Metadata === 'object') {
-    // Восстанавливаем class_ids для учителя
-    if (Array.isArray(item.Metadata.class_ids)) {
-      formData.class_ids = [...item.Metadata.class_ids]
+    if (Array.isArray(item.Metadata.linked_ids) && item.Metadata.linked_ids.length > 0) {
+      formData.linked_ids = [...item.Metadata.linked_ids]
+      
+      // Определяем справочник связанных элементов
+      // Для этого ищем в кэше
+      for (const dictId in linkedItemsCache) {
+        const hasMatch = item.Metadata.linked_ids.some(id => 
+          linkedItemsCache[dictId].some(i => i.ID === id)
+        )
+        if (hasMatch) {
+          formData.linkedDictionaryId = dictId
+          linkedItems.value = linkedItemsCache[dictId]
+          break
+        }
+      }
     }
     
-    // Остальные метаданные показываем в JSON
-    const otherKeys = Object.keys(item.Metadata).filter(k => k !== 'class_ids')
+    const otherKeys = Object.keys(item.Metadata).filter(k => k !== 'linked_ids')
     if (otherKeys.length > 0) {
       const otherMetadata = {}
       otherKeys.forEach(k => { otherMetadata[k] = item.Metadata[k] })
@@ -405,15 +436,12 @@ const saveItem = async () => {
     const dictId = route.params.id
     const token = localStorage.getItem('token')
     
-    // Собираем метаданные
     let metadata = {}
     
-    // Добавляем class_ids для учителя
-    if (isTeachersDictionary.value && formData.class_ids.length > 0) {
-      metadata.class_ids = [...formData.class_ids]
+    if (formData.linked_ids.length > 0) {
+      metadata.linked_ids = [...formData.linked_ids]
     }
     
-    // Добавляем дополнительные свойства из JSON
     if (formData.Metadata?.trim()) {
       try {
         const parsed = JSON.parse(formData.Metadata)
@@ -740,7 +768,7 @@ const deleteItem = async (id) => {
 
 .col-name,
 .col-value,
-.col-meta {
+.col-links {
   display: flex;
   align-items: center;
 }
@@ -772,7 +800,7 @@ const deleteItem = async (id) => {
   font-size: 0.9rem;
 }
 
-.item-classes {
+.item-links {
   display: flex;
   align-items: center;
   gap: 0.4rem;
@@ -781,17 +809,11 @@ const deleteItem = async (id) => {
   flex-wrap: wrap;
 }
 
-.item-classes svg {
+.item-links svg {
   width: 14px;
   height: 14px;
   color: var(--primary);
   flex-shrink: 0;
-}
-
-.item-metadata-hint {
-  font-size: 0.85rem;
-  color: var(--text-muted);
-  font-style: italic;
 }
 
 .btn-edit-small,
@@ -833,59 +855,66 @@ const deleteItem = async (id) => {
   height: 16px;
 }
 
-/* Мультивыбор */
-.multi-select {
-  position: relative;
+/* Секция связей */
+.links-section {
+  padding: 1.25rem;
+  background: var(--primary-soft);
+  background: color-mix(in srgb, var(--primary-soft) 40%, var(--surface));
+  border: 1px dashed var(--primary-soft);
+  border-radius: var(--radius-sm);
+  margin-bottom: 1rem;
 }
 
-.multi-select-toggle {
-  width: 100%;
-  padding: 0.75rem 0.95rem;
-  font-size: 0.95rem;
-  font-family: inherit;
-  color: var(--text);
-  background: var(--bg);
-  border: 1.5px solid var(--border);
-  border-radius: var(--radius-sm);
-  cursor: pointer;
-  transition: all 0.2s;
+.links-header {
   display: flex;
   align-items: center;
-  justify-content: space-between;
   gap: 0.5rem;
-  text-align: left;
+  margin-bottom: 0.5rem;
 }
 
-.multi-select-toggle:hover {
-  border-color: #cfd6e3;
+.links-header svg {
+  width: 18px;
+  height: 18px;
+  color: var(--primary);
 }
 
-.multi-select-placeholder {
-  color: #a6afbf;
+.links-header h4 {
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: var(--text);
+  margin: 0;
 }
 
-.multi-select-value {
-  font-weight: 500;
-}
-
-.multi-select-toggle svg {
-  width: 16px;
-  height: 16px;
+.links-description {
+  font-size: 0.85rem;
   color: var(--text-muted);
+  line-height: 1.5;
+  margin-bottom: 1rem;
+}
+
+.links-loading,
+.links-empty {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.85rem 1rem;
+  background: var(--surface);
+  border-radius: var(--radius-sm);
+  color: var(--text-muted);
+  font-size: 0.88rem;
+}
+
+.links-loading .spinner-small {
+  border-color: var(--border);
+  border-top-color: var(--primary);
 }
 
 .multi-select-dropdown {
-  position: absolute;
-  top: calc(100% + 4px);
-  left: 0;
-  right: 0;
   background: var(--surface);
   border: 1.5px solid var(--border);
   border-radius: var(--radius-sm);
-  box-shadow: var(--shadow-md);
   max-height: 240px;
   overflow-y: auto;
-  z-index: 10;
   padding: 0.5rem;
 }
 
@@ -909,13 +938,6 @@ const deleteItem = async (id) => {
   height: 16px;
   cursor: pointer;
   accent-color: var(--primary);
-}
-
-.multi-select-empty {
-  padding: 0.75rem;
-  text-align: center;
-  color: var(--text-muted);
-  font-size: 0.88rem;
 }
 
 .advanced-section {

@@ -155,7 +155,7 @@ func GetForm(db *gorm.DB) gin.HandlerFunc {
     }
 }
 
-// ---------- SubmitResponse (обновлённый) ----------
+// ---------- SubmitResponse (абстрактная версия) ----------
 func SubmitResponse(db *gorm.DB) gin.HandlerFunc {
     return func(c *gin.Context) {
         var input struct {
@@ -167,13 +167,14 @@ func SubmitResponse(db *gorm.DB) gin.HandlerFunc {
             return
         }
 
+        // Получаем форму с вопросами
         var form models.Form
         if err := db.Preload("Questions").First(&form, "id = ?", input.FormID).Error; err != nil {
             c.JSON(http.StatusNotFound, gin.H{"error": "Form not found"})
             return
         }
 
-        // Получаем userID
+        // Получаем userID из контекста
         userID := c.GetString("userID")
         if userID == "" {
             c.JSON(http.StatusUnauthorized, gin.H{"error": "User not authenticated"})
@@ -181,126 +182,155 @@ func SubmitResponse(db *gorm.DB) gin.HandlerFunc {
         }
         uid := uuid.MustParse(userID)
 
-        // Проверяем занятость для is_booking вопросов
-        // Собираем информацию о бронированиях
-        var bookingsToCreate []models.Booking
+        // Ищем вопросы: бронирования (is_booking=true), даты (type=date), ресурса (на который ссылается depends_on)
+        var bookingQuestion *models.Question
+        var dateQuestion *models.Question
+        var resourceQuestion *models.Question
 
         for _, q := range form.Questions {
-            if q.IsBooking && q.DictionaryID != nil {
-                val, exists := input.Answers[q.ID.String()]
-                if !exists {
-                    if q.IsRequired {
-                        c.JSON(http.StatusBadRequest, gin.H{"error": "Required booking question not answered"})
-                        return
-                    }
-                    continue
-                }
-
-                // Получаем ID слота времени
-                slotIDStr, ok := val.(string)
-                if !ok {
-                    c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid slot value format"})
-                    return
-                }
-                slotID, err := uuid.Parse(slotIDStr)
-                if err != nil {
-                    c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid slot ID"})
-                    return
-                }
-
-                // Теперь нужно получить teacher_id и date из других ответов
-                // Поскольку мы не знаем, какие вопросы содержат учителя и дату, мы можем их найти по типу вопроса или по зависимости.
-                // Для простоты: предположим, что перед is_booking вопросом есть вопросы со справочником "Учителя" и "Дата".
-                // Реализуем поиск по типу вопроса: если вопрос типа dictionary и справочник "Учителя" – берём его ответ.
-                // Если вопрос типа date – берём его ответ.
-                // Это логика для MVP.
-
-                var teacherID uuid.UUID
-                var bookingDate time.Time
-
-                // Ищем teacher_id среди ответов
-                for _, q2 := range form.Questions {
-                    if q2.Type == "dictionary" && q2.DictionaryID != nil {
-                        // Проверяем, что справочник – "Учителя"
-                        var dict models.Dictionary
-                        if err := db.First(&dict, "id = ?", q2.DictionaryID).Error; err == nil {
-                            if dict.Name == "Учителя" || dict.Name == "Teachers" {
-                                if val2, exists2 := input.Answers[q2.ID.String()]; exists2 {
-                                    if str, ok2 := val2.(string); ok2 {
-                                        teacherID = uuid.MustParse(str)
-                                        break
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-
-                // Ищем дату среди ответов (вопрос типа date)
-                for _, q2 := range form.Questions {
-                    if q2.Type == "date" {
-                        if val2, exists2 := input.Answers[q2.ID.String()]; exists2 {
-                            if str, ok2 := val2.(string); ok2 {
-                                if t, err := time.Parse("2006-01-02", str); err == nil {
-                                    bookingDate = t
-                                    break
-                                }
-                            }
-                        }
-                    }
-                }
-
-                // Если teacherID или date не найдены – ошибка
-                if teacherID == uuid.Nil || bookingDate.IsZero() {
-                    c.JSON(http.StatusBadRequest, gin.H{"error": "Missing teacher or date for booking"})
-                    return
-                }
-
-                // Проверяем, не занят ли слот
-                var count int64
-                if err := db.Model(&models.Booking{}).
-                    Where("teacher_id = ? AND date = ? AND slot_id = ?", teacherID, bookingDate, slotID).
-                    Count(&count).Error; err != nil {
-                    c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to check booking"})
-                    return
-                }
-                if count > 0 {
-                    c.JSON(http.StatusConflict, gin.H{"error": "Selected slot is already booked"})
-                    return
-                }
-
-                // Сохраняем бронирование для создания позже
-                bookingsToCreate = append(bookingsToCreate, models.Booking{
-                    FormID:    uuid.MustParse(input.FormID),
-                    UserID:    uid,
-                    TeacherID: teacherID,
-                    Date:      bookingDate,
-                    SlotID:    slotID,
-                })
+            if q.IsBooking {
+                bookingQuestion = &q
+            }
+            if q.Type == "date" {
+                dateQuestion = &q
             }
         }
 
-        // Сохраняем ответ
-        answersJSON, _ := json.Marshal(input.Answers)
-        resp := models.Response{
-            FormID:  uuid.MustParse(input.FormID),
-            Answers: datatypes.JSON(answersJSON),
-        }
-        if uid != uuid.Nil {
+        // Если нет вопроса бронирования – просто сохраняем ответ и выходим
+        if bookingQuestion == nil {
+            answersJSON, _ := json.Marshal(input.Answers)
+            resp := models.Response{
+                FormID:  uuid.MustParse(input.FormID),
+                Answers: datatypes.JSON(answersJSON),
+            }
             resp.UserID = &uid
-        }
-        if err := db.Create(&resp).Error; err != nil {
-            c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to save response"})
+            if err := db.Create(&resp).Error; err != nil {
+                c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to save response"})
+                return
+            }
+            c.JSON(http.StatusCreated, gin.H{"message": "Response saved successfully"})
             return
         }
 
-        // Создаём бронирования
-        for _, booking := range bookingsToCreate {
-            if err := db.Create(&booking).Error; err != nil {
-                // Логируем ошибку, но не прерываем процесс (можно добавить в лог)
-                // c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create booking"})
-                // return
+        // Проверяем, что вопрос бронирования имеет depends_on (указывает на ресурс)
+        if bookingQuestion.DependsOn == nil {
+            c.JSON(http.StatusBadRequest, gin.H{"error": "Booking question must have a depends_on reference to the resource question"})
+            return
+        }
+
+        // Находим вопрос ресурса по DependsOn
+        for _, q := range form.Questions {
+            if q.ID == *bookingQuestion.DependsOn {
+                resourceQuestion = &q
+                break
             }
+        }
+
+        if resourceQuestion == nil {
+            c.JSON(http.StatusBadRequest, gin.H{"error": "Resource question not found for booking"})
+            return
+        }
+
+        // Извлекаем ID слота (из вопроса бронирования)
+        slotVal, ok := input.Answers[bookingQuestion.ID.String()]
+        if !ok {
+            c.JSON(http.StatusBadRequest, gin.H{"error": "Slot value missing"})
+            return
+        }
+        slotIDStr, ok := slotVal.(string)
+        if !ok {
+            c.JSON(http.StatusBadRequest, gin.H{"error": "Slot value must be a string (UUID)"})
+            return
+        }
+        slotID, err := uuid.Parse(slotIDStr)
+        if err != nil {
+            c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid slot UUID"})
+            return
+        }
+
+        // Извлекаем ID ресурса (из вопроса ресурса)
+        resourceVal, ok := input.Answers[resourceQuestion.ID.String()]
+        if !ok {
+            c.JSON(http.StatusBadRequest, gin.H{"error": "Resource value missing"})
+            return
+        }
+        resourceIDStr, ok := resourceVal.(string)
+        if !ok {
+            c.JSON(http.StatusBadRequest, gin.H{"error": "Resource value must be a string (UUID)"})
+            return
+        }
+        resourceID, err := uuid.Parse(resourceIDStr)
+        if err != nil {
+            c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid resource UUID"})
+            return
+        }
+
+        // Извлекаем дату (если есть вопрос даты)
+        var bookingDate time.Time
+        if dateQuestion != nil {
+            dateVal, ok := input.Answers[dateQuestion.ID.String()]
+            if !ok {
+                c.JSON(http.StatusBadRequest, gin.H{"error": "Date value missing"})
+                return
+            }
+            dateStr, ok := dateVal.(string)
+            if !ok {
+                c.JSON(http.StatusBadRequest, gin.H{"error": "Date value must be a string"})
+                return
+            }
+            bookingDate, err = time.Parse("2006-01-02", dateStr)
+            if err != nil {
+                c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid date format, use YYYY-MM-DD"})
+                return
+            }
+        }
+
+        // Транзакционная проверка занятости
+        var bookingExists int64
+        if err := db.Transaction(func(tx *gorm.DB) error {
+            // Проверяем, есть ли уже бронирование на этот слот для данного ресурса и даты
+            query := tx.Model(&models.Booking{}).
+                Where("teacher_id = ? AND slot_id = ?", resourceID, slotID)
+            if !bookingDate.IsZero() {
+                query = query.Where("date = ?", bookingDate)
+            }
+            if err := query.Count(&bookingExists).Error; err != nil {
+                return err
+            }
+            if bookingExists > 0 {
+                return gorm.ErrRecordNotFound // сигнал для обработки как конфликт
+            }
+
+            // Создаём бронирование
+            booking := models.Booking{
+                FormID:    uuid.MustParse(input.FormID),
+                UserID:    uid,
+                TeacherID: resourceID,
+                SlotID:    slotID,
+                Date:      bookingDate,
+            }
+            if err := tx.Create(&booking).Error; err != nil {
+                return err
+            }
+
+            // Сохраняем ответ
+            answersJSON, _ := json.Marshal(input.Answers)
+            resp := models.Response{
+                FormID:  uuid.MustParse(input.FormID),
+                Answers: datatypes.JSON(answersJSON),
+                UserID:  &uid,
+            }
+            if err := tx.Create(&resp).Error; err != nil {
+                return err
+            }
+            return nil
+        }); err != nil {
+            if err == gorm.ErrRecordNotFound {
+                c.JSON(http.StatusConflict, gin.H{"error": "Selected slot is already booked"})
+                return
+            }
+            c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to process booking"})
+            return
         }
 
         c.JSON(http.StatusCreated, gin.H{"message": "Response saved successfully"})
@@ -339,17 +369,17 @@ func GetResponses(db *gorm.DB) gin.HandlerFunc {
 
 // ---------- UpdateForm ----------
 type UpdateQuestionInput struct {
-    ID            *uuid.UUID  `json:"id"`
-    Type          string      `json:"type" binding:"required"`
-    Title         string      `json:"title" binding:"required"`
-    Description   string      `json:"description"`
-    OrderIndex    int         `json:"order_index"`
-    IsRequired    bool        `json:"is_required"`
-    Options       []string    `json:"options"`
-    DependsOn     interface{} `json:"depends_on"`
-    DependsValues []string    `json:"depends_values"`
-    DictionaryID  *string     `json:"dictionary_id"`
-    IsBooking     bool        `json:"is_booking"`
+            ID            *uuid.UUID  `json:"id"`
+            Type          string      `json:"type" binding:"required"`
+            Title         string      `json:"title" binding:"required"`
+            Description   string      `json:"description"`
+            OrderIndex    int         `json:"order_index"`
+            IsRequired    bool        `json:"is_required"`
+            Options       []string    `json:"options"`
+            DependsOn     interface{} `json:"depends_on"`
+            DependsValues []string    `json:"depends_values"`
+            DictionaryID  *string     `json:"dictionary_id"`
+            IsBooking     bool        `json:"is_booking"`
 }
 
 type UpdateFormInput struct {

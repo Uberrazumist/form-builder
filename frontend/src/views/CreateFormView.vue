@@ -20,7 +20,7 @@
             type="text"
             v-model="formData.title"
             required
-            placeholder="Например: Анкета для учеников"
+            placeholder="Например: Запись к мастеру"
           />
         </div>
 
@@ -161,6 +161,27 @@
               </span>
             </div>
 
+            <!-- Настройка зависимостей -->
+            <div class="form-group">
+              <label>
+                <Icon name="link" />
+                Фильтровать варианты на основе предыдущего ответа
+              </label>
+              <select v-model="question.depends_on">
+                <option :value="null">Показывать все варианты (нет зависимости)</option>
+                <option
+                  v-for="prevQ in getPreviousDictionaryQuestions(index)"
+                  :key="prevQ.id"
+                  :value="prevQ.id"
+                >
+                  Вопрос {{ prevQ.index + 1 }}: {{ prevQ.title || '(без текста)' }}
+                </option>
+              </select>
+              <span class="hint">
+                Если выбрано — варианты будут фильтроваться по связям в справочнике
+              </span>
+            </div>
+
             <div class="checkbox-group">
               <label class="checkbox-label">
                 <input type="checkbox" v-model="question.is_booking" />
@@ -252,12 +273,21 @@ const addQuestion = () => {
     options: [],
     rating_max: 5,
     dictionary_id: null,
-    is_booking: false
+    is_booking: false,
+    depends_on: null
   })
 }
 
 const removeQuestion = (index) => {
+  const removedId = formData.questions[index].id
   formData.questions.splice(index, 1)
+  
+  // Очищаем depends_on, если он ссылался на удалённый вопрос
+  formData.questions.forEach(q => {
+    if (q.depends_on === removedId) {
+      q.depends_on = null
+    }
+  })
 }
 
 const addOption = (question) => {
@@ -266,6 +296,17 @@ const addOption = (question) => {
 
 const removeOption = (question, optIndex) => {
   question.options.splice(optIndex, 1)
+}
+
+const getPreviousDictionaryQuestions = (currentIndex) => {
+  return formData.questions
+    .slice(0, currentIndex)
+    .filter(q => q.type === 'dictionary')
+    .map((q, idx) => ({
+      id: q.id,
+      index: formData.questions.indexOf(q),
+      title: q.title
+    }))
 }
 
 const submitForm = async () => {
@@ -312,7 +353,7 @@ const submitForm = async () => {
         rating_max: q.rating_max,
         dictionary_id: q.type === 'dictionary' ? q.dictionary_id : null,
         is_booking: q.type === 'dictionary' ? q.is_booking : false,
-        depends_on: null
+        depends_on: q.depends_on || null
       }))
     }
     
