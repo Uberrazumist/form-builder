@@ -47,7 +47,6 @@
             <span v-if="question.Required" class="required">*</span>
           </label>
 
-          <!-- Text -->
           <input
             v-if="question.Type === 'text'"
             type="text"
@@ -57,7 +56,6 @@
             class="form-input"
           />
 
-          <!-- Textarea -->
           <textarea
             v-else-if="question.Type === 'textarea'"
             v-model="answers[question.ID]"
@@ -67,41 +65,62 @@
             class="form-textarea"
           ></textarea>
 
-          <!-- Radio -->
+          <input
+            v-else-if="question.Type === 'date'"
+            type="date"
+            v-model="answers[question.ID]"
+            :required="question.Required"
+            class="form-input"
+          />
+
           <div v-else-if="question.Type === 'radio'" class="options-group">
             <label
-              v-for="(option, optIdx) in question.Options"
+              v-for="(option, optIdx) in getOptionsForQuestion(question)"
               :key="optIdx"
               class="option-label"
             >
               <input
                 type="radio"
                 :name="'q_' + question.ID"
-                :value="option.Value !== undefined ? option.Value : option"
+                :value="getOptionValue(option)"
                 v-model="answers[question.ID]"
                 :required="question.Required"
               />
-              <span>{{ option.Value !== undefined ? option.Label || option.Value : option }}</span>
+              <span>{{ getOptionLabel(option) }}</span>
             </label>
+            <div v-if="getQuestionRole(question) === 'teacher' && filteredTeachers.length === 0 && answers[questionIds.class]" class="empty-hint">
+              <Icon name="alert" />
+              <span>Для выбранного класса нет учителей</span>
+            </div>
+            <div v-if="getQuestionRole(question) === 'time' && isTimeLocked" class="locked-hint">
+              <Icon name="lock" />
+              <span>Сначала выберите учителя и дату</span>
+            </div>
+            <div v-if="getQuestionRole(question) === 'time' && !isTimeLocked && loadingSlots" class="loading-hint">
+              <div class="spinner-small"></div>
+              <span>Загрузка...</span>
+            </div>
+            <div v-if="getQuestionRole(question) === 'time' && !isTimeLocked && !loadingSlots && availableSlots.length === 0" class="empty-hint">
+              <Icon name="alert" />
+              <span>На эту дату свободных слотов нет</span>
+            </div>
           </div>
 
-          <!-- Checkbox -->
           <div v-else-if="question.Type === 'checkbox'" class="options-group">
             <label
-              v-for="(option, optIdx) in question.Options"
+              v-for="(option, optIdx) in getOptionsForQuestion(question)"
               :key="optIdx"
               class="option-label"
             >
               <input
                 type="checkbox"
-                :value="option.Value !== undefined ? option.Value : option"
+                :value="getOptionValue(option)"
                 v-model="answers[question.ID]"
               />
-              <span>{{ option.Value !== undefined ? option.Label || option.Value : option }}</span>
+              <span>{{ getOptionLabel(option) }}</span>
             </label>
           </div>
 
-          <!-- Select -->
           <select
             v-else-if="question.Type === 'select'"
             v-model="answers[question.ID]"
@@ -110,47 +129,49 @@
           >
             <option value="" disabled>Выберите вариант</option>
             <option
-              v-for="(option, optIdx) in question.Options"
+              v-for="(option, optIdx) in getOptionsForQuestion(question)"
               :key="optIdx"
-              :value="option"
+              :value="getOptionValue(option)"
             >
-              {{ option }}
+              {{ getOptionLabel(option) }}
             </option>
           </select>
 
-          <!-- Dictionary -->
           <div v-else-if="question.Type === 'dictionary'" class="dictionary-options">
-            <div v-if="!dictionaryItems[question.ID] && question.DictionaryID" class="loading-hint">
+            <div v-if="getQuestionRole(question) === 'time' && isTimeLocked" class="locked-hint">
+              <Icon name="lock" />
+              <span>Сначала выберите учителя и дату</span>
+            </div>
+            <div v-else-if="getQuestionRole(question) === 'time' && loadingSlots" class="loading-hint">
               <div class="spinner-small"></div>
-              <span>Загрузка вариантов...</span>
+              <span>Загрузка...</span>
             </div>
-            <div v-else-if="needsParentAnswer(question)" class="empty-hint">
+            <div v-else-if="getQuestionRole(question) === 'time' && !loadingSlots && availableSlots.length === 0" class="empty-hint">
               <Icon name="alert" />
-              <span>Сначала выберите значение в предыдущем вопросе</span>
+              <span>На эту дату свободных слотов нет</span>
             </div>
-            <div v-else-if="dictionaryItems[question.ID]?.length === 0" class="empty-hint">
+            <div v-else-if="getQuestionRole(question) === 'teacher' && filteredTeachers.length === 0 && answers[questionIds.class]" class="empty-hint">
               <Icon name="alert" />
-              <span>Нет доступных вариантов</span>
+              <span>Для выбранного класса нет учителей</span>
             </div>
             <div v-else class="options-group">
               <label
-                v-for="item in dictionaryItems[question.ID]"
-                :key="item.ID"
+                v-for="option in getOptionsForQuestion(question)"
+                :key="getOptionValue(option)"
                 class="option-label"
               >
                 <input
                   type="radio"
                   :name="'q_' + question.ID"
-                  :value="item.Value || item.ID"
+                  :value="getOptionValue(option)"
                   v-model="answers[question.ID]"
                   :required="question.Required"
                 />
-                <span>{{ item.Name || item.Label || item.Value }}</span>
+                <span>{{ getOptionLabel(option) }}</span>
               </label>
             </div>
           </div>
 
-          <!-- Rating -->
           <div v-else-if="question.Type === 'rating'" class="rating-group">
             <div class="stars">
               <button
@@ -183,7 +204,7 @@
 </template>
 
 <script setup>
-import { ref, reactive, onMounted, watch } from 'vue'
+import { ref, reactive, computed, onMounted, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import Icon from '../components/Icon.vue'
 import FormResult from '../components/FormResult.vue'
@@ -193,8 +214,17 @@ const router = useRouter()
 
 const form = ref(null)
 const answers = reactive({})
-const dictionaryItems = reactive({})
+const dictionaryItemsCache = reactive({})
+const dictionaryMeta = reactive({})
+const questionIds = reactive({
+  class: null,
+  teacher: null,
+  date: null,
+  time: null
+})
+const availableSlots = ref([])
 const loading = ref(true)
+const loadingSlots = ref(false)
 const error = ref(null)
 const result = ref(null)
 
@@ -249,9 +279,11 @@ const loadForm = async () => {
       }
     })
     
+    await identifyQuestionRoles()
+    
     for (const q of form.value.Questions) {
-      if (q.Type === 'dictionary' && q.DictionaryID && !q.DependsOn) {
-        await loadDictionaryItems(q)
+      if (q.Type === 'dictionary' && q.DictionaryID) {
+        await loadDictionaryItems(q.DictionaryID)
       }
     }
   } catch (err) {
@@ -261,99 +293,200 @@ const loadForm = async () => {
   }
 }
 
-const needsParentAnswer = (question) => {
-  if (!question.DependsOn) return false
-  const parentValue = answers[question.DependsOn]
-  return !parentValue || (Array.isArray(parentValue) && parentValue.length === 0)
-}
-
-const getMetadataKey = (parentQuestion) => {
-  if (!parentQuestion || !parentQuestion.DictionaryID) return null
+const identifyQuestionRoles = async () => {
+  if (!form.value?.Questions) return
   
-  const dictKeyMap = {
-    'учителя': 'teacher_id',
-    'учитель': 'teacher_id',
-    'teachers': 'teacher_id',
-    'teacher': 'teacher_id',
-    'классы': 'class_id',
-    'класс': 'class_id',
-    'classes': 'class_id',
-    'class': 'class_id',
-    'предметы': 'subject_id',
-    'предмет': 'subject_id',
-    'subjects': 'subject_id',
-    'subject': 'subject_id',
-    'кабинеты': 'room_id',
-    'кабинет': 'room_id',
-    'rooms': 'room_id',
-    'room': 'room_id'
+  const token = localStorage.getItem('token')
+  const headers = token ? { 'Authorization': `Bearer ${token}` } : {}
+  
+  try {
+    const dictsResponse = await fetch('/api/dictionaries', { headers })
+    if (dictsResponse.ok) {
+      const dictsData = await dictsResponse.json()
+      const dicts = dictsData.dictionaries || dictsData || []
+      dicts.forEach(d => {
+        dictionaryMeta[d.ID] = d
+      })
+    }
+  } catch (err) {
+    console.error('[Preview] Failed to load dictionaries meta:', err)
   }
   
-  return `dict_${parentQuestion.DictionaryID}_id`
+  for (const q of form.value.Questions) {
+    if (q.Type === 'date') {
+      questionIds.date = q.ID
+    } else if (q.Type === 'dictionary' && q.DictionaryID) {
+      const dictName = (dictionaryMeta[q.DictionaryID]?.Name || '').toLowerCase()
+      
+      if (dictName.includes('класс') || dictName.includes('class')) {
+        questionIds.class = q.ID
+      } else if (dictName.includes('учитель') || dictName.includes('teacher')) {
+        questionIds.teacher = q.ID
+      } else if (q.IsBooking || dictName.includes('время') || dictName.includes('time')) {
+        questionIds.time = q.ID
+      }
+    }
+  }
 }
 
-const loadDictionaryItems = async (question) => {
+const loadDictionaryItems = async (dictionaryId) => {
+  if (dictionaryItemsCache[dictionaryId]) return
+  
   try {
-    let parentValue = null
-    let filterMetadata = null
+    const token = localStorage.getItem('token')
+    const headers = token ? { 'Authorization': `Bearer ${token}` } : {}
     
-    if (question.DependsOn) {
-      parentValue = answers[question.DependsOn]
-      
-      if (!parentValue || (Array.isArray(parentValue) && parentValue.length === 0)) {
-        dictionaryItems[question.ID] = []
-        return
-      }
-      
-      const parentQuestion = form.value.Questions.find(q => q.ID === question.DependsOn)
-      
-      if (parentQuestion && parentQuestion.DictionaryID) {
-        const metadataKey = getMetadataKey(parentQuestion)
-        if (metadataKey) {
-          filterMetadata = { [metadataKey]: parentValue }
-        }
-      }
-    }
-    
-    const url = new URL(`/api/dictionaries/${question.DictionaryID}/items`, window.location.origin)
-    if (filterMetadata) {
-      url.searchParams.append('filter_metadata', JSON.stringify(filterMetadata))
-    } else if (parentValue) {
-      url.searchParams.append('parent', parentValue)
-    }
-    
-    const response = await fetch(url.toString())
+    const response = await fetch(`/api/dictionaries/${dictionaryId}/items`, { headers })
     if (response.ok) {
       const data = await response.json()
-      dictionaryItems[question.ID] = data.items || data || []
+      dictionaryItemsCache[dictionaryId] = data.items || data || []
     }
   } catch (err) {
     console.error('[Preview] Failed to load dictionary items:', err)
-    dictionaryItems[question.ID] = []
+    dictionaryItemsCache[dictionaryId] = []
+  }
+}
+
+const getQuestionRole = (question) => {
+  if (question.ID === questionIds.class) return 'class'
+  if (question.ID === questionIds.teacher) return 'teacher'
+  if (question.ID === questionIds.date) return 'date'
+  if (question.ID === questionIds.time) return 'time'
+  return 'other'
+}
+
+const getOptionsForQuestion = (question) => {
+  const role = getQuestionRole(question)
+  
+  if (role === 'teacher') {
+    return filteredTeachers.value
+  }
+  
+  if (role === 'time') {
+    if (isTimeLocked.value) return []
+    return availableSlots.value
+  }
+  
+  if (question.Type === 'dictionary' && question.DictionaryID) {
+    return dictionaryItemsCache[question.DictionaryID] || []
+  }
+  
+  return question.Options || []
+}
+
+const getOptionValue = (option) => {
+  if (typeof option === 'object' && option !== null) {
+    return option.Value || option.ID
+  }
+  return option
+}
+
+const getOptionLabel = (option) => {
+  if (typeof option === 'object' && option !== null) {
+    return option.Name || option.Label || option.Value || ''
+  }
+  return option
+}
+
+const filteredTeachers = computed(() => {
+  const teacherQuestion = form.value?.Questions.find(q => q.ID === questionIds.teacher)
+  if (!teacherQuestion || !teacherQuestion.DictionaryID) return []
+  
+  const allTeachers = dictionaryItemsCache[teacherQuestion.DictionaryID] || []
+  const selectedClassId = answers[questionIds.class]
+  
+  if (!selectedClassId) return allTeachers
+  
+  return allTeachers.filter(teacher => {
+    if (!teacher.Metadata?.class_ids || !Array.isArray(teacher.Metadata.class_ids)) {
+      return false
+    }
+    return teacher.Metadata.class_ids.includes(selectedClassId)
+  })
+})
+
+const isTimeLocked = computed(() => {
+  const teacherAnswer = answers[questionIds.teacher]
+  const dateAnswer = answers[questionIds.date]
+  return !teacherAnswer || !dateAnswer
+})
+
+const loadAvailableSlots = async () => {
+  const teacherId = answers[questionIds.teacher]
+  const dateValue = answers[questionIds.date]
+  
+  if (!teacherId || !dateValue) {
+    availableSlots.value = []
+    return
+  }
+  
+  loadingSlots.value = true
+  try {
+    const token = localStorage.getItem('token')
+    const url = `/api/bookings/available?teacher_id=${encodeURIComponent(teacherId)}&date=${encodeURIComponent(dateValue)}`
+    
+    const response = await fetch(url, {
+      headers: {
+        'Authorization': `Bearer ${token}`
+      }
+    })
+    
+    if (response.ok) {
+      const data = await response.json()
+      availableSlots.value = data.slots || data || []
+    } else {
+      availableSlots.value = []
+    }
+  } catch (err) {
+    console.error('[Preview] Failed to load available slots:', err)
+    availableSlots.value = []
+  } finally {
+    loadingSlots.value = false
   }
 }
 
 watch(
-  () => JSON.stringify(answers),
-  async (newVal, oldVal) => {
-    if (!form.value || newVal === oldVal) return
+  () => answers[questionIds.class],
+  (newVal, oldVal) => {
+    if (newVal === oldVal) return
+    if (questionIds.teacher) answers[questionIds.teacher] = ''
+    if (questionIds.date) answers[questionIds.date] = ''
+    if (questionIds.time) answers[questionIds.time] = ''
+    availableSlots.value = []
+  }
+)
+
+watch(
+  () => answers[questionIds.teacher],
+  (newVal, oldVal) => {
+    if (newVal === oldVal) return
+    if (questionIds.date) answers[questionIds.date] = ''
+    if (questionIds.time) answers[questionIds.time] = ''
+    availableSlots.value = []
+  }
+)
+
+watch(
+  () => answers[questionIds.date],
+  (newVal, oldVal) => {
+    if (newVal === oldVal) return
+    if (questionIds.time) answers[questionIds.time] = ''
     
-    for (const q of form.value.Questions) {
-      if (q.DependsOn && q.Type === 'dictionary') {
-        const parentAnswer = answers[q.DependsOn]
-        const oldAnswers = oldVal ? JSON.parse(oldVal) : {}
-        if (oldAnswers[q.DependsOn] !== parentAnswer) {
-          if (q.Type === 'checkbox') {
-            answers[q.ID] = []
-          } else {
-            answers[q.ID] = ''
-          }
-        }
-        await loadDictionaryItems(q)
-      }
+    if (answers[questionIds.teacher] && newVal) {
+      loadAvailableSlots()
+    } else {
+      availableSlots.value = []
     }
-  },
-  { deep: true }
+  }
+)
+
+watch(
+  () => answers[questionIds.teacher],
+  (newVal) => {
+    if (newVal && answers[questionIds.date]) {
+      loadAvailableSlots()
+    }
+  }
 )
 </script>
 
@@ -631,15 +764,19 @@ watch(
 }
 
 .loading-hint,
-.empty-hint {
+.empty-hint,
+.locked-hint {
   display: flex;
   align-items: center;
   gap: 0.6rem;
   padding: 0.85rem 1rem;
-  background: var(--primary-soft);
   border-radius: var(--radius-sm);
-  color: var(--primary);
   font-size: 0.9rem;
+}
+
+.loading-hint {
+  background: var(--primary-soft);
+  color: var(--primary);
 }
 
 .empty-hint {
@@ -647,7 +784,14 @@ watch(
   color: #8a6d00;
 }
 
-.empty-hint svg {
+.locked-hint {
+  background: #f5f5f5;
+  color: #666;
+  border: 1px dashed var(--border);
+}
+
+.empty-hint svg,
+.locked-hint svg {
   width: 18px;
   height: 18px;
   flex-shrink: 0;

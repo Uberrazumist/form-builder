@@ -82,6 +82,7 @@
               <option value="checkbox">Несколько вариантов (checkbox)</option>
               <option value="select">Выбор из списка (select)</option>
               <option value="rating">Рейтинг (звёзды)</option>
+              <option value="date">Дата</option>
               <option value="dictionary">Выбор из справочника</option>
             </select>
           </div>
@@ -96,6 +97,7 @@
             />
           </div>
 
+          <!-- Варианты ответов для radio/checkbox/select -->
           <div
             v-if="['radio', 'checkbox', 'select'].includes(question.type)"
             class="options-section"
@@ -131,6 +133,13 @@
             </button>
           </div>
 
+          <!-- Подсказка для даты -->
+          <div v-if="question.type === 'date'" class="info-hint">
+            <Icon name="calendar" />
+            <span>Пользователь сможет выбрать дату через стандартный календарь браузера</span>
+          </div>
+
+          <!-- Настройки для справочника -->
           <div v-if="question.type === 'dictionary'" class="dictionary-section">
             <div class="form-group">
               <label>
@@ -303,7 +312,7 @@ const submitForm = async () => {
         rating_max: q.rating_max,
         dictionary_id: q.type === 'dictionary' ? q.dictionary_id : null,
         is_booking: q.type === 'dictionary' ? q.is_booking : false,
-        depends_on: null // Зависимости настраиваются только при редактировании
+        depends_on: null
       }))
     }
     
@@ -512,6 +521,24 @@ select:focus {
   padding: 2rem;
   color: var(--text-muted);
   font-size: 0.95rem;
+}
+
+.info-hint {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.85rem 1rem;
+  background: var(--primary-soft);
+  border-radius: var(--radius-sm);
+  color: var(--primary);
+  font-size: 0.88rem;
+  margin-bottom: 1rem;
+}
+
+.info-hint svg {
+  width: 18px;
+  height: 18px;
+  flex-shrink: 0;
 }
 
 .question-card {

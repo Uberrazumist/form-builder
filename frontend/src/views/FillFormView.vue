@@ -53,10 +53,19 @@
             class="form-textarea"
           ></textarea>
 
+          <!-- Date -->
+          <input
+            v-else-if="question.Type === 'date'"
+            type="date"
+            v-model="answers[question.ID]"
+            :required="question.Required"
+            class="form-input"
+          />
+
           <!-- Radio -->
           <div v-else-if="question.Type === 'radio'" class="options-group">
             <label
-              v-for="(option, optIdx) in question.Options"
+              v-for="(option, optIdx) in getOptionsForQuestion(question)"
               :key="optIdx"
               class="option-label"
               :class="{ disabled: isOptionBusy(question, option) }"
@@ -64,41 +73,47 @@
               <input
                 type="radio"
                 :name="'q_' + question.ID"
-                :value="option.Value !== undefined ? option.Value : option"
+                :value="getOptionValue(option)"
                 v-model="answers[question.ID]"
                 :required="question.Required"
                 :disabled="isOptionBusy(question, option)"
               />
               <span class="option-text">
-                {{ option.Value !== undefined ? option.Label || option.Value : option }}
+                {{ getOptionLabel(option) }}
                 <span v-if="isOptionBusy(question, option)" class="busy-badge">Занято</span>
-                <span v-else-if="isCheckingBusy(question, option)" class="checking-badge">Проверка...</span>
               </span>
             </label>
-            <div v-if="question.Type === 'dictionary' && !dictionaryItems[question.ID] && question.DictionaryID" class="loading-hint">
+            <div v-if="getQuestionRole(question) === 'teacher' && filteredTeachers.length === 0 && answers[questionIds.class]" class="empty-hint">
+              <Icon name="alert" />
+              <span>Для выбранного класса нет учителей</span>
+            </div>
+            <div v-if="getQuestionRole(question) === 'time' && isTimeLocked" class="locked-hint">
+              <Icon name="lock" />
+              <span>Сначала выберите учителя и дату</span>
+            </div>
+            <div v-if="getQuestionRole(question) === 'time' && !isTimeLocked && loadingSlots" class="loading-hint">
               <div class="spinner-small"></div>
-              <span>Загрузка вариантов...</span>
+              <span>Загрузка доступного времени...</span>
+            </div>
+            <div v-if="getQuestionRole(question) === 'time' && !isTimeLocked && !loadingSlots && availableSlots.length === 0" class="empty-hint">
+              <Icon name="alert" />
+              <span>На эту дату свободных слотов нет</span>
             </div>
           </div>
 
           <!-- Checkbox -->
           <div v-else-if="question.Type === 'checkbox'" class="options-group">
             <label
-              v-for="(option, optIdx) in question.Options"
+              v-for="(option, optIdx) in getOptionsForQuestion(question)"
               :key="optIdx"
               class="option-label"
-              :class="{ disabled: isOptionBusy(question, option) }"
             >
               <input
                 type="checkbox"
-                :value="option.Value !== undefined ? option.Value : option"
+                :value="getOptionValue(option)"
                 v-model="answers[question.ID]"
-                :disabled="isOptionBusy(question, option) && !answers[question.ID]?.includes(option.Value !== undefined ? option.Value : option)"
               />
-              <span class="option-text">
-                {{ option.Value !== undefined ? option.Label || option.Value : option }}
-                <span v-if="isOptionBusy(question, option)" class="busy-badge">Занято</span>
-              </span>
+              <span>{{ getOptionLabel(option) }}</span>
             </label>
           </div>
 
@@ -107,51 +122,55 @@
             v-else-if="question.Type === 'select'"
             v-model="answers[question.ID]"
             :required="question.Required"
+            :disabled="isTimeLocked && getQuestionRole(question) === 'time'"
             class="form-select"
           >
             <option value="" disabled>Выберите вариант</option>
             <option
-              v-for="(option, optIdx) in question.Options"
+              v-for="(option, optIdx) in getOptionsForQuestion(question)"
               :key="optIdx"
-              :value="option"
+              :value="getOptionValue(option)"
             >
-              {{ option }}
+              {{ getOptionLabel(option) }}
             </option>
           </select>
 
-          <!-- Dictionary -->
+          <!-- Dictionary (общий случай) -->
           <div v-else-if="question.Type === 'dictionary'" class="dictionary-options">
-            <div v-if="!dictionaryItems[question.ID] && question.DictionaryID" class="loading-hint">
+            <div v-if="getQuestionRole(question) === 'time' && isTimeLocked" class="locked-hint">
+              <Icon name="lock" />
+              <span>Сначала выберите учителя и дату</span>
+            </div>
+            <div v-else-if="getQuestionRole(question) === 'time' && loadingSlots" class="loading-hint">
               <div class="spinner-small"></div>
-              <span>Загрузка вариантов из справочника...</span>
+              <span>Загрузка доступного времени...</span>
             </div>
-            <div v-else-if="needsParentAnswer(question)" class="empty-hint">
+            <div v-else-if="getQuestionRole(question) === 'time' && !loadingSlots && availableSlots.length === 0" class="empty-hint">
               <Icon name="alert" />
-              <span>Сначала выберите значение в предыдущем вопросе, чтобы увидеть доступные варианты</span>
+              <span>На эту дату свободных слотов нет</span>
             </div>
-            <div v-else-if="dictionaryItems[question.ID]?.length === 0" class="empty-hint">
+            <div v-else-if="getQuestionRole(question) === 'teacher' && filteredTeachers.length === 0 && answers[questionIds.class]" class="empty-hint">
               <Icon name="alert" />
-              <span>Нет доступных вариантов для выбранного значения</span>
+              <span>Для выбранного класса нет учителей</span>
             </div>
             <div v-else class="options-group">
               <label
-                v-for="item in dictionaryItems[question.ID]"
-                :key="item.ID"
+                v-for="option in getOptionsForQuestion(question)"
+                :key="getOptionValue(option)"
                 class="option-label"
-                :class="{ disabled: question.IsBooking && bookingStatus[question.ID]?.[item.ID] === 'busy' }"
+                :class="{ disabled: isOptionBusy(question, option) }"
               >
                 <input
                   type="radio"
                   :name="'q_' + question.ID"
-                  :value="item.Value || item.ID"
+                  :value="getOptionValue(option)"
                   v-model="answers[question.ID]"
                   :required="question.Required"
-                  :disabled="question.IsBooking && bookingStatus[question.ID]?.[item.ID] === 'busy'"
+                  :disabled="isOptionBusy(question, option) || (isTimeLocked && getQuestionRole(question) === 'time')"
                 />
                 <span class="option-text">
-                  {{ item.Name || item.Label || item.Value }}
-                  <span v-if="question.IsBooking && bookingStatus[question.ID]?.[item.ID] === 'busy'" class="busy-badge">Занято</span>
-                  <span v-else-if="question.IsBooking && checkingItems[question.ID + '_' + item.ID]" class="checking-badge">Проверка...</span>
+                  {{ getOptionLabel(option) }}
+                  <span v-if="isOptionBusy(question, option)" class="busy-badge">Занято</span>
                 </span>
               </label>
             </div>
@@ -191,7 +210,7 @@
 </template>
 
 <script setup>
-import { ref, reactive, onMounted, watch } from 'vue'
+import { ref, reactive, computed, onMounted, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import Icon from '../components/Icon.vue'
 import FormResult from '../components/FormResult.vue'
@@ -201,13 +220,25 @@ const router = useRouter()
 
 const form = ref(null)
 const answers = reactive({})
-const dictionaryItems = reactive({})
 const bookingStatus = reactive({})
-const checkingItems = reactive({})
 const loading = ref(true)
+const loadingSlots = ref(false)
 const error = ref(null)
 const result = ref(null)
 const submitting = ref(false)
+const availableSlots = ref([])
+
+// Кэши для справочников
+const dictionaryItemsCache = reactive({})
+const dictionaryMeta = reactive({}) // { dictId: { Name, ... } }
+
+// ID вопросов по ролям
+const questionIds = reactive({
+  class: null,
+  teacher: null,
+  date: null,
+  time: null
+})
 
 onMounted(async () => {
   await loadForm()
@@ -236,6 +267,7 @@ const loadForm = async () => {
     const data = await response.json()
     form.value = data
     
+    // Инициализация ответов
     form.value.Questions.forEach(q => {
       if (q.Type === 'checkbox') {
         answers[q.ID] = []
@@ -244,10 +276,13 @@ const loadForm = async () => {
       }
     })
     
-    // Загружаем элементы справочников для вопросов без зависимостей
+    // Определяем роли вопросов и загружаем справочники
+    await identifyQuestionRoles()
+    
+    // Загружаем элементы справочников для всех dictionary-вопросов
     for (const q of form.value.Questions) {
-      if (q.Type === 'dictionary' && q.DictionaryID && !q.DependsOn) {
-        await loadDictionaryItems(q)
+      if (q.Type === 'dictionary' && q.DictionaryID) {
+        await loadDictionaryItems(q.DictionaryID)
       }
     }
   } catch (err) {
@@ -257,165 +292,223 @@ const loadForm = async () => {
   }
 }
 
-// Определяет, нужно ли значение из родительского вопроса
-const needsParentAnswer = (question) => {
-  if (!question.DependsOn) return false
-  const parentValue = answers[question.DependsOn]
-  return !parentValue || (Array.isArray(parentValue) && parentValue.length === 0)
-}
-
-// Определяет ключ метаданных на основе названия справочника родителя
-const getMetadataKey = (parentQuestion) => {
-  if (!parentQuestion || !parentQuestion.DictionaryID) return null
+const identifyQuestionRoles = async () => {
+  if (!form.value?.Questions) return
   
-  // Получаем справочник родителя из формы
-  const parentDictId = parentQuestion.DictionaryID
+  const token = localStorage.getItem('token')
+  const headers = token ? { 'Authorization': `Bearer ${token}` } : {}
   
-  // Универсальное правило: берём название справочника и формируем ключ
-  // Например: "Учителя" -> "teacher_id", "Классы" -> "class_id"
-  // Для простоты используем словарь соответствий
-  const dictKeyMap = {
-    'учителя': 'teacher_id',
-    'учитель': 'teacher_id',
-    'teachers': 'teacher_id',
-    'teacher': 'teacher_id',
-    'классы': 'class_id',
-    'класс': 'class_id',
-    'classes': 'class_id',
-    'class': 'class_id',
-    'предметы': 'subject_id',
-    'предмет': 'subject_id',
-    'subjects': 'subject_id',
-    'subject': 'subject_id',
-    'кабинеты': 'room_id',
-    'кабинет': 'room_id',
-    'rooms': 'room_id',
-    'room': 'room_id'
+  // Загружаем информацию о справочниках
+  try {
+    const dictsResponse = await fetch('/api/dictionaries', { headers })
+    if (dictsResponse.ok) {
+      const dictsData = await dictsResponse.json()
+      const dicts = dictsData.dictionaries || dictsData || []
+      dicts.forEach(d => {
+        dictionaryMeta[d.ID] = d
+      })
+    }
+  } catch (err) {
+    console.error('[FillForm] Failed to load dictionaries meta:', err)
   }
   
-  // Ищем справочник в вопросах формы, чтобы получить его название
-  // Для простоты возвращаем ключ на основе ID справочника
-  // В реальном приложении нужно загрузить название справочника
-  return `dict_${parentDictId}_id`
+  // Определяем роли
+  for (const q of form.value.Questions) {
+    if (q.Type === 'date') {
+      questionIds.date = q.ID
+    } else if (q.Type === 'dictionary' && q.DictionaryID) {
+      const dictName = (dictionaryMeta[q.DictionaryID]?.Name || '').toLowerCase()
+      
+      if (dictName.includes('класс') || dictName.includes('class')) {
+        questionIds.class = q.ID
+      } else if (dictName.includes('учитель') || dictName.includes('teacher')) {
+        questionIds.teacher = q.ID
+      } else if (q.IsBooking || dictName.includes('время') || dictName.includes('time')) {
+        questionIds.time = q.ID
+      }
+    }
+  }
 }
 
-const loadDictionaryItems = async (question) => {
+const loadDictionaryItems = async (dictionaryId) => {
+  if (dictionaryItemsCache[dictionaryId]) return
+  
   try {
-    let parentValue = null
-    let filterMetadata = null
+    const token = localStorage.getItem('token')
+    const headers = token ? { 'Authorization': `Bearer ${token}` } : {}
     
-    if (question.DependsOn) {
-      parentValue = answers[question.DependsOn]
-      
-      if (!parentValue || (Array.isArray(parentValue) && parentValue.length === 0)) {
-        dictionaryItems[question.ID] = []
-        return
-      }
-      
-      // Находим родительский вопрос
-      const parentQuestion = form.value.Questions.find(q => q.ID === question.DependsOn)
-      
-      if (parentQuestion && parentQuestion.DictionaryID) {
-        const metadataKey = getMetadataKey(parentQuestion)
-        if (metadataKey) {
-          filterMetadata = { [metadataKey]: parentValue }
-        }
-      }
-    }
-    
-    const url = new URL(`/api/dictionaries/${question.DictionaryID}/items`, window.location.origin)
-    if (filterMetadata) {
-      url.searchParams.append('filter_metadata', JSON.stringify(filterMetadata))
-    } else if (parentValue) {
-      // Fallback: передаём parent, если filter_metadata не определён
-      url.searchParams.append('parent', parentValue)
-    }
-    
-    console.log('[FillForm] Loading dictionary items:', url.toString())
-    
-    const response = await fetch(url.toString())
+    const response = await fetch(`/api/dictionaries/${dictionaryId}/items`, { headers })
     if (response.ok) {
       const data = await response.json()
-      dictionaryItems[question.ID] = data.items || data || []
-      console.log('[FillForm] Loaded items for question', question.ID, ':', dictionaryItems[question.ID])
-      
-      // Если включена проверка занятости — проверяем все элементы
-      if (question.IsBooking) {
-        for (const item of dictionaryItems[question.ID]) {
-          await checkBooking(question, item)
-        }
-      }
+      dictionaryItemsCache[dictionaryId] = data.items || data || []
     }
   } catch (err) {
     console.error('[FillForm] Failed to load dictionary items:', err)
-    dictionaryItems[question.ID] = []
+    dictionaryItemsCache[dictionaryId] = []
   }
 }
 
-const checkBooking = async (question, item) => {
-  const key = question.ID + '_' + item.ID
-  checkingItems[key] = true
+// Определяет роль вопроса: 'class', 'teacher', 'date', 'time' или 'other'
+const getQuestionRole = (question) => {
+  if (question.ID === questionIds.class) return 'class'
+  if (question.ID === questionIds.teacher) return 'teacher'
+  if (question.ID === questionIds.date) return 'date'
+  if (question.ID === questionIds.time) return 'time'
+  return 'other'
+}
+
+// Получает отфильтрованные варианты для вопроса
+const getOptionsForQuestion = (question) => {
+  const role = getQuestionRole(question)
   
-  try {
-    const url = `/api/bookings/check?item_id=${item.ID}&form_id=${route.params.id}`
-    const response = await fetch(url)
-    
-    if (!bookingStatus[question.ID]) {
-      bookingStatus[question.ID] = {}
+  if (role === 'teacher') {
+    return filteredTeachers.value
+  }
+  
+  if (role === 'time') {
+    if (isTimeLocked.value) return []
+    return availableSlots.value
+  }
+  
+  if (question.Type === 'dictionary' && question.DictionaryID) {
+    return dictionaryItemsCache[question.DictionaryID] || []
+  }
+  
+  return question.Options || []
+}
+
+const getOptionValue = (option) => {
+  if (typeof option === 'object' && option !== null) {
+    return option.Value || option.ID
+  }
+  return option
+}
+
+const getOptionLabel = (option) => {
+  if (typeof option === 'object' && option !== null) {
+    return option.Name || option.Label || option.Value || ''
+  }
+  return option
+}
+
+// Фильтрация учителей по выбранному классу
+const filteredTeachers = computed(() => {
+  const teacherQuestion = form.value?.Questions.find(q => q.ID === questionIds.teacher)
+  if (!teacherQuestion || !teacherQuestion.DictionaryID) return []
+  
+  const allTeachers = dictionaryItemsCache[teacherQuestion.DictionaryID] || []
+  const selectedClassId = answers[questionIds.class]
+  
+  if (!selectedClassId) return allTeachers
+  
+  // Фильтруем: показываем только тех учителей, у которых в metadata.class_ids есть выбранный класс
+  return allTeachers.filter(teacher => {
+    if (!teacher.Metadata?.class_ids || !Array.isArray(teacher.Metadata.class_ids)) {
+      return false
     }
+    return teacher.Metadata.class_ids.includes(selectedClassId)
+  })
+})
+
+// Блокировка времени
+const isTimeLocked = computed(() => {
+  const teacherAnswer = answers[questionIds.teacher]
+  const dateAnswer = answers[questionIds.date]
+  return !teacherAnswer || !dateAnswer
+})
+
+// Загрузка доступных слотов
+const loadAvailableSlots = async () => {
+  const teacherId = answers[questionIds.teacher]
+  const dateValue = answers[questionIds.date]
+  
+  if (!teacherId || !dateValue) {
+    availableSlots.value = []
+    return
+  }
+  
+  loadingSlots.value = true
+  try {
+    const token = localStorage.getItem('token')
+    const url = `/api/bookings/available?teacher_id=${encodeURIComponent(teacherId)}&date=${encodeURIComponent(dateValue)}`
+    
+    const response = await fetch(url, {
+      headers: {
+        'Authorization': `Bearer ${token}`
+      }
+    })
     
     if (response.ok) {
       const data = await response.json()
-      bookingStatus[question.ID][item.ID] = data.is_busy ? 'busy' : 'free'
+      availableSlots.value = data.slots || data || []
     } else {
-      bookingStatus[question.ID][item.ID] = 'free'
+      availableSlots.value = []
     }
   } catch (err) {
-    if (!bookingStatus[question.ID]) bookingStatus[question.ID] = {}
-    bookingStatus[question.ID][item.ID] = 'free'
+    console.error('[FillForm] Failed to load available slots:', err)
+    availableSlots.value = []
   } finally {
-    checkingItems[key] = false
+    loadingSlots.value = false
   }
 }
 
 const isOptionBusy = (question, option) => {
   if (!question.IsBooking) return false
-  const itemId = option.Value !== undefined ? option.Value : option
+  const itemId = getOptionValue(option)
   return bookingStatus[question.ID]?.[itemId] === 'busy'
 }
 
-const isCheckingBusy = (question, option) => {
-  const itemId = option.Value !== undefined ? option.Value : option
-  return checkingItems[question.ID + '_' + itemId]
-}
-
-// Watch за изменениями ответов для обновления зависимых вопросов
+// Каскадные watch'и
 watch(
-  () => JSON.stringify(answers),
-  async (newVal, oldVal) => {
-    if (!form.value || newVal === oldVal) return
+  () => answers[questionIds.class],
+  (newVal, oldVal) => {
+    if (newVal === oldVal) return
+    // При изменении класса — сбрасываем учителя, дату и время
+    if (questionIds.teacher) answers[questionIds.teacher] = ''
+    if (questionIds.date) answers[questionIds.date] = ''
+    if (questionIds.time) answers[questionIds.time] = ''
+    availableSlots.value = []
+  }
+)
+
+watch(
+  () => answers[questionIds.teacher],
+  (newVal, oldVal) => {
+    if (newVal === oldVal) return
+    // При изменении учителя — сбрасываем дату и время
+    if (questionIds.date) answers[questionIds.date] = ''
+    if (questionIds.time) answers[questionIds.time] = ''
+    availableSlots.value = []
+  }
+)
+
+watch(
+  () => answers[questionIds.date],
+  (newVal, oldVal) => {
+    if (newVal === oldVal) return
+    // При изменении даты — сбрасываем время и делаем запрос слотов
+    if (questionIds.time) answers[questionIds.time] = ''
     
-    // Находим вопросы, которые зависят от изменённого
-    for (const q of form.value.Questions) {
-      if (q.DependsOn && q.Type === 'dictionary') {
-        // Сбрасываем ответ в зависимом вопросе, если изменился родительский
-        const parentAnswer = answers[q.DependsOn]
-        const oldAnswers = oldVal ? JSON.parse(oldVal) : {}
-        if (oldAnswers[q.DependsOn] !== parentAnswer) {
-          if (q.Type === 'checkbox') {
-            answers[q.ID] = []
-          } else {
-            answers[q.ID] = ''
-          }
-        }
-        await loadDictionaryItems(q)
-      }
+    if (answers[questionIds.teacher] && newVal) {
+      loadAvailableSlots()
+    } else {
+      availableSlots.value = []
     }
-  },
-  { deep: true }
+  }
+)
+
+// Отдельный watch на учителя для загрузки слотов (когда уже есть дата)
+watch(
+  () => answers[questionIds.teacher],
+  (newVal) => {
+    if (newVal && answers[questionIds.date]) {
+      loadAvailableSlots()
+    }
+  }
 )
 
 const submitResponses = async () => {
+  // Валидация обязательных полей
   for (const q of form.value.Questions) {
     if (q.Required) {
       const answer = answers[q.ID]
@@ -424,6 +517,12 @@ const submitResponses = async () => {
         return
       }
     }
+  }
+
+  // Дополнительная проверка: если есть вопрос времени, он должен быть заполнен
+  if (questionIds.time && !answers[questionIds.time]) {
+    result.value = { error: 'Пожалуйста, выберите время' }
+    return
   }
 
   submitting.value = true
@@ -445,6 +544,16 @@ const submitResponses = async () => {
       })
     })
 
+    // Обработка ошибки 409 Conflict (слот уже занят)
+    if (response.status === 409) {
+      result.value = { 
+        error: 'Извините, это время только что заняли. Пожалуйста, выберите другое время.' 
+      }
+      // Перезагружаем доступные слоты
+      await loadAvailableSlots()
+      return
+    }
+
     if (!response.ok) {
       const errorData = await response.json()
       result.value = { error: errorData.error || 'Ошибка отправки ответов' }
@@ -453,6 +562,7 @@ const submitResponses = async () => {
 
     result.value = { success: true, message: 'Спасибо! Ваши ответы успешно отправлены.' }
     
+    // Сброс формы
     form.value.Questions.forEach(q => {
       if (q.Type === 'checkbox') {
         answers[q.ID] = []
@@ -460,6 +570,7 @@ const submitResponses = async () => {
         answers[q.ID] = ''
       }
     })
+    availableSlots.value = []
   } catch (err) {
     if (import.meta.env.DEV) {
       result.value = {
@@ -627,14 +738,21 @@ const submitResponses = async () => {
   resize: vertical;
 }
 
+.form-input:disabled,
+.form-select:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+  background: #f5f5f5;
+}
+
 .form-input::placeholder,
 .form-textarea::placeholder {
   color: #a6afbf;
 }
 
-.form-input:hover,
-.form-textarea:hover,
-.form-select:hover {
+.form-input:hover:not(:disabled),
+.form-textarea:hover:not(:disabled),
+.form-select:hover:not(:disabled) {
   border-color: #cfd6e3;
 }
 
@@ -708,25 +826,20 @@ const submitResponses = async () => {
   letter-spacing: 0.05em;
 }
 
-.checking-badge {
-  font-size: 0.72rem;
-  font-weight: 600;
-  padding: 0.15rem 0.5rem;
-  background: var(--primary-soft);
-  color: var(--primary);
-  border-radius: 4px;
-}
-
 .loading-hint,
-.empty-hint {
+.empty-hint,
+.locked-hint {
   display: flex;
   align-items: center;
   gap: 0.6rem;
   padding: 0.85rem 1rem;
-  background: var(--primary-soft);
   border-radius: var(--radius-sm);
-  color: var(--primary);
   font-size: 0.9rem;
+}
+
+.loading-hint {
+  background: var(--primary-soft);
+  color: var(--primary);
 }
 
 .empty-hint {
@@ -734,7 +847,14 @@ const submitResponses = async () => {
   color: #8a6d00;
 }
 
-.empty-hint svg {
+.locked-hint {
+  background: #f5f5f5;
+  color: #666;
+  border: 1px dashed var(--border);
+}
+
+.empty-hint svg,
+.locked-hint svg {
   width: 18px;
   height: 18px;
   flex-shrink: 0;

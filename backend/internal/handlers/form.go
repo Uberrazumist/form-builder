@@ -3,6 +3,7 @@ package handlers
 import (
     "encoding/json"
     "net/http"
+    "time"
 
     "github.com/gin-gonic/gin"
     "github.com/google/uuid"
@@ -12,7 +13,7 @@ import (
     "github.com/Uberrazumist/form-builder/backend/internal/models"
 )
 
-// ---------- Вспомогательная функция для парсинга depends_on ----------
+// ---------- Вспомогательная функция для depends_on ----------
 func parseDependsOn(dep interface{}) *uuid.UUID {
     if dep == nil {
         return nil
@@ -77,7 +78,6 @@ func CreateForm(db *gorm.DB) gin.HandlerFunc {
         for _, q := range input.Questions {
             optsJSON, _ := json.Marshal(q.Options)
             depValsJSON, _ := json.Marshal(q.DependsValues)
-
             dependsOn := parseDependsOn(q.DependsOn)
 
             question := models.Question{
@@ -155,7 +155,7 @@ func GetForm(db *gorm.DB) gin.HandlerFunc {
     }
 }
 
-// ---------- SubmitResponse (с проверкой занятости) ----------
+// ---------- SubmitResponse (обновлённый) ----------
 func SubmitResponse(db *gorm.DB) gin.HandlerFunc {
     return func(c *gin.Context) {
         var input struct {
@@ -173,7 +173,18 @@ func SubmitResponse(db *gorm.DB) gin.HandlerFunc {
             return
         }
 
-        // Проверка занятости для is_booking
+        // Получаем userID
+        userID := c.GetString("userID")
+        if userID == "" {
+            c.JSON(http.StatusUnauthorized, gin.H{"error": "User not authenticated"})
+            return
+        }
+        uid := uuid.MustParse(userID)
+
+        // Проверяем занятость для is_booking вопросов
+        // Собираем информацию о бронированиях
+        var bookingsToCreate []models.Booking
+
         for _, q := range form.Questions {
             if q.IsBooking && q.DictionaryID != nil {
                 val, exists := input.Answers[q.ID.String()]
@@ -184,35 +195,98 @@ func SubmitResponse(db *gorm.DB) gin.HandlerFunc {
                     }
                     continue
                 }
-                itemIDStr, ok := val.(string)
+
+                // Получаем ID слота времени
+                slotIDStr, ok := val.(string)
                 if !ok {
-                    c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid booking value format"})
+                    c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid slot value format"})
                     return
                 }
-                itemID, err := uuid.Parse(itemIDStr)
+                slotID, err := uuid.Parse(slotIDStr)
                 if err != nil {
-                    c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid booking value"})
+                    c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid slot ID"})
                     return
                 }
+
+                // Теперь нужно получить teacher_id и date из других ответов
+                // Поскольку мы не знаем, какие вопросы содержат учителя и дату, мы можем их найти по типу вопроса или по зависимости.
+                // Для простоты: предположим, что перед is_booking вопросом есть вопросы со справочником "Учителя" и "Дата".
+                // Реализуем поиск по типу вопроса: если вопрос типа dictionary и справочник "Учителя" – берём его ответ.
+                // Если вопрос типа date – берём его ответ.
+                // Это логика для MVP.
+
+                var teacherID uuid.UUID
+                var bookingDate time.Time
+
+                // Ищем teacher_id среди ответов
+                for _, q2 := range form.Questions {
+                    if q2.Type == "dictionary" && q2.DictionaryID != nil {
+                        // Проверяем, что справочник – "Учителя"
+                        var dict models.Dictionary
+                        if err := db.First(&dict, "id = ?", q2.DictionaryID).Error; err == nil {
+                            if dict.Name == "Учителя" || dict.Name == "Teachers" {
+                                if val2, exists2 := input.Answers[q2.ID.String()]; exists2 {
+                                    if str, ok2 := val2.(string); ok2 {
+                                        teacherID = uuid.MustParse(str)
+                                        break
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // Ищем дату среди ответов (вопрос типа date)
+                for _, q2 := range form.Questions {
+                    if q2.Type == "date" {
+                        if val2, exists2 := input.Answers[q2.ID.String()]; exists2 {
+                            if str, ok2 := val2.(string); ok2 {
+                                if t, err := time.Parse("2006-01-02", str); err == nil {
+                                    bookingDate = t
+                                    break
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // Если teacherID или date не найдены – ошибка
+                if teacherID == uuid.Nil || bookingDate.IsZero() {
+                    c.JSON(http.StatusBadRequest, gin.H{"error": "Missing teacher or date for booking"})
+                    return
+                }
+
+                // Проверяем, не занят ли слот
                 var count int64
-                if err := db.Model(&models.Booking{}).Where("dictionary_item_id = ? AND form_id = ?", itemID, form.ID).Count(&count).Error; err != nil {
+                if err := db.Model(&models.Booking{}).
+                    Where("teacher_id = ? AND date = ? AND slot_id = ?", teacherID, bookingDate, slotID).
+                    Count(&count).Error; err != nil {
                     c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to check booking"})
                     return
                 }
                 if count > 0 {
-                    c.JSON(http.StatusConflict, gin.H{"error": "Selected item is already booked"})
+                    c.JSON(http.StatusConflict, gin.H{"error": "Selected slot is already booked"})
                     return
                 }
+
+                // Сохраняем бронирование для создания позже
+                bookingsToCreate = append(bookingsToCreate, models.Booking{
+                    FormID:    uuid.MustParse(input.FormID),
+                    UserID:    uid,
+                    TeacherID: teacherID,
+                    Date:      bookingDate,
+                    SlotID:    slotID,
+                })
             }
         }
 
+        // Сохраняем ответ
         answersJSON, _ := json.Marshal(input.Answers)
         resp := models.Response{
             FormID:  uuid.MustParse(input.FormID),
             Answers: datatypes.JSON(answersJSON),
         }
-        if userID, exists := c.Get("userID"); exists {
-            uid := uuid.MustParse(userID.(string))
+        if uid != uuid.Nil {
             resp.UserID = &uid
         }
         if err := db.Create(&resp).Error; err != nil {
@@ -220,31 +294,12 @@ func SubmitResponse(db *gorm.DB) gin.HandlerFunc {
             return
         }
 
-        // Создаём Booking для is_booking
-        for _, q := range form.Questions {
-            if q.IsBooking && q.DictionaryID != nil {
-                val, exists := input.Answers[q.ID.String()]
-                if !exists {
-                    continue
-                }
-                itemIDStr, ok := val.(string)
-                if !ok {
-                    continue
-                }
-                itemID, err := uuid.Parse(itemIDStr)
-                if err != nil {
-                    continue
-                }
-                userID := resp.UserID
-                if userID == nil {
-                    continue
-                }
-                booking := models.Booking{
-                    DictionaryItemID: itemID,
-                    FormID:           resp.FormID,
-                    UserID:           *userID,
-                }
-                db.Create(&booking)
+        // Создаём бронирования
+        for _, booking := range bookingsToCreate {
+            if err := db.Create(&booking).Error; err != nil {
+                // Логируем ошибку, но не прерываем процесс (можно добавить в лог)
+                // c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create booking"})
+                // return
             }
         }
 
@@ -333,7 +388,6 @@ func UpdateForm(db *gorm.DB) gin.HandlerFunc {
             return
         }
 
-        // Обработка вопросов
         var existingQuestions []models.Question
         db.Where("form_id = ?", form.ID).Find(&existingQuestions)
         existingIDs := make(map[uuid.UUID]bool)
@@ -422,7 +476,6 @@ func DeleteForm(db *gorm.DB) gin.HandlerFunc {
             return
         }
 
-        // Каскадное удаление
         db.Where("form_id = ?", form.ID).Delete(&models.Response{})
         db.Where("form_id = ?", form.ID).Delete(&models.Question{})
         db.Delete(&form)

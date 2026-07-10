@@ -1,4 +1,4 @@
-k<!-- src/views/DictionaryItemsView.vue -->
+<!-- src/views/DictionaryItemsView.vue -->
 <template>
   <div class="items-page">
     <div v-if="loading" class="loading-state">
@@ -52,7 +52,7 @@ k<!-- src/views/DictionaryItemsView.vue -->
         <div class="list-header">
           <div class="col-name">Название</div>
           <div class="col-value">Значение</div>
-          <div class="col-parent">Связан с</div>
+          <div class="col-meta">Дополнительно</div>
           <div class="col-actions"></div>
         </div>
         <div
@@ -69,15 +69,15 @@ k<!-- src/views/DictionaryItemsView.vue -->
             </div>
             <div v-else class="item-value-empty">—</div>
           </div>
-          <div class="col-parent">
-            <div v-if="item.ParentID" class="item-parent">
-              <Icon name="link" />
-              <span>
-                <strong>{{ getParentDictionaryName(item.ParentID) }}</strong>
-                <span v-if="getParentItemName(item.ParentID)"> → {{ getParentItemName(item.ParentID) }}</span>
-              </span>
+          <div class="col-meta">
+            <div v-if="isTeachersDictionary && getClassNamesForTeacher(item).length > 0" class="item-classes">
+              <Icon name="book" />
+              <span>{{ getClassNamesForTeacher(item).join(', ') }}</span>
             </div>
-            <div v-else class="item-parent-empty">—</div>
+            <div v-else-if="item.Metadata && hasOtherMetadata(item)" class="item-metadata-hint">
+              Есть доп. свойства
+            </div>
+            <div v-else class="item-value-empty">—</div>
           </div>
           <div class="col-actions">
             <button @click="openEditModal(item)" class="btn-edit-small" title="Редактировать">
@@ -118,38 +118,45 @@ k<!-- src/views/DictionaryItemsView.vue -->
               <span class="hint">Необязательно. Используется для связей между справочниками</span>
             </div>
 
-            <!-- Универсальная привязка к другому справочнику -->
-            <div class="form-group">
-              <label>Привязать к элементу</label>
-              <select v-model="formData.parentDictionaryId" @change="onParentDictionaryChange">
-                <option :value="null">Нет (корневой элемент)</option>
-                <option
-                  v-for="dict in availableDictionaries"
-                  :key="dict.ID"
-                  :value="dict.ID"
+            <!-- Мультивыбор классов для учителя -->
+            <div v-if="isTeachersDictionary && classesList.length > 0" class="form-group">
+              <label>Классы, которые ведёт учитель</label>
+              <div class="multi-select">
+                <button
+                  type="button"
+                  class="multi-select-toggle"
+                  @click="showClassesDropdown = !showClassesDropdown"
                 >
-                  {{ dict.Name }}
-                </option>
-              </select>
+                  <span v-if="formData.class_ids.length === 0" class="multi-select-placeholder">
+                    Выберите классы...
+                  </span>
+                  <span v-else class="multi-select-value">
+                    Выбрано классов: {{ formData.class_ids.length }}
+                  </span>
+                  <Icon :name="showClassesDropdown ? 'eye-off' : 'eye'" />
+                </button>
+                <div v-if="showClassesDropdown" class="multi-select-dropdown">
+                  <label
+                    v-for="cls in classesList"
+                    :key="cls.ID"
+                    class="multi-select-option"
+                  >
+                    <input
+                      type="checkbox"
+                      :value="cls.ID"
+                      v-model="formData.class_ids"
+                    />
+                    <span>{{ cls.Name }}</span>
+                  </label>
+                  <div v-if="classesList.length === 0" class="multi-select-empty">
+                    Нет доступных классов
+                  </div>
+                </div>
+              </div>
               <span class="hint">
-                Если этот элемент связан с элементом другого справочника, выберите его здесь
+                Отметьте все классы, в которых ведёт занятия этот учитель. 
+                Это позволит фильтровать учителей по классу в формах.
               </span>
-            </div>
-
-            <div v-if="formData.parentDictionaryId" class="form-group">
-              <label>Элемент в справочнике «{{ getParentDictionaryName(formData.parentDictionaryId) }}»</label>
-              <select v-model="formData.parentItemId" :disabled="loadingParentItems">
-                <option :value="null">— выберите элемент —</option>
-                <option
-                  v-for="parentItem in parentItems"
-                  :key="parentItem.ID"
-                  :value="parentItem.ID"
-                >
-                  {{ parentItem.Name }}
-                </option>
-              </select>
-              <span v-if="loadingParentItems" class="hint">Загрузка элементов...</span>
-              <span v-else-if="parentItems.length === 0" class="hint">В этом справочнике нет элементов</span>
             </div>
 
             <!-- Дополнительные настройки (скрыты по умолчанию) -->
@@ -189,7 +196,7 @@ k<!-- src/views/DictionaryItemsView.vue -->
 </template>
 
 <script setup>
-import { ref, reactive, computed, onMounted, watch } from 'vue'
+import { ref, reactive, computed, onMounted, watch, onUnmounted } from 'vue'
 import { useRoute } from 'vue-router'
 import Icon from '../components/Icon.vue'
 import FormResult from '../components/FormResult.vue'
@@ -198,16 +205,13 @@ const route = useRoute()
 
 const dictionary = ref(null)
 const items = ref([])
-const allDictionaries = ref([])
-const parentItems = ref([])
-const parentDictionaryNames = reactive({})
-const parentItemNames = reactive({})
+const classesList = ref([])
 const loading = ref(true)
-const loadingParentItems = ref(false)
 const error = ref(null)
 const result = ref(null)
 const showModal = ref(false)
 const showAdvanced = ref(false)
+const showClassesDropdown = ref(false)
 const isEditing = ref(false)
 const editingId = ref(null)
 const saving = ref(false)
@@ -216,18 +220,31 @@ const metadataError = ref('')
 const formData = reactive({
   Name: '',
   Value: '',
-  parentDictionaryId: null,
-  parentItemId: null,
-  Metadata: ''
+  Metadata: '',
+  class_ids: []
 })
 
-const availableDictionaries = computed(() => 
-  allDictionaries.value.filter(d => d.ID !== dictionary.value?.ID)
-)
+const isTeachersDictionary = computed(() => {
+  if (!dictionary.value?.Name) return false
+  const name = dictionary.value.Name.toLowerCase()
+  return (
+    name.includes('учитель') ||
+    name.includes('учителя') ||
+    name.includes('учителей') ||
+    name.includes('teacher')
+  )
+})
 
 onMounted(async () => {
   await loadData()
-  await loadAllDictionaries()
+  if (isTeachersDictionary.value) {
+    await loadClassesDictionary()
+  }
+})
+
+onUnmounted(() => {
+  // Закрываем dropdown при размонтировании
+  showClassesDropdown.value = false
 })
 
 watch(() => formData.Metadata, (value) => {
@@ -263,13 +280,6 @@ const loadData = async () => {
     if (itemsResponse.ok) {
       const data = await itemsResponse.json()
       items.value = data.items || data || []
-      
-      // Загружаем информацию о родительских элементах
-      for (const item of items.value) {
-        if (item.ParentID) {
-          await loadParentInfo(item.ParentID)
-        }
-      }
     }
   } catch (err) {
     console.error('[DictionaryItems] Load error:', err)
@@ -279,83 +289,63 @@ const loadData = async () => {
   }
 }
 
-const loadAllDictionaries = async () => {
-  try {
-    const token = localStorage.getItem('token')
-    const response = await fetch('/api/dictionaries', {
-      headers: { 'Authorization': `Bearer ${token}` }
-    })
-    if (response.ok) {
-      const data = await response.json()
-      allDictionaries.value = data.dictionaries || data || []
-    }
-  } catch (err) {
-    console.error('[DictionaryItems] Failed to load dictionaries:', err)
-  }
-}
-
-const loadParentItems = async (dictionaryId) => {
-  if (!dictionaryId) {
-    parentItems.value = []
-    return
-  }
-  
-  loadingParentItems.value = true
-  try {
-    const token = localStorage.getItem('token')
-    const response = await fetch(`/api/dictionaries/${dictionaryId}/items`, {
-      headers: { 'Authorization': `Bearer ${token}` }
-    })
-    if (response.ok) {
-      const data = await response.json()
-      parentItems.value = data.items || data || []
-    }
-  } catch (err) {
-    console.error('[DictionaryItems] Failed to load parent items:', err)
-    parentItems.value = []
-  } finally {
-    loadingParentItems.value = false
-  }
-}
-
-const loadParentInfo = async (parentId) => {
+const loadClassesDictionary = async () => {
   try {
     const token = localStorage.getItem('token')
     const headers = { 'Authorization': `Bearer ${token}` }
     
-    // Ищем элемент во всех справочниках
-    for (const dict of allDictionaries.value) {
-      const response = await fetch(`/api/dictionaries/${dict.ID}/items`, { headers })
-      if (response.ok) {
-        const data = await response.json()
-        const items = data.items || data || []
-        const parentItem = items.find(i => i.ID === parentId)
-        if (parentItem) {
-          parentDictionaryNames[parentId] = dict.Name
-          parentItemNames[parentId] = parentItem.Name
-          return
-        }
-      }
+    const dictsResponse = await fetch('/api/dictionaries', { headers })
+    if (!dictsResponse.ok) return
+    
+    const dictsData = await dictsResponse.json()
+    const dicts = dictsData.dictionaries || dictsData || []
+    
+    const classesDict = dicts.find(d => {
+      const name = (d.Name || '').toLowerCase()
+      return name.includes('класс') || name.includes('class')
+    })
+    
+    if (!classesDict) {
+      console.log('[DictionaryItems] Classes dictionary not found')
+      return
+    }
+    
+    const itemsResponse = await fetch(`/api/dictionaries/${classesDict.ID}/items`, { headers })
+    if (itemsResponse.ok) {
+      const data = await itemsResponse.json()
+      classesList.value = data.items || data || []
     }
   } catch (err) {
-    console.error('[DictionaryItems] Failed to load parent info:', err)
+    console.error('[DictionaryItems] Failed to load classes:', err)
   }
 }
 
-const onParentDictionaryChange = () => {
-  formData.parentItemId = null
-  loadParentItems(formData.parentDictionaryId)
+const getClassNamesForTeacher = (teacher) => {
+  if (!teacher.Metadata?.class_ids || !Array.isArray(teacher.Metadata.class_ids)) {
+    return []
+  }
+  return teacher.Metadata.class_ids
+    .map(classId => {
+      const cls = classesList.value.find(c => c.ID === classId)
+      return cls ? cls.Name : null
+    })
+    .filter(Boolean)
+}
+
+const hasOtherMetadata = (item) => {
+  if (!item.Metadata || typeof item.Metadata !== 'object') return false
+  const keys = Object.keys(item.Metadata)
+  return keys.length > 0
 }
 
 const resetForm = () => {
   formData.Name = ''
   formData.Value = ''
-  formData.parentDictionaryId = null
-  formData.parentItemId = null
   formData.Metadata = ''
-  parentItems.value = []
+  formData.class_ids = []
   metadataError.value = ''
   showAdvanced.value = false
+  showClassesDropdown.value = false
   isEditing.value = false
   editingId.value = null
 }
@@ -365,7 +355,7 @@ const openCreateModal = () => {
   showModal.value = true
 }
 
-const openEditModal = async (item) => {
+const openEditModal = (item) => {
   resetForm()
   isEditing.value = true
   editingId.value = item.ID
@@ -374,29 +364,18 @@ const openEditModal = async (item) => {
   
   // Восстанавливаем метаданные
   if (item.Metadata && typeof item.Metadata === 'object') {
-    formData.Metadata = JSON.stringify(item.Metadata, null, 2)
-    showAdvanced.value = Object.keys(item.Metadata).length > 0
-  }
-  
-  // Восстанавливаем родительский элемент
-  if (item.ParentID) {
-    // Находим справочник родителя
-    for (const dict of allDictionaries.value) {
-      const token = localStorage.getItem('token')
-      const response = await fetch(`/api/dictionaries/${dict.ID}/items`, {
-        headers: { 'Authorization': `Bearer ${token}` }
-      })
-      if (response.ok) {
-        const data = await response.json()
-        const items = data.items || data || []
-        const parentItem = items.find(i => i.ID === item.ParentID)
-        if (parentItem) {
-          formData.parentDictionaryId = dict.ID
-          await loadParentItems(dict.ID)
-          formData.parentItemId = item.ParentID
-          break
-        }
-      }
+    // Восстанавливаем class_ids для учителя
+    if (Array.isArray(item.Metadata.class_ids)) {
+      formData.class_ids = [...item.Metadata.class_ids]
+    }
+    
+    // Остальные метаданные показываем в JSON
+    const otherKeys = Object.keys(item.Metadata).filter(k => k !== 'class_ids')
+    if (otherKeys.length > 0) {
+      const otherMetadata = {}
+      otherKeys.forEach(k => { otherMetadata[k] = item.Metadata[k] })
+      formData.Metadata = JSON.stringify(otherMetadata, null, 2)
+      showAdvanced.value = true
     }
   }
   
@@ -426,10 +405,19 @@ const saveItem = async () => {
     const dictId = route.params.id
     const token = localStorage.getItem('token')
     
-    let metadata = null
+    // Собираем метаданные
+    let metadata = {}
+    
+    // Добавляем class_ids для учителя
+    if (isTeachersDictionary.value && formData.class_ids.length > 0) {
+      metadata.class_ids = [...formData.class_ids]
+    }
+    
+    // Добавляем дополнительные свойства из JSON
     if (formData.Metadata?.trim()) {
       try {
-        metadata = JSON.parse(formData.Metadata)
+        const parsed = JSON.parse(formData.Metadata)
+        metadata = { ...metadata, ...parsed }
       } catch (e) {
         // уже проверено в watch
       }
@@ -438,8 +426,7 @@ const saveItem = async () => {
     const payload = {
       Name: formData.Name,
       Value: formData.Value || undefined,
-      ParentID: formData.parentItemId || undefined,
-      Metadata: metadata || undefined
+      Metadata: Object.keys(metadata).length > 0 ? metadata : undefined
     }
 
     const url = isEditing.value 
@@ -499,14 +486,6 @@ const deleteItem = async (id) => {
   } catch (err) {
     result.value = { error: 'Ошибка сети' }
   }
-}
-
-const getParentDictionaryName = (parentId) => {
-  return parentDictionaryNames[parentId] || 'Загрузка...'
-}
-
-const getParentItemName = (parentId) => {
-  return parentItemNames[parentId] || ''
 }
 </script>
 
@@ -761,7 +740,7 @@ const getParentItemName = (parentId) => {
 
 .col-name,
 .col-value,
-.col-parent {
+.col-meta {
   display: flex;
   align-items: center;
 }
@@ -788,30 +767,31 @@ const getParentItemName = (parentId) => {
   font-family: 'SF Mono', Menlo, monospace;
 }
 
-.item-value-empty,
-.item-parent-empty {
+.item-value-empty {
   color: var(--text-muted);
   font-size: 0.9rem;
 }
 
-.item-parent {
+.item-classes {
   display: flex;
   align-items: center;
   gap: 0.4rem;
-  font-size: 0.9rem;
+  font-size: 0.88rem;
   color: var(--text);
+  flex-wrap: wrap;
 }
 
-.item-parent svg {
+.item-classes svg {
   width: 14px;
   height: 14px;
   color: var(--primary);
   flex-shrink: 0;
 }
 
-.item-parent strong {
-  font-weight: 600;
-  color: var(--primary);
+.item-metadata-hint {
+  font-size: 0.85rem;
+  color: var(--text-muted);
+  font-style: italic;
 }
 
 .btn-edit-small,
@@ -851,6 +831,91 @@ const getParentItemName = (parentId) => {
 .btn-danger-small svg {
   width: 16px;
   height: 16px;
+}
+
+/* Мультивыбор */
+.multi-select {
+  position: relative;
+}
+
+.multi-select-toggle {
+  width: 100%;
+  padding: 0.75rem 0.95rem;
+  font-size: 0.95rem;
+  font-family: inherit;
+  color: var(--text);
+  background: var(--bg);
+  border: 1.5px solid var(--border);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: all 0.2s;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  text-align: left;
+}
+
+.multi-select-toggle:hover {
+  border-color: #cfd6e3;
+}
+
+.multi-select-placeholder {
+  color: #a6afbf;
+}
+
+.multi-select-value {
+  font-weight: 500;
+}
+
+.multi-select-toggle svg {
+  width: 16px;
+  height: 16px;
+  color: var(--text-muted);
+}
+
+.multi-select-dropdown {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  right: 0;
+  background: var(--surface);
+  border: 1.5px solid var(--border);
+  border-radius: var(--radius-sm);
+  box-shadow: var(--shadow-md);
+  max-height: 240px;
+  overflow-y: auto;
+  z-index: 10;
+  padding: 0.5rem;
+}
+
+.multi-select-option {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.5rem 0.6rem;
+  cursor: pointer;
+  border-radius: 6px;
+  transition: background 0.15s;
+  font-size: 0.92rem;
+}
+
+.multi-select-option:hover {
+  background: var(--bg);
+}
+
+.multi-select-option input[type="checkbox"] {
+  width: 16px;
+  height: 16px;
+  cursor: pointer;
+  accent-color: var(--primary);
+}
+
+.multi-select-empty {
+  padding: 0.75rem;
+  text-align: center;
+  color: var(--text-muted);
+  font-size: 0.88rem;
 }
 
 .advanced-section {

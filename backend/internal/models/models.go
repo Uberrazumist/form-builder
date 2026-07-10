@@ -20,7 +20,7 @@ type EmailVerification struct {
     ID        uuid.UUID `gorm:"type:uuid;primaryKey;default:gen_random_uuid()"`
     Email     string    `gorm:"not null;index"`
     Code      string    `gorm:"not null"`
-    Type      string    `gorm:"not null"` // 'registration' или 'reset_password'
+    Type      string    `gorm:"not null"`
     ExpiresAt time.Time `gorm:"not null"`
     Used      bool      `gorm:"default:false"`
     CreatedAt time.Time
@@ -42,19 +42,18 @@ type Form struct {
 type Question struct {
     ID              uuid.UUID `gorm:"type:uuid;primaryKey;default:gen_random_uuid()"`
     FormID          uuid.UUID `gorm:"type:uuid;not null;index"`
-    Type            string    `gorm:"not null"` // text, textarea, radio, checkbox, select, rating, dictionary
+    Type            string    `gorm:"not null"`
     Title           string    `gorm:"not null"`
     Description     string
     OrderIndex      int       `gorm:"not null"`
     IsRequired      bool      `gorm:"default:false"`
-    Options         datatypes.JSON `gorm:"type:jsonb"` // для radio/checkbox/select
+    Options         datatypes.JSON `gorm:"type:jsonb"`
     Validation      datatypes.JSON `gorm:"type:jsonb"`
     DependsOn       *uuid.UUID `gorm:"type:uuid;index"`
     DependsValues   datatypes.JSON `gorm:"type:jsonb"`
-    // Новые поля для справочников
-    DictionaryID    *uuid.UUID `gorm:"type:uuid;index"` // ссылка на справочник
-    FilterMetadata  datatypes.JSON `gorm:"type:jsonb"`   // правила фильтрации, например {"parent_question_id": "uuid"}
-    IsBooking       bool       `gorm:"default:false"`    // если true, то при сохранении ответа проверяем занятость
+    DictionaryID    *uuid.UUID `gorm:"type:uuid;index"`
+    FilterMetadata  datatypes.JSON `gorm:"type:jsonb"`
+    IsBooking       bool       `gorm:"default:false"`
 }
 
 type Response struct {
@@ -65,7 +64,6 @@ type Response struct {
     CreatedAt time.Time
 }
 
-// --- Справочники ---
 type Dictionary struct {
     ID          uuid.UUID `gorm:"type:uuid;primaryKey;default:gen_random_uuid()"`
     Name        string    `gorm:"not null"`
@@ -78,38 +76,44 @@ type Dictionary struct {
 type DictionaryItem struct {
     ID           uuid.UUID `gorm:"type:uuid;primaryKey;default:gen_random_uuid()"`
     DictionaryID uuid.UUID `gorm:"type:uuid;not null;index"`
-    ParentID     *uuid.UUID `gorm:"type:uuid;index"` // для иерархии
+    ParentID     *uuid.UUID `gorm:"type:uuid;index"`
     Name         string    `gorm:"not null"`
-    Code         string    // уникальный код внутри справочника (опционально)
-    Metadata     datatypes.JSON `gorm:"type:jsonb"` // любые доп. поля (class_id, teacher_id, time_start, etc.)
+    Code         string
+    Metadata     datatypes.JSON `gorm:"type:jsonb"`
     CreatedAt    time.Time
     UpdatedAt    time.Time
 }
 
+// --- Новая модель Booking ---
 type Booking struct {
-    ID               uuid.UUID `gorm:"type:uuid;primaryKey;default:gen_random_uuid()"`
-    DictionaryItemID uuid.UUID `gorm:"type:uuid;not null;index"`
-    FormID           uuid.UUID `gorm:"type:uuid;not null;index"`
-    UserID           uuid.UUID `gorm:"type:uuid;not null"`
-    CreatedAt        time.Time
+    ID        uuid.UUID `gorm:"type:uuid;primaryKey;default:gen_random_uuid()"`
+    FormID    uuid.UUID `gorm:"type:uuid;not null;index"`
+    UserID    uuid.UUID `gorm:"type:uuid;not null"`
+    TeacherID uuid.UUID `gorm:"type:uuid;not null;index"`
+    Date      time.Time `gorm:"type:date;not null;index"`
+    SlotID    uuid.UUID `gorm:"type:uuid;not null;index"`
+    CreatedAt time.Time
 }
 
-// Старые модели (Class, Teacher, TimeSlot) пока оставляем, но в будущем заменим на Dictionary
+// --- Обновлённая модель Teacher (с полем ClassIDs) ---
+type Teacher struct {
+    ID        uuid.UUID `gorm:"type:uuid;primaryKey;default:gen_random_uuid()"`
+    FullName  string    `gorm:"not null"`
+    ClassIDs  datatypes.JSON `gorm:"type:jsonb"` // массив UUID классов
+    Available bool      `gorm:"default:true"`
+    CreatedAt time.Time
+    UpdatedAt time.Time
+}
+
+// Остальные модели (Class, TimeSlot, FormPermission) пока не используются, но оставляем.
 type Class struct {
     ID   uuid.UUID `gorm:"type:uuid;primaryKey;default:gen_random_uuid()"`
     Name string    `gorm:"unique;not null"`
 }
 
-type Teacher struct {
-    ID        uuid.UUID `gorm:"type:uuid;primaryKey;default:gen_random_uuid()"`
-    FullName  string    `gorm:"not null"`
-    ClassID   uuid.UUID `gorm:"type:uuid;index"`
-    Available bool      `gorm:"default:true"`
-}
-
 type TimeSlot struct {
     ID        uuid.UUID `gorm:"type:uuid;primaryKey;default:gen_random_uuid()"`
-    TeacherID uuid.UUID `gorm:"type:uuid;not null;index"`
+    TeacherID uuid.UUID `gorm:"type:uuid;index"`
     Date      time.Time `gorm:"not null"`
     StartTime time.Time `gorm:"not null"`
     EndTime   time.Time `gorm:"not null"`

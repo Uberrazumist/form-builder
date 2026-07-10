@@ -202,3 +202,52 @@ func CheckBooking(db *gorm.DB) gin.HandlerFunc {
         c.JSON(http.StatusOK, gin.H{"booked": count > 0})
     }
 }
+func UpdateDictionaryItem(db *gorm.DB) gin.HandlerFunc {
+    return func(c *gin.Context) {
+        itemID := c.Param("itemId")
+        var input struct {
+            Name     string                 `json:"name"`
+            Code     string                 `json:"code"`
+            ParentID *string                `json:"parent_id"`
+            Metadata map[string]interface{} `json:"metadata"`
+        }
+        if err := c.ShouldBindJSON(&input); err != nil {
+            c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+            return
+        }
+
+        var item models.DictionaryItem
+        if err := db.First(&item, "id = ?", itemID).Error; err != nil {
+            c.JSON(http.StatusNotFound, gin.H{"error": "Item not found"})
+            return
+        }
+
+        if input.Name != "" {
+            item.Name = input.Name
+        }
+        if input.Code != "" {
+            item.Code = input.Code
+        }
+        if input.ParentID != nil {
+            pid := uuid.MustParse(*input.ParentID)
+            item.ParentID = &pid
+        } else {
+            item.ParentID = nil
+        }
+        if input.Metadata != nil {
+            jsonData, err := json.Marshal(input.Metadata)
+            if err != nil {
+                c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to serialize metadata"})
+                return
+            }
+            item.Metadata = datatypes.JSON(jsonData)
+        }
+
+        if err := db.Save(&item).Error; err != nil {
+            c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to update item"})
+            return
+        }
+
+        c.JSON(http.StatusOK, item)
+    }
+}

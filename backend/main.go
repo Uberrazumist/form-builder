@@ -51,8 +51,8 @@ func main() {
         &models.Dictionary{},
         &models.DictionaryItem{},
         &models.Booking{},
-        &models.Class{},
         &models.Teacher{},
+        &models.Class{},
         &models.TimeSlot{},
         &models.FormPermission{},
     ); err != nil {
@@ -126,11 +126,11 @@ func main() {
         // Элементы справочников
         auth.GET("/dictionaries/:id/items", handlers.ListDictionaryItems(db))
         auth.POST("/dictionaries/:id/items", handlers.CreateDictionaryItem(db))
+        auth.PUT("/dictionaries/:id/items/:itemId", handlers.UpdateDictionaryItem(db))
         auth.DELETE("/dictionaries/:id/items/:itemId", handlers.DeleteDictionaryItem(db))
 
-        // Проверка занятости
-        auth.GET("/bookings/check", handlers.CheckBooking(db))
-        // Создание записи (бронирование) будет в обработчике SubmitResponse
+        // Бронирование
+        auth.GET("/bookings/available", handlers.GetAvailableSlots(db))
     }
 
     log.Println("Server starting on :8080")

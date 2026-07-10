@@ -97,6 +97,7 @@
                 <option value="checkbox">Несколько вариантов (checkbox)</option>
                 <option value="select">Выбор из списка (select)</option>
                 <option value="rating">Рейтинг (звёзды)</option>
+                <option value="date">Дата</option>
                 <option value="dictionary">Выбор из справочника</option>
               </select>
             </div>
@@ -144,6 +145,11 @@
                 <Icon name="plus" />
                 Добавить вариант
               </button>
+            </div>
+
+            <div v-if="question.type === 'date'" class="info-hint">
+              <Icon name="calendar" />
+              <span>Пользователь сможет выбрать дату через стандартный календарь браузера</span>
             </div>
 
             <div v-if="question.type === 'dictionary'" class="dictionary-section">
@@ -293,7 +299,6 @@ const loadForm = async () => {
     }
 
     const data = await response.json()
-    console.log('[EditForm] Loaded form:', data)
 
     formData.title = data.Title || ''
     formData.description = data.Description || ''
@@ -312,7 +317,6 @@ const loadForm = async () => {
         is_booking: q.IsBooking || false
       }))
   } catch (err) {
-    console.error('[EditForm] Load error:', err)
     error.value = 'Ошибка сети. Попробуйте позже.'
   } finally {
     loading.value = false
@@ -403,8 +407,6 @@ const submitForm = async () => {
       }))
     }
 
-    console.log('[EditForm] Submitting:', payload)
-
     const response = await fetch(`/api/forms/${formId}`, {
       method: 'PUT',
       headers: {
@@ -432,7 +434,6 @@ const submitForm = async () => {
     result.value = { success: true, message: 'Форма успешно обновлена' }
     setTimeout(() => router.push(`/form/${formId}`), 1000)
   } catch (err) {
-    console.error('[EditForm] Submit error:', err)
     if (import.meta.env.DEV) {
       result.value = {
         warning: 'Network error',
@@ -673,6 +674,24 @@ select:focus {
   padding: 2rem;
   color: var(--text-muted);
   font-size: 0.95rem;
+}
+
+.info-hint {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.85rem 1rem;
+  background: var(--primary-soft);
+  border-radius: var(--radius-sm);
+  color: var(--primary);
+  font-size: 0.88rem;
+  margin-bottom: 1rem;
+}
+
+.info-hint svg {
+  width: 18px;
+  height: 18px;
+  flex-shrink: 0;
 }
 
 .question-card {
