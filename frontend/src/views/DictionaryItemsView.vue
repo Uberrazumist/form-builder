@@ -89,7 +89,6 @@
 
       <FormResult v-if="result" :result="result" />
 
-      <!-- Модальное окно создания/редактирования -->
       <div v-if="showModal" class="modal-overlay" @click="closeModal">
         <div class="modal-content" @click.stop>
           <h3>{{ isEditing ? 'Редактирование элемента' : 'Новый элемент' }}</h3>
@@ -115,7 +114,6 @@
               <span class="hint">Необязательно. Используется для связей между справочниками</span>
             </div>
 
-            <!-- Универсальная привязка к элементам другого справочника -->
             <div v-if="availableDictionaries.length > 0" class="links-section">
               <div class="links-header">
                 <Icon name="link" />
@@ -123,7 +121,7 @@
               </div>
               <p class="links-description">
                 Выберите справочник и отметьте элементы, с которыми связан текущий элемент.
-                Это позволит фильтровать варианты в формах на основе предыдущих ответов.
+                Это позволит автоматически фильтровать варианты в формах на основе предыдущих ответов.
               </p>
 
               <div class="form-group">
@@ -169,7 +167,6 @@
               </div>
             </div>
 
-            <!-- Дополнительные настройки (скрыты по умолчанию) -->
             <div class="advanced-section">
               <button type="button" class="advanced-toggle" @click="showAdvanced = !showAdvanced">
                 <Icon :name="showAdvanced ? 'close' : 'plus'" />
@@ -237,7 +234,7 @@ const formData = reactive({
   Metadata: ''
 })
 
-const availableDictionaries = computed(() => 
+const availableDictionaries = computed(() =>
   allDictionaries.value.filter(d => d.ID !== dictionary.value?.ID)
 )
 
@@ -307,12 +304,12 @@ const loadLinkedItems = async (dictionaryId) => {
     linkedItems.value = []
     return
   }
-  
+
   if (linkedItemsCache[dictionaryId]) {
     linkedItems.value = linkedItemsCache[dictionaryId]
     return
   }
-  
+
   loadingLinkedItems.value = true
   try {
     const token = localStorage.getItem('token')
@@ -321,9 +318,9 @@ const loadLinkedItems = async (dictionaryId) => {
     })
     if (response.ok) {
       const data = await response.json()
-      const items = data.items || data || []
-      linkedItemsCache[dictionaryId] = items
-      linkedItems.value = items
+      const loadedItems = data.items || data || []
+      linkedItemsCache[dictionaryId] = loadedItems
+      linkedItems.value = loadedItems
     }
   } catch (err) {
     console.error('[DictionaryItems] Failed to load linked items:', err)
@@ -342,8 +339,7 @@ const getLinkedNames = (item) => {
   if (!item.Metadata?.linked_ids || !Array.isArray(item.Metadata.linked_ids)) {
     return []
   }
-  
-  // Пытаемся найти имена в кэше
+
   const names = []
   for (const linkedId of item.Metadata.linked_ids) {
     for (const dictId in linkedItemsCache) {
@@ -354,7 +350,7 @@ const getLinkedNames = (item) => {
       }
     }
   }
-  
+
   return names.length > 0 ? names : [`Связано элементов: ${item.Metadata.linked_ids.length}`]
 }
 
@@ -382,15 +378,13 @@ const openEditModal = (item) => {
   editingId.value = item.ID
   formData.Name = item.Name || ''
   formData.Value = item.Value || ''
-  
+
   if (item.Metadata && typeof item.Metadata === 'object') {
     if (Array.isArray(item.Metadata.linked_ids) && item.Metadata.linked_ids.length > 0) {
       formData.linked_ids = [...item.Metadata.linked_ids]
-      
-      // Определяем справочник связанных элементов
-      // Для этого ищем в кэше
+
       for (const dictId in linkedItemsCache) {
-        const hasMatch = item.Metadata.linked_ids.some(id => 
+        const hasMatch = item.Metadata.linked_ids.some(id =>
           linkedItemsCache[dictId].some(i => i.ID === id)
         )
         if (hasMatch) {
@@ -400,7 +394,7 @@ const openEditModal = (item) => {
         }
       }
     }
-    
+
     const otherKeys = Object.keys(item.Metadata).filter(k => k !== 'linked_ids')
     if (otherKeys.length > 0) {
       const otherMetadata = {}
@@ -409,7 +403,7 @@ const openEditModal = (item) => {
       showAdvanced.value = true
     }
   }
-  
+
   showModal.value = true
 }
 
@@ -435,13 +429,13 @@ const saveItem = async () => {
   try {
     const dictId = route.params.id
     const token = localStorage.getItem('token')
-    
+
     let metadata = {}
-    
+
     if (formData.linked_ids.length > 0) {
       metadata.linked_ids = [...formData.linked_ids]
     }
-    
+
     if (formData.Metadata?.trim()) {
       try {
         const parsed = JSON.parse(formData.Metadata)
@@ -450,14 +444,14 @@ const saveItem = async () => {
         // уже проверено в watch
       }
     }
-    
+
     const payload = {
       Name: formData.Name,
       Value: formData.Value || undefined,
       Metadata: Object.keys(metadata).length > 0 ? metadata : undefined
     }
 
-    const url = isEditing.value 
+    const url = isEditing.value
       ? `/api/dictionaries/${dictId}/items/${editingId.value}`
       : `/api/dictionaries/${dictId}/items`
     const method = isEditing.value ? 'PUT' : 'POST'
@@ -477,9 +471,9 @@ const saveItem = async () => {
       return
     }
 
-    result.value = { 
-      success: true, 
-      message: isEditing.value ? 'Элемент обновлён' : 'Элемент добавлен' 
+    result.value = {
+      success: true,
+      message: isEditing.value ? 'Элемент обновлён' : 'Элемент добавлен'
     }
     closeModal()
     await loadData()
@@ -497,7 +491,7 @@ const deleteItem = async (id) => {
   try {
     const dictId = route.params.id
     const token = localStorage.getItem('token')
-    
+
     const response = await fetch(`/api/dictionaries/${dictId}/items/${id}`, {
       method: 'DELETE',
       headers: { 'Authorization': `Bearer ${token}` }
@@ -855,10 +849,8 @@ const deleteItem = async (id) => {
   height: 16px;
 }
 
-/* Секция связей */
 .links-section {
   padding: 1.25rem;
-  background: var(--primary-soft);
   background: color-mix(in srgb, var(--primary-soft) 40%, var(--surface));
   border: 1px dashed var(--primary-soft);
   border-radius: var(--radius-sm);
@@ -902,11 +894,6 @@ const deleteItem = async (id) => {
   border-radius: var(--radius-sm);
   color: var(--text-muted);
   font-size: 0.88rem;
-}
-
-.links-loading .spinner-small {
-  border-color: var(--border);
-  border-top-color: var(--primary);
 }
 
 .multi-select-dropdown {

@@ -24,7 +24,7 @@
       <form @submit.prevent="submitForm" class="form-builder" novalidate>
         <div class="form-card">
           <h2 class="card-title">Основная информация</h2>
-          
+
           <div class="form-group">
             <label for="formTitle">
               <Icon name="edit" />
@@ -35,7 +35,7 @@
               type="text"
               v-model="formData.title"
               required
-              placeholder="Например: Анкета для учеников"
+              placeholder="Например: Запись к мастеру"
             />
           </div>
 
@@ -173,6 +173,11 @@
                 </span>
               </div>
 
+              <div class="info-hint">
+                <Icon name="link" />
+                <span>Связи между справочниками настраиваются автоматически на основе метаданных элементов.</span>
+              </div>
+
               <div class="checkbox-group">
                 <label class="checkbox-label">
                   <input type="checkbox" v-model="question.is_booking" />
@@ -189,23 +194,6 @@
               <select v-model="question.rating_max">
                 <option :value="5">5 звёзд</option>
                 <option :value="10">10 звёзд</option>
-              </select>
-            </div>
-
-            <div v-if="index > 0" class="form-group">
-              <label>
-                <Icon name="link" />
-                Зависит от вопроса
-              </label>
-              <select v-model="question.depends_on">
-                <option :value="null">Нет зависимости</option>
-                <option
-                  v-for="prevQ in getPreviousQuestions(index)"
-                  :key="prevQ.id || prevQ.index"
-                  :value="prevQ.id"
-                >
-                  Вопрос {{ prevQ.index + 1 }}: {{ prevQ.title || '(без текста)' }}
-                </option>
               </select>
             </div>
 
@@ -309,10 +297,10 @@ const loadForm = async () => {
         id: q.ID,
         type: q.Type || 'text',
         title: q.Title || '',
-        required: q.Required || false,
+        // ВАЖНО: читаем IsRequired (правильное имя поля из models.go)
+        required: q.IsRequired || false,
         options: q.Options || [],
         rating_max: q.RatingMax || 5,
-        depends_on: q.DependsOn || null,
         dictionary_id: q.DictionaryID || null,
         is_booking: q.IsBooking || false
       }))
@@ -330,7 +318,6 @@ const addQuestion = () => {
     required: false,
     options: [],
     rating_max: 5,
-    depends_on: null,
     dictionary_id: null,
     is_booking: false
   })
@@ -348,14 +335,6 @@ const removeOption = (question, optIndex) => {
   question.options.splice(optIndex, 1)
 }
 
-const getPreviousQuestions = (currentIndex) => {
-  return formData.questions.slice(0, currentIndex).map((q, idx) => ({
-    id: q.id,
-    index: idx,
-    title: q.title
-  }))
-}
-
 const submitForm = async () => {
   if (!formData.title.trim()) {
     result.value = { error: 'Заголовок формы обязателен' }
@@ -369,7 +348,7 @@ const submitForm = async () => {
 
   for (const q of formData.questions) {
     if (!q.title.trim()) {
-      result.value = { error: 'Все вопросы должны иметь текст' }
+      result.value = { error: `Все вопросы должны иметь текст` }
       return
     }
     if (['radio', 'checkbox', 'select'].includes(q.type) && q.options.length === 0) {
@@ -397,10 +376,10 @@ const submitForm = async () => {
         ID: q.id || undefined,
         Type: q.type,
         Title: q.title,
-        Required: q.required,
+        // ВАЖНО: отправляем IsRequired (правильное имя поля из models.go)
+        IsRequired: q.required,
         Options: q.options,
         RatingMax: q.rating_max,
-        DependsOn: q.depends_on || null,
         DictionaryID: q.type === 'dictionary' ? q.dictionary_id : null,
         IsBooking: q.type === 'dictionary' ? q.is_booking : false,
         OrderIndex: idx

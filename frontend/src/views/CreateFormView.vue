@@ -9,7 +9,7 @@
     <form @submit.prevent="submitForm" class="form-builder" novalidate>
       <div class="form-card">
         <h2 class="card-title">Основная информация</h2>
-        
+
         <div class="form-group">
           <label for="formTitle">
             <Icon name="edit" />
@@ -97,7 +97,6 @@
             />
           </div>
 
-          <!-- Варианты ответов для radio/checkbox/select -->
           <div
             v-if="['radio', 'checkbox', 'select'].includes(question.type)"
             class="options-section"
@@ -133,13 +132,11 @@
             </button>
           </div>
 
-          <!-- Подсказка для даты -->
           <div v-if="question.type === 'date'" class="info-hint">
             <Icon name="calendar" />
             <span>Пользователь сможет выбрать дату через стандартный календарь браузера</span>
           </div>
 
-          <!-- Настройки для справочника -->
           <div v-if="question.type === 'dictionary'" class="dictionary-section">
             <div class="form-group">
               <label>
@@ -161,25 +158,9 @@
               </span>
             </div>
 
-            <!-- Настройка зависимостей -->
-            <div class="form-group">
-              <label>
-                <Icon name="link" />
-                Фильтровать варианты на основе предыдущего ответа
-              </label>
-              <select v-model="question.depends_on">
-                <option :value="null">Показывать все варианты (нет зависимости)</option>
-                <option
-                  v-for="prevQ in getPreviousDictionaryQuestions(index)"
-                  :key="prevQ.id"
-                  :value="prevQ.id"
-                >
-                  Вопрос {{ prevQ.index + 1 }}: {{ prevQ.title || '(без текста)' }}
-                </option>
-              </select>
-              <span class="hint">
-                Если выбрано — варианты будут фильтроваться по связям в справочнике
-              </span>
+            <div class="info-hint">
+              <Icon name="link" />
+              <span>Связи между справочниками настраиваются автоматически на основе метаданных элементов. Вам не нужно вручную указывать зависимости.</span>
             </div>
 
             <div class="checkbox-group">
@@ -273,21 +254,12 @@ const addQuestion = () => {
     options: [],
     rating_max: 5,
     dictionary_id: null,
-    is_booking: false,
-    depends_on: null
+    is_booking: false
   })
 }
 
 const removeQuestion = (index) => {
-  const removedId = formData.questions[index].id
   formData.questions.splice(index, 1)
-  
-  // Очищаем depends_on, если он ссылался на удалённый вопрос
-  formData.questions.forEach(q => {
-    if (q.depends_on === removedId) {
-      q.depends_on = null
-    }
-  })
 }
 
 const addOption = (question) => {
@@ -296,17 +268,6 @@ const addOption = (question) => {
 
 const removeOption = (question, optIndex) => {
   question.options.splice(optIndex, 1)
-}
-
-const getPreviousDictionaryQuestions = (currentIndex) => {
-  return formData.questions
-    .slice(0, currentIndex)
-    .filter(q => q.type === 'dictionary')
-    .map((q, idx) => ({
-      id: q.id,
-      index: formData.questions.indexOf(q),
-      title: q.title
-    }))
 }
 
 const submitForm = async () => {
@@ -322,7 +283,7 @@ const submitForm = async () => {
 
   for (const q of formData.questions) {
     if (!q.title.trim()) {
-      result.value = { error: 'Все вопросы должны иметь текст' }
+      result.value = { error: `Все вопросы должны иметь текст` }
       return
     }
     if (['radio', 'checkbox', 'select'].includes(q.type) && q.options.length === 0) {
@@ -340,7 +301,7 @@ const submitForm = async () => {
 
   try {
     const token = localStorage.getItem('token')
-    
+
     const payload = {
       title: formData.title,
       description: formData.description,
@@ -352,11 +313,10 @@ const submitForm = async () => {
         options: q.options,
         rating_max: q.rating_max,
         dictionary_id: q.type === 'dictionary' ? q.dictionary_id : null,
-        is_booking: q.type === 'dictionary' ? q.is_booking : false,
-        depends_on: q.depends_on || null
+        is_booking: q.type === 'dictionary' ? q.is_booking : false
       }))
     }
-    
+
     const response = await fetch('/api/forms', {
       method: 'POST',
       headers: {
@@ -383,7 +343,7 @@ const submitForm = async () => {
 
     const data = await response.json()
     result.value = { success: true, message: 'Форма успешно создана' }
-    
+
     if (data.id || data.ID) {
       setTimeout(() => router.push(`/form/${data.id || data.ID}`), 1000)
     } else {

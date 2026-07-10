@@ -155,7 +155,7 @@ func GetForm(db *gorm.DB) gin.HandlerFunc {
     }
 }
 
-// ---------- SubmitResponse (абстрактная версия) ----------
+// ---------- SubmitResponse (полностью абстрактный, автоопределение ресурсов) ----------
 func SubmitResponse(db *gorm.DB) gin.HandlerFunc {
     return func(c *gin.Context) {
         var input struct {
@@ -182,17 +182,25 @@ func SubmitResponse(db *gorm.DB) gin.HandlerFunc {
         }
         uid := uuid.MustParse(userID)
 
-        // Ищем вопросы: бронирования (is_booking=true), даты (type=date), ресурса (на который ссылается depends_on)
-        var bookingQuestion *models.Question
-        var dateQuestion *models.Question
-        var resourceQuestion *models.Question
+        // --- Автоопределение вопросов ---
+        var bookingQuestion *models.Question // вопрос бронирования (IsBooking == true, тип dictionary)
+        var resourceQuestion *models.Question // вопрос-ресурс (любой dictionary, IsBooking == false)
+        var dateQuestion *models.Question     // вопрос с типом "date"
 
         for _, q := range form.Questions {
-            if q.IsBooking {
-                bookingQuestion = &q
-            }
             if q.Type == "date" {
                 dateQuestion = &q
+                continue
+            }
+            if q.Type == "dictionary" {
+                if q.IsBooking {
+                    bookingQuestion = &q
+                } else {
+                    // первый встречный dictionary без is_booking считаем ресурсом
+                    if resourceQuestion == nil {
+                        resourceQuestion = &q
+                    }
+                }
             }
         }
 
@@ -202,8 +210,8 @@ func SubmitResponse(db *gorm.DB) gin.HandlerFunc {
             resp := models.Response{
                 FormID:  uuid.MustParse(input.FormID),
                 Answers: datatypes.JSON(answersJSON),
+                UserID:  &uid,
             }
-            resp.UserID = &uid
             if err := db.Create(&resp).Error; err != nil {
                 c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to save response"})
                 return
@@ -212,22 +220,9 @@ func SubmitResponse(db *gorm.DB) gin.HandlerFunc {
             return
         }
 
-        // Проверяем, что вопрос бронирования имеет depends_on (указывает на ресурс)
-        if bookingQuestion.DependsOn == nil {
-            c.JSON(http.StatusBadRequest, gin.H{"error": "Booking question must have a depends_on reference to the resource question"})
-            return
-        }
-
-        // Находим вопрос ресурса по DependsOn
-        for _, q := range form.Questions {
-            if q.ID == *bookingQuestion.DependsOn {
-                resourceQuestion = &q
-                break
-            }
-        }
-
+        // Проверяем наличие вопроса-ресурса
         if resourceQuestion == nil {
-            c.JSON(http.StatusBadRequest, gin.H{"error": "Resource question not found for booking"})
+            c.JSON(http.StatusBadRequest, gin.H{"error": "Resource question not found in form configuration"})
             return
         }
 
@@ -248,7 +243,7 @@ func SubmitResponse(db *gorm.DB) gin.HandlerFunc {
             return
         }
 
-        // Извлекаем ID ресурса (из вопроса ресурса)
+        // Извлекаем ID ресурса (из вопроса-ресурса)
         resourceVal, ok := input.Answers[resourceQuestion.ID.String()]
         if !ok {
             c.JSON(http.StatusBadRequest, gin.H{"error": "Resource value missing"})
@@ -285,20 +280,20 @@ func SubmitResponse(db *gorm.DB) gin.HandlerFunc {
             }
         }
 
-        // Транзакционная проверка занятости
-        var bookingExists int64
+        // Транзакционная проверка и сохранение
         if err := db.Transaction(func(tx *gorm.DB) error {
-            // Проверяем, есть ли уже бронирование на этот слот для данного ресурса и даты
+            // Проверяем занятость
             query := tx.Model(&models.Booking{}).
                 Where("teacher_id = ? AND slot_id = ?", resourceID, slotID)
             if !bookingDate.IsZero() {
                 query = query.Where("date = ?", bookingDate)
             }
-            if err := query.Count(&bookingExists).Error; err != nil {
+            var count int64
+            if err := query.Count(&count).Error; err != nil {
                 return err
             }
-            if bookingExists > 0 {
-                return gorm.ErrRecordNotFound // сигнал для обработки как конфликт
+            if count > 0 {
+                return gorm.ErrRecordNotFound // конфликт
             }
 
             // Создаём бронирование
@@ -323,6 +318,7 @@ func SubmitResponse(db *gorm.DB) gin.HandlerFunc {
             if err := tx.Create(&resp).Error; err != nil {
                 return err
             }
+
             return nil
         }); err != nil {
             if err == gorm.ErrRecordNotFound {
@@ -369,17 +365,17 @@ func GetResponses(db *gorm.DB) gin.HandlerFunc {
 
 // ---------- UpdateForm ----------
 type UpdateQuestionInput struct {
-            ID            *uuid.UUID  `json:"id"`
-            Type          string      `json:"type" binding:"required"`
-            Title         string      `json:"title" binding:"required"`
-            Description   string      `json:"description"`
-            OrderIndex    int         `json:"order_index"`
-            IsRequired    bool        `json:"is_required"`
-            Options       []string    `json:"options"`
-            DependsOn     interface{} `json:"depends_on"`
-            DependsValues []string    `json:"depends_values"`
-            DictionaryID  *string     `json:"dictionary_id"`
-            IsBooking     bool        `json:"is_booking"`
+    ID            *uuid.UUID `json:"id"`
+    Type          string     `json:"type" binding:"required"`
+    Title         string     `json:"title" binding:"required"`
+    Description   string     `json:"description"`
+    OrderIndex    int        `json:"order_index"`
+    IsRequired    bool       `json:"is_required"`
+    Options       []string   `json:"options"`
+    DependsOn     interface{} `json:"depends_on"`
+    DependsValues []string   `json:"depends_values"`
+    DictionaryID  *string    `json:"dictionary_id"`
+    IsBooking     bool       `json:"is_booking"`
 }
 
 type UpdateFormInput struct {
@@ -418,6 +414,7 @@ func UpdateForm(db *gorm.DB) gin.HandlerFunc {
             return
         }
 
+        // Обновление вопросов
         var existingQuestions []models.Question
         db.Where("form_id = ?", form.ID).Find(&existingQuestions)
         existingIDs := make(map[uuid.UUID]bool)
@@ -432,12 +429,14 @@ func UpdateForm(db *gorm.DB) gin.HandlerFunc {
             }
         }
 
+        // Удаляем отсутствующие
         for _, q := range existingQuestions {
             if !incomingIDs[q.ID] {
                 db.Delete(&q)
             }
         }
 
+        // Обновляем или создаём вопросы
         for _, qInput := range input.Questions {
             optsJSON, _ := json.Marshal(qInput.Options)
             depValsJSON, _ := json.Marshal(qInput.DependsValues)
@@ -506,6 +505,7 @@ func DeleteForm(db *gorm.DB) gin.HandlerFunc {
             return
         }
 
+        // Каскадное удаление
         db.Where("form_id = ?", form.ID).Delete(&models.Response{})
         db.Where("form_id = ?", form.ID).Delete(&models.Question{})
         db.Delete(&form)
