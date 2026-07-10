@@ -13,7 +13,7 @@ import (
     "github.com/Uberrazumist/form-builder/backend/internal/models"
 )
 
-// ---------- Вспомогательная функция для depends_on ----------
+// ---------- Вспомогательная функция для depends_on (оставлена для совместимости) ----------
 func parseDependsOn(dep interface{}) *uuid.UUID {
     if dep == nil {
         return nil
@@ -183,9 +183,9 @@ func SubmitResponse(db *gorm.DB) gin.HandlerFunc {
         uid := uuid.MustParse(userID)
 
         // --- Автоопределение вопросов ---
-        var bookingQuestion *models.Question // вопрос бронирования (IsBooking == true, тип dictionary)
-        var resourceQuestion *models.Question // вопрос-ресурс (любой dictionary, IsBooking == false)
-        var dateQuestion *models.Question     // вопрос с типом "date"
+        var bookingQuestion *models.Question // IsBooking == true, тип dictionary
+        var resourceQuestion *models.Question // любой другой dictionary без IsBooking
+        var dateQuestion *models.Question     // Type == "date"
 
         for _, q := range form.Questions {
             if q.Type == "date" {
@@ -195,11 +195,8 @@ func SubmitResponse(db *gorm.DB) gin.HandlerFunc {
             if q.Type == "dictionary" {
                 if q.IsBooking {
                     bookingQuestion = &q
-                } else {
-                    // первый встречный dictionary без is_booking считаем ресурсом
-                    if resourceQuestion == nil {
-                        resourceQuestion = &q
-                    }
+                } else if resourceQuestion == nil {
+                    resourceQuestion = &q
                 }
             }
         }
@@ -220,9 +217,9 @@ func SubmitResponse(db *gorm.DB) gin.HandlerFunc {
             return
         }
 
-        // Проверяем наличие вопроса-ресурса
-        if resourceQuestion == nil {
-            c.JSON(http.StatusBadRequest, gin.H{"error": "Resource question not found in form configuration"})
+        // Проверяем наличие ресурса и даты
+        if resourceQuestion == nil || dateQuestion == nil {
+            c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid booking form configuration: missing resource or date question"})
             return
         }
 
@@ -260,36 +257,30 @@ func SubmitResponse(db *gorm.DB) gin.HandlerFunc {
             return
         }
 
-        // Извлекаем дату (если есть вопрос даты)
-        var bookingDate time.Time
-        if dateQuestion != nil {
-            dateVal, ok := input.Answers[dateQuestion.ID.String()]
-            if !ok {
-                c.JSON(http.StatusBadRequest, gin.H{"error": "Date value missing"})
-                return
-            }
-            dateStr, ok := dateVal.(string)
-            if !ok {
-                c.JSON(http.StatusBadRequest, gin.H{"error": "Date value must be a string"})
-                return
-            }
-            bookingDate, err = time.Parse("2006-01-02", dateStr)
-            if err != nil {
-                c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid date format, use YYYY-MM-DD"})
-                return
-            }
+        // Извлекаем дату
+        dateVal, ok := input.Answers[dateQuestion.ID.String()]
+        if !ok {
+            c.JSON(http.StatusBadRequest, gin.H{"error": "Date value missing"})
+            return
+        }
+        dateStr, ok := dateVal.(string)
+        if !ok {
+            c.JSON(http.StatusBadRequest, gin.H{"error": "Date value must be a string"})
+            return
+        }
+        bookingDate, err := time.Parse("2006-01-02", dateStr)
+        if err != nil {
+            c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid date format, use YYYY-MM-DD"})
+            return
         }
 
         // Транзакционная проверка и сохранение
         if err := db.Transaction(func(tx *gorm.DB) error {
             // Проверяем занятость
-            query := tx.Model(&models.Booking{}).
-                Where("teacher_id = ? AND slot_id = ?", resourceID, slotID)
-            if !bookingDate.IsZero() {
-                query = query.Where("date = ?", bookingDate)
-            }
             var count int64
-            if err := query.Count(&count).Error; err != nil {
+            if err := tx.Model(&models.Booking{}).
+                Where("teacher_id = ? AND slot_id = ? AND date = ?", resourceID, slotID, bookingDate).
+                Count(&count).Error; err != nil {
                 return err
             }
             if count > 0 {

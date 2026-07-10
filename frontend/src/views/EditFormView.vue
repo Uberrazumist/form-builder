@@ -210,6 +210,10 @@
           <button type="button" class="btn-secondary" @click="$router.back()">
             Отмена
           </button>
+          <router-link :to="`/responses/${route.params.id}`" class="btn-secondary">
+            <Icon name="document" />
+            Посмотреть ответы
+          </router-link>
           <button type="submit" class="btn-primary" :disabled="submitting">
             <span v-if="!submitting">Сохранить изменения</span>
             <span v-else class="spinner"></span>
@@ -297,8 +301,8 @@ const loadForm = async () => {
         id: q.ID,
         type: q.Type || 'text',
         title: q.Title || '',
-        // ВАЖНО: читаем IsRequired (правильное имя поля из models.go)
-        required: q.IsRequired || false,
+        // УНИВЕРСАЛЬНЫЙ МАППИНГ: бэкенд может вернуть is_required, IsRequired или Required
+        required: q.is_required || q.IsRequired || q.Required || false,
         options: q.Options || [],
         rating_max: q.RatingMax || 5,
         dictionary_id: q.DictionaryID || null,
@@ -347,15 +351,15 @@ const submitForm = async () => {
   }
 
   for (const q of formData.questions) {
-    if (!q.title.trim()) {
-      result.value = { error: `Все вопросы должны иметь текст` }
+    if (!q?.title?.trim()) {
+      result.value = { error: 'Все вопросы должны иметь текст' }
       return
     }
-    if (['radio', 'checkbox', 'select'].includes(q.type) && q.options.length === 0) {
+    if (['radio', 'checkbox', 'select'].includes(q?.type) && q.options.length === 0) {
       result.value = { error: `Вопрос "${q.title}" должен иметь хотя бы один вариант ответа` }
       return
     }
-    if (q.type === 'dictionary' && !q.dictionary_id) {
+    if (q?.type === 'dictionary' && !q.dictionary_id) {
       result.value = { error: `Вопрос "${q.title}" должен иметь выбранный справочник` }
       return
     }
@@ -376,8 +380,8 @@ const submitForm = async () => {
         ID: q.id || undefined,
         Type: q.type,
         Title: q.title,
-        // ВАЖНО: отправляем IsRequired (правильное имя поля из models.go)
-        IsRequired: q.required,
+        // ОТПРАВЛЯЕМ В ФОРМАТЕ, КОТОРЫЙ ЖДЁТ БЭКЕНД (snake_case)
+        is_required: q.required,
         Options: q.options,
         RatingMax: q.rating_max,
         DictionaryID: q.type === 'dictionary' ? q.dictionary_id : null,
@@ -811,6 +815,7 @@ select:focus {
   display: flex;
   gap: 1rem;
   justify-content: flex-end;
+  flex-wrap: wrap;
 }
 
 .btn-primary {
@@ -861,6 +866,7 @@ select:focus {
   .btn-primary,
   .btn-secondary {
     width: 100%;
+    justify-content: center;
   }
 }
 </style>

@@ -247,6 +247,7 @@ const loadForm = async () => {
     form.value = data
 
     form.value.Questions.forEach(q => {
+      if (!q) return
       if (q.Type === 'checkbox') {
         answers[q.ID] = []
       } else {
@@ -255,6 +256,7 @@ const loadForm = async () => {
     })
 
     for (const q of form.value.Questions) {
+      if (!q) continue
       if (q.Type === 'dictionary' && q.DictionaryID) {
         await loadDictionaryItems(q.DictionaryID)
       }
@@ -284,25 +286,33 @@ const loadDictionaryItems = async (dictionaryId) => {
   }
 }
 
+// БЕЗОПАСНАЯ ФУНКЦИЯ: защита от пустого справочника через optional chaining
 const findParentQuestion = (question) => {
-  if (question.Type !== 'dictionary' || !question.DictionaryID) return null
+  if (!question || question.Type !== 'dictionary' || !question.DictionaryID) return null
 
   const items = dictionaryItemsCache[question.DictionaryID] || []
 
-  const itemWithLinks = items.find(item =>
-    item.Metadata?.linked_ids &&
-    Array.isArray(item.Metadata.linked_ids) &&
-    item.Metadata.linked_ids.length > 0
-  )
+  // Если справочник пустой — возвращаем null без падения
+  if (!items || items.length === 0) return null
 
-  if (!itemWithLinks) return null
+  // Безопасное извлечение первого linked_id через optional chaining
+  let sampleLinkedId = null
+  for (const item of items) {
+    if (!item) continue
+    const firstLinkedId = item?.Metadata?.linked_ids?.[0]
+    if (firstLinkedId) {
+      sampleLinkedId = firstLinkedId
+      break
+    }
+  }
 
-  const linkedId = itemWithLinks.Metadata.linked_ids[0]
+  if (!sampleLinkedId) return null
 
   let parentDictId = null
   for (const dictId in dictionaryItemsCache) {
     if (dictId === question.DictionaryID) continue
-    const found = dictionaryItemsCache[dictId].find(i => i.ID === linkedId)
+    const dictItems = dictionaryItemsCache[dictId] || []
+    const found = dictItems.find(i => i?.ID === sampleLinkedId)
     if (found) {
       parentDictId = dictId
       break
@@ -311,12 +321,12 @@ const findParentQuestion = (question) => {
 
   if (!parentDictId) return null
 
-  return form.value.Questions.find(q =>
-    q.Type === 'dictionary' && q.DictionaryID === parentDictId
-  ) || null
+  return form.value.Questions.find(q => q?.Type === 'dictionary' && q?.DictionaryID === parentDictId) || null
 }
 
+// КАСКАДНАЯ ПРОВЕРКА ВИДИМОСТИ
 const isQuestionVisible = (question) => {
+  if (!question) return false
   if (question.Type !== 'dictionary') return true
 
   const parentQuestion = findParentQuestion(question)
@@ -329,8 +339,10 @@ const isQuestionVisible = (question) => {
 }
 
 const getVisibleIndex = (question) => {
+  if (!question) return 0
   let visibleCount = 0
   for (const q of form.value.Questions) {
+    if (!q) continue
     if (isQuestionVisible(q)) {
       visibleCount++
       if (q.ID === question.ID) return visibleCount
@@ -339,15 +351,16 @@ const getVisibleIndex = (question) => {
   return 0
 }
 
+// КАСКАДНАЯ БЛОКИРОВКА
 const isSelectDisabled = (question) => {
-  if (question.Type !== 'dictionary') return false
+  if (!question || question.Type !== 'dictionary') return false
 
   const parentQuestion = findParentQuestion(question)
-  
+
   if (parentQuestion && isSelectDisabled(parentQuestion)) return true
 
   if (question.IsBooking) {
-    const dateQuestion = form.value.Questions.find(q => q.Type === 'date')
+    const dateQuestion = form.value.Questions.find(q => q?.Type === 'date')
     if (dateQuestion && !answers[dateQuestion.ID]) return true
 
     if (parentQuestion && !answers[parentQuestion.ID]) return true
@@ -361,8 +374,10 @@ const isSelectDisabled = (question) => {
 }
 
 const getLockReason = (question) => {
+  if (!question) return 'Поле заблокировано'
+
   if (question.IsBooking) {
-    const dateQuestion = form.value.Questions.find(q => q.Type === 'date')
+    const dateQuestion = form.value.Questions.find(q => q?.Type === 'date')
     if (dateQuestion && !answers[dateQuestion.ID]) {
       return 'Сначала выберите дату'
     }
@@ -377,13 +392,13 @@ const getLockReason = (question) => {
 }
 
 const isQuestionLoading = (question) => {
-  if (question.Type !== 'dictionary' || !question.DictionaryID) return false
+  if (!question || question.Type !== 'dictionary' || !question.DictionaryID) return false
   return loadingSlots[question.ID] || false
 }
 
 const getFilteredOptions = (question) => {
-  if (question.Type !== 'dictionary' || !question.DictionaryID) {
-    return question.Options || []
+  if (!question || question.Type !== 'dictionary' || !question.DictionaryID) {
+    return question?.Options || []
   }
 
   const allItems = dictionaryItemsCache[question.DictionaryID] || []
@@ -399,7 +414,7 @@ const getFilteredOptions = (question) => {
     if (!parentAnswer) return []
 
     return allItems.filter(item => {
-      if (!item.Metadata?.linked_ids || !Array.isArray(item.Metadata.linked_ids)) {
+      if (!item?.Metadata?.linked_ids || !Array.isArray(item.Metadata.linked_ids)) {
         return false
       }
       return item.Metadata.linked_ids.includes(parentAnswer)
@@ -423,10 +438,11 @@ const getOptionLabel = (option) => {
   return option
 }
 
+// БЕЗОПАСНАЯ ЗАГРУЗКА СЛОТОВ С ПАРАМЕТРОМ teacher_id
 const loadAvailableSlots = async (question) => {
-  if (!question.IsBooking) return
+  if (!question || !question.IsBooking) return
 
-  const dateQuestion = form.value.Questions.find(q => q.Type === 'date')
+  const dateQuestion = form.value.Questions.find(q => q?.Type === 'date')
   if (!dateQuestion || !answers[dateQuestion.ID]) {
     availableSlots[question.ID] = []
     return
@@ -448,6 +464,7 @@ const loadAvailableSlots = async (question) => {
       date: dateValue
     })
 
+    // КРИТИЧЕСКИ ВАЖНО: бэкенд ожидает строго teacher_id
     if (parentQuestion && answers[parentQuestion.ID]) {
       params.append('teacher_id', answers[parentQuestion.ID])
     }
@@ -478,6 +495,7 @@ const loadAvailableSlots = async (question) => {
   }
 }
 
+// ЗАЩИЩЁННЫЙ WATCH С ПРЕДОТВРАЩЕНИЕМ БЕСКОНЕЧНОГО ЦИКЛА
 watch(
   () => JSON.stringify(answers),
   async (newVal, oldVal) => {
@@ -487,14 +505,17 @@ watch(
     const oldAnswers = oldVal ? JSON.parse(oldVal) : {}
 
     for (const q of form.value.Questions) {
+      if (!q) continue
+
       if (q.Type === 'dictionary') {
         const parentQuestion = findParentQuestion(q)
-        
+
         if (parentQuestion) {
           const oldParentValue = oldAnswers[parentQuestion.ID]
           const newParentValue = newAnswers[parentQuestion.ID]
-          
+
           if (oldParentValue !== newParentValue && oldParentValue !== '' && oldParentValue !== null) {
+            // КРИТИЧЕСКАЯ ЗАЩИТА: разрываем бесконечный цикл
             if (answers[q.ID] !== '') {
               answers[q.ID] = ''
             }
@@ -508,7 +529,9 @@ watch(
 
       if (q.Type === 'date' && newAnswers[q.ID] !== oldAnswers[q.ID]) {
         for (const resourceQ of form.value.Questions) {
+          if (!resourceQ) continue
           if (resourceQ.IsBooking && resourceQ.Type === 'dictionary') {
+            // КРИТИЧЕСКАЯ ЗАЩИТА: разрываем бесконечный цикл
             if (answers[resourceQ.ID] !== '') {
               answers[resourceQ.ID] = ''
             }
