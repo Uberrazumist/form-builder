@@ -1,4 +1,3 @@
-<!-- src/views/FillFormView.vue -->
 <template>
   <div class="fill-form-page">
     <div v-if="loading" class="loading-state">
@@ -19,17 +18,27 @@
       <div class="form-header">
         <h1 class="form-title">{{ form.Title }}</h1>
         <p v-if="form.Description" class="form-description">{{ form.Description }}</p>
+        
+        <div class="progress-section">
+          <div class="progress-info">
+            <span class="step-counter">Шаг {{ currentVisibleStepNumber }} из {{ visibleQuestionsCount }}</span>
+            <span class="progress-percent">{{ progressPercent }}%</span>
+          </div>
+          <div class="progress-bar">
+            <div class="progress-fill" :style="{ width: `${progressPercent}%` }"></div>
+          </div>
+        </div>
       </div>
 
       <form @submit.prevent="submitResponses" class="form-body" novalidate>
         <div
           v-for="(question, index) in form.Questions"
           :key="question.ID"
-          v-if="isQuestionVisible(question)"
+          v-if="index === currentStep"
           class="question-block"
         >
           <label class="question-label">
-            <span class="question-number">{{ getVisibleIndex(question) }}.</span>
+            <span class="question-number">{{ currentVisibleStepNumber }}.</span>
             {{ question.Title }}
             <span v-if="question.IsRequired" class="required">*</span>
           </label>
@@ -93,76 +102,66 @@
           </div>
 
           <div v-else-if="question.Type === 'radio'" class="options-group">
-            <label
-              v-for="(option, optIdx) in question.Options"
-              :key="optIdx"
-              class="option-label"
-            >
-              <input
-                type="radio"
-                :name="'q_' + question.ID"
-                :value="option"
-                v-model="answers[question.ID]"
-                :required="question.IsRequired"
-              />
+            <label v-for="(option, optIdx) in question.Options" :key="optIdx" class="option-label">
+              <input type="radio" :name="'q_' + question.ID" :value="option" v-model="answers[question.ID]" :required="question.IsRequired" />
               <span>{{ option }}</span>
             </label>
           </div>
 
           <div v-else-if="question.Type === 'checkbox'" class="options-group">
-            <label
-              v-for="(option, optIdx) in question.Options"
-              :key="optIdx"
-              class="option-label"
-            >
-              <input
-                type="checkbox"
-                :value="option"
-                v-model="answers[question.ID]"
-              />
+            <label v-for="(option, optIdx) in question.Options" :key="optIdx" class="option-label">
+              <input type="checkbox" :value="option" v-model="answers[question.ID]" />
               <span>{{ option }}</span>
             </label>
           </div>
 
-          <select
-            v-else-if="question.Type === 'select'"
-            v-model="answers[question.ID]"
-            :required="question.IsRequired"
-            class="form-select"
-          >
+          <select v-else-if="question.Type === 'select'" v-model="answers[question.ID]" :required="question.IsRequired" class="form-select">
             <option value="" disabled>Выберите вариант</option>
-            <option
-              v-for="(option, optIdx) in question.Options"
-              :key="optIdx"
-              :value="option"
-            >
-              {{ option }}
-            </option>
+            <option v-for="(option, optIdx) in question.Options" :key="optIdx" :value="option">{{ option }}</option>
           </select>
 
           <div v-else-if="question.Type === 'rating'" class="rating-group">
             <div class="stars">
-              <button
-                v-for="star in question.RatingMax || 5"
-                :key="star"
-                type="button"
-                @click="answers[question.ID] = star"
-                class="star-btn"
-                :class="{ active: answers[question.ID] >= star }"
-              >
-                ★
-              </button>
+              <button v-for="star in question.RatingMax || 5" :key="star" type="button" @click="answers[question.ID] = star" class="star-btn" :class="{ active: answers[question.ID] >= star }">★</button>
             </div>
-            <span v-if="answers[question.ID]" class="rating-value">
-              {{ answers[question.ID] }} из {{ question.RatingMax || 5 }}
-            </span>
+            <span v-if="answers[question.ID]" class="rating-value">{{ answers[question.ID] }} из {{ question.RatingMax || 5 }}</span>
+          </div>
+
+          <div v-if="validationError" class="validation-error">
+            <Icon name="error" />
+            <span>{{ validationError }}</span>
           </div>
         </div>
 
-        <div class="form-actions">
-          <button type="submit" class="btn-primary" :disabled="submitting">
+        <div class="form-navigation">
+          <button 
+            type="button" 
+            class="btn-secondary" 
+            @click="prevStep" 
+            :disabled="currentVisibleStepNumber === 1"
+          >
+            <Icon name="arrow-left" />
+            Назад
+          </button>
+          
+          <button
+            v-if="currentVisibleStepNumber < visibleQuestionsCount"
+            type="button"
+            class="btn-primary"
+            @click="nextStep"
+          >
+            Далее
+          </button>
+          
+          <button
+            v-else
+            type="button"
+            class="btn-primary"
+            @click="submitResponses"
+            :disabled="submitting"
+          >
             <span v-if="!submitting">Отправить ответы</span>
-            <span v-else class="spinner"></span>
+            <span v-else class="spinner-small"></span>
           </button>
         </div>
 
@@ -173,7 +172,7 @@
 </template>
 
 <script setup>
-import { ref, reactive, onMounted, watch } from 'vue'
+import { ref, reactive, onMounted, watch, nextTick, computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import Icon from '../components/Icon.vue'
 import FormResult from '../components/FormResult.vue'
@@ -190,6 +189,9 @@ const availableSlots = reactive({})
 const error = ref(null)
 const result = ref(null)
 const submitting = ref(false)
+const currentStep = ref(0)
+const validationError = ref('')
+const isProcessingWatch = ref(false)
 
 onMounted(async () => {
   await loadForm()
@@ -202,7 +204,6 @@ const loadForm = async () => {
   try {
     const formId = route.params.id
     const token = localStorage.getItem('token')
-
     const headers = {}
     if (token) headers['Authorization'] = `Bearer ${token}`
 
@@ -227,7 +228,6 @@ const loadForm = async () => {
       }
     })
 
-    // КРИТИЧЕСКИ ВАЖНО: Загружаем ВСЕ элементы справочников ДО запуска watchers
     for (const q of form.value.Questions) {
       if (!q) continue
       if (q.Type === 'dictionary' && q.DictionaryID) {
@@ -259,16 +259,12 @@ const loadDictionaryItems = async (dictionaryId) => {
   }
 }
 
-// БЕЗОПАСНАЯ ФУНКЦИЯ: защита от пустого справочника через optional chaining
 const findParentQuestion = (question) => {
   if (!question || question.Type !== 'dictionary' || !question.DictionaryID) return null
 
   const items = dictionaryItemsCache[question.DictionaryID] || []
-
-  // Если справочник пустой — возвращаем null без падения
   if (!items || items.length === 0) return null
 
-  // Безопасное извлечение первого linked_id через optional chaining
   let sampleLinkedId = null
   for (const item of items) {
     if (!item) continue
@@ -297,7 +293,6 @@ const findParentQuestion = (question) => {
   return form.value.Questions.find(q => q?.Type === 'dictionary' && q?.DictionaryID === parentDictId) || null
 }
 
-// КАСКАДНАЯ ПРОВЕРКА ВИДИМОСТИ
 const isQuestionVisible = (question) => {
   if (!question) return false
   if (question.Type !== 'dictionary') return true
@@ -305,46 +300,26 @@ const isQuestionVisible = (question) => {
   const parentQuestion = findParentQuestion(question)
   if (!parentQuestion) return true
 
-  // Каскадная проверка: если родитель скрыт, то и этот вопрос скрыт
   if (!isQuestionVisible(parentQuestion)) return false
 
   const parentAnswer = answers[parentQuestion.ID]
   return !!parentAnswer
 }
 
-const getVisibleIndex = (question) => {
-  if (!question) return 0
-  let visibleCount = 0
-  for (const q of form.value.Questions) {
-    if (!q) continue
-    if (isQuestionVisible(q)) {
-      visibleCount++
-      if (q.ID === question.ID) return visibleCount
-    }
-  }
-  return 0
-}
-
-// КАСКАДНАЯ БЛОКИРОВКА
 const isSelectDisabled = (question) => {
   if (!question || question.Type !== 'dictionary') return false
 
   const parentQuestion = findParentQuestion(question)
-
-  // Каскадная блокировка: если родитель заблокирован, то и этот заблокирован
   if (parentQuestion && isSelectDisabled(parentQuestion)) return true
 
   if (question.IsBooking) {
     const dateQuestion = form.value.Questions.find(q => q?.Type === 'date')
     if (dateQuestion && !answers[dateQuestion.ID]) return true
-
     if (parentQuestion && !answers[parentQuestion.ID]) return true
-
     return false
   }
 
   if (parentQuestion && !answers[parentQuestion.ID]) return true
-
   return false
 }
 
@@ -383,20 +358,17 @@ const getFilteredOptions = (question) => {
   }
 
   const parentQuestion = findParentQuestion(question)
+  if (!parentQuestion) return allItems
 
-  if (parentQuestion) {
-    const parentAnswer = answers[parentQuestion.ID]
-    if (!parentAnswer) return []
+  const parentAnswer = answers[parentQuestion.ID]
+  if (!parentAnswer) return []
 
-    return allItems.filter(item => {
-      if (!item?.Metadata?.linked_ids || !Array.isArray(item.Metadata.linked_ids)) {
-        return false
-      }
-      return item.Metadata.linked_ids.includes(parentAnswer)
-    })
-  }
-
-  return allItems
+  return allItems.filter(item => {
+    if (!item?.Metadata?.linked_ids || !Array.isArray(item.Metadata.linked_ids)) {
+      return false
+    }
+    return item.Metadata.linked_ids.includes(parentAnswer)
+  })
 }
 
 const getOptionValue = (option) => {
@@ -413,7 +385,6 @@ const getOptionLabel = (option) => {
   return option
 }
 
-// БЕЗОПАСНАЯ ЗАГРУЗКА СЛОТОВ С ПАРАМЕТРОМ teacher_id
 const loadAvailableSlots = async (question) => {
   if (!question || !question.IsBooking) return
 
@@ -435,11 +406,8 @@ const loadAvailableSlots = async (question) => {
     const token = localStorage.getItem('token')
     const dateValue = answers[dateQuestion.ID]
 
-    const params = new URLSearchParams({
-      date: dateValue
-    })
+    const params = new URLSearchParams({ date: dateValue })
 
-    // КРИТИЧЕСКИ ВАЖНО: бэкенд ожидает строго teacher_id
     if (parentQuestion && answers[parentQuestion.ID]) {
       params.append('teacher_id', answers[parentQuestion.ID])
     }
@@ -447,15 +415,12 @@ const loadAvailableSlots = async (question) => {
     const url = `/api/bookings/available?${params.toString()}`
 
     const response = await fetch(url, {
-      headers: {
-        'Authorization': `Bearer ${token}`
-      }
+      headers: { 'Authorization': `Bearer ${token}` }
     })
 
     if (response.ok) {
       const data = await response.json()
       availableSlots[question.ID] = data.slots || data || []
-
       if (data.busy_slots) {
         availableSlots[question.ID + '_busy'] = data.busy_slots
       }
@@ -470,55 +435,149 @@ const loadAvailableSlots = async (question) => {
   }
 }
 
-// ЗАЩИЩЁННЫЙ WATCH С ПРЕДОТВРАЩЕНИЕМ БЕСКОНЕЧНОГО ЦИКЛА
 watch(
   () => JSON.stringify(answers),
   async (newVal, oldVal) => {
-    if (!form.value || newVal === oldVal) return
+    if (!form.value || newVal === oldVal || isProcessingWatch.value) return
 
-    const newAnswers = JSON.parse(newVal)
-    const oldAnswers = oldVal ? JSON.parse(oldVal) : {}
+    isProcessingWatch.value = true
 
-    for (const q of form.value.Questions) {
-      if (!q) continue
+    try {
+      const newAnswers = JSON.parse(newVal)
+      const oldAnswers = oldVal ? JSON.parse(oldVal) : {}
+      const questionsToReset = []
 
-      if (q.Type === 'dictionary') {
-        const parentQuestion = findParentQuestion(q)
+      for (const q of form.value.Questions) {
+        if (!q) continue
 
-        if (parentQuestion) {
-          const oldParentValue = oldAnswers[parentQuestion.ID]
-          const newParentValue = newAnswers[parentQuestion.ID]
+        if (q.Type === 'dictionary') {
+          const parentQuestion = findParentQuestion(q)
+          if (parentQuestion) {
+            const oldParentValue = oldAnswers[parentQuestion.ID]
+            const newParentValue = newAnswers[parentQuestion.ID]
 
-          // Сбрасываем только если родитель РЕАЛЬНО изменился и старое значение не было пустым
-          if (oldParentValue !== newParentValue && oldParentValue !== '' && oldParentValue !== null) {
-            // КРИТИЧЕСКАЯ ЗАЩИТА: разрываем бесконечный цикл
-            if (answers[q.ID] !== '') {
-              answers[q.ID] = ''
+            if (oldParentValue !== newParentValue && oldParentValue !== '' && oldParentValue !== null && oldParentValue !== undefined) {
+              if (answers[q.ID] !== '' && answers[q.ID] !== null && answers[q.ID] !== undefined) {
+                questionsToReset.push(q.ID)
+              }
+              if (q.IsBooking) {
+                await loadAvailableSlots(q)
+              }
             }
+          }
+        }
 
-            if (q.IsBooking) {
-              await loadAvailableSlots(q)
+        if (q.Type === 'date' && newAnswers[q.ID] !== oldAnswers[q.ID]) {
+          for (const resourceQ of form.value.Questions) {
+            if (!resourceQ) continue
+            if (resourceQ.IsBooking && resourceQ.Type === 'dictionary') {
+              if (answers[resourceQ.ID] !== '' && answers[resourceQ.ID] !== null && answers[resourceQ.ID] !== undefined) {
+                questionsToReset.push(resourceQ.ID)
+              }
+              await loadAvailableSlots(resourceQ)
             }
           }
         }
       }
 
-      if (q.Type === 'date' && newAnswers[q.ID] !== oldAnswers[q.ID]) {
-        for (const resourceQ of form.value.Questions) {
-          if (!resourceQ) continue
-          if (resourceQ.IsBooking && resourceQ.Type === 'dictionary') {
-            // КРИТИЧЕСКАЯ ЗАЩИТА: разрываем бесконечный цикл
-            if (answers[resourceQ.ID] !== '') {
-              answers[resourceQ.ID] = ''
-            }
-            await loadAvailableSlots(resourceQ)
+      if (questionsToReset.length > 0) {
+        await nextTick()
+        for (const qId of questionsToReset) {
+          if (answers[qId] !== '') {
+            answers[qId] = ''
           }
         }
       }
+    } finally {
+      await nextTick()
+      isProcessingWatch.value = false
     }
   },
   { deep: true }
 )
+
+const visibleQuestionsCount = computed(() => {
+  if (!form.value?.Questions) return 0
+  let count = 0
+  for (const q of form.value.Questions) {
+    if (!q) continue
+    if (isQuestionVisible(q)) count++
+  }
+  return count
+})
+
+const currentVisibleStepNumber = computed(() => {
+  if (!form.value?.Questions) return 1
+  let visibleCount = 0
+  for (let i = 0; i <= currentStep.value; i++) {
+    const q = form.value.Questions[i]
+    if (!q) continue
+    if (isQuestionVisible(q)) visibleCount++
+  }
+  return Math.max(1, visibleCount)
+})
+
+const progressPercent = computed(() => {
+  const total = visibleQuestionsCount.value
+  if (total === 0) return 0
+  return Math.round((currentVisibleStepNumber.value / total) * 100)
+})
+
+const prevStep = () => {
+  validationError.value = ''
+  let prevIndex = currentStep.value - 1
+
+  while (prevIndex >= 0) {
+    const q = form.value?.Questions?.[prevIndex]
+    if (!q) {
+      prevIndex--
+      continue
+    }
+    if (isQuestionVisible(q)) {
+      break
+    }
+    prevIndex--
+  }
+
+  currentStep.value = Math.max(prevIndex, 0)
+}
+
+const nextStep = () => {
+  validationError.value = ''
+  const currentQ = form.value?.Questions?.[currentStep.value]
+
+  if (currentQ && isQuestionVisible(currentQ)) {
+    if (currentQ.IsRequired) {
+      const answer = answers[currentQ.ID]
+      if (!answer || (Array.isArray(answer) && answer.length === 0)) {
+        validationError.value = `Пожалуйста, ответьте на вопрос: "${currentQ.Title}"`
+        return
+      }
+    }
+  }
+
+  if (currentVisibleStepNumber.value >= visibleQuestionsCount.value) {
+    submitResponses()
+    return
+  }
+
+  let nextIndex = currentStep.value + 1
+  const totalQuestions = form.value?.Questions?.length || 0
+
+  while (nextIndex < totalQuestions) {
+    const q = form.value.Questions[nextIndex]
+    if (!q) {
+      nextIndex++
+      continue
+    }
+    if (isQuestionVisible(q)) {
+      break
+    }
+    nextIndex++
+  }
+
+  currentStep.value = nextIndex < totalQuestions ? nextIndex : totalQuestions - 1
+}
 
 const submitResponses = async () => {
   for (const q of form.value.Questions) {
@@ -557,7 +616,6 @@ const submitResponses = async () => {
       result.value = {
         error: 'Извините, это время только что заняли. Пожалуйста, выберите другое время.'
       }
-
       for (const q of form.value.Questions) {
         if (!q) continue
         if (q.IsBooking && q.Type === 'dictionary') {
@@ -587,6 +645,8 @@ const submitResponses = async () => {
     Object.keys(availableSlots).forEach(key => {
       availableSlots[key] = []
     })
+
+    currentStep.value = 0
   } catch (err) {
     if (import.meta.env.DEV) {
       result.value = {
@@ -604,343 +664,65 @@ const submitResponses = async () => {
 </script>
 
 <style scoped>
-.fill-form-page {
-  width: 100%;
-  max-width: 700px;
-  margin: 0 auto;
-}
-
-.loading-state,
-.error-state {
-  text-align: center;
-  padding: 4rem 2rem;
-}
-
-.spinner {
-  width: 40px;
-  height: 40px;
-  border: 3px solid var(--border);
-  border-top-color: var(--primary);
-  border-radius: 50%;
-  animation: spin 0.7s linear infinite;
-  margin: 0 auto 1rem;
-}
-
-.spinner-small {
-  width: 16px;
-  height: 16px;
-  border: 2px solid var(--border);
-  border-top-color: var(--primary);
-  border-radius: 50%;
-  animation: spin 0.7s linear infinite;
-}
-
-@keyframes spin {
-  to { transform: rotate(360deg); }
-}
-
-.error-icon {
-  width: 64px;
-  height: 64px;
-  background: #fdecec;
-  color: #c53030;
-  border-radius: 16px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  margin: 0 auto 1.5rem;
-}
-
-.error-icon svg {
-  width: 32px;
-  height: 32px;
-}
-
-.error-state h2 {
-  font-size: 1.5rem;
-  font-weight: 700;
-  color: var(--text);
-  margin-bottom: 0.5rem;
-}
-
-.error-state p {
-  color: var(--text-muted);
-  margin-bottom: 1.5rem;
-}
-
-.btn-secondary {
-  display: inline-block;
-  padding: 0.75rem 1.5rem;
-  background: var(--surface);
-  color: var(--text);
-  border: 1.5px solid var(--border);
-  border-radius: var(--radius-sm);
-  text-decoration: none;
-  font-weight: 600;
-  transition: all 0.2s;
-}
-
-.btn-secondary:hover {
-  background: var(--bg);
-  border-color: #cfd6e3;
-}
-
-.form-container {
-  animation: fadeUp 0.5s ease both;
-}
-
-.form-header {
-  margin-bottom: 2rem;
-}
-
-.form-title {
-  font-size: 2rem;
-  font-weight: 700;
-  color: var(--text);
-  letter-spacing: -0.02em;
-  margin-bottom: 0.75rem;
-}
-
-.form-description {
-  font-size: 1.05rem;
-  color: var(--text-muted);
-  line-height: 1.6;
-}
-
-.form-body {
-  background: var(--surface);
-  padding: 2.5rem;
-  border-radius: var(--radius);
-  border: 1px solid var(--border);
-  box-shadow: var(--shadow-sm);
-}
-
-.question-block {
-  margin-bottom: 2rem;
-  animation: fadeUp 0.4s ease both;
-}
-
-.question-label {
-  display: block;
-  font-size: 1rem;
-  font-weight: 600;
-  color: var(--text);
-  margin-bottom: 0.75rem;
-  line-height: 1.5;
-}
-
-.question-number {
-  color: var(--primary);
-  font-weight: 700;
-  margin-right: 0.25rem;
-}
-
-.required {
-  color: #c53030;
-  margin-left: 0.25rem;
-}
-
-.form-input,
-.form-textarea,
-.form-select {
-  width: 100%;
-  padding: 0.75rem 0.95rem;
-  font-size: 0.95rem;
-  font-family: inherit;
-  color: var(--text);
-  background: var(--bg);
-  border: 1.5px solid var(--border);
-  border-radius: var(--radius-sm);
-  transition: all 0.2s;
-  resize: vertical;
-}
-
-.form-input:disabled,
-.form-select:disabled {
-  opacity: 0.6;
-  cursor: not-allowed;
-  background: #f5f5f5;
-}
-
-.form-input::placeholder,
-.form-textarea::placeholder {
-  color: #a6afbf;
-}
-
-.form-input:hover:not(:disabled),
-.form-textarea:hover:not(:disabled),
-.form-select:hover:not(:disabled) {
-  border-color: #cfd6e3;
-}
-
-.form-input:focus,
-.form-textarea:focus,
-.form-select:focus {
-  outline: none;
-  border-color: var(--primary);
-  background: var(--surface);
-  box-shadow: 0 0 0 4px rgba(47, 79, 138, 0.1);
-}
-
-.options-group {
-  display: flex;
-  flex-direction: column;
-  gap: 0.75rem;
-}
-
-.option-label {
-  display: flex;
-  align-items: center;
-  gap: 0.6rem;
-  cursor: pointer;
-  font-size: 0.95rem;
-  color: var(--text);
-  padding: 0.6rem 0.85rem;
-  background: var(--bg);
-  border: 1.5px solid var(--border);
-  border-radius: var(--radius-sm);
-  transition: all 0.2s;
-}
-
-.option-label:hover {
-  border-color: var(--primary);
-  background: var(--surface);
-}
-
-.option-label input[type="radio"],
-.option-label input[type="checkbox"] {
-  width: 18px;
-  height: 18px;
-  cursor: pointer;
-  accent-color: var(--primary);
-}
-
-.loading-hint,
-.empty-hint,
-.locked-hint {
-  display: flex;
-  align-items: center;
-  gap: 0.6rem;
-  padding: 0.85rem 1rem;
-  border-radius: var(--radius-sm);
-  font-size: 0.9rem;
-  margin-top: 0.75rem;
-}
-
-.loading-hint {
-  background: var(--primary-soft);
-  color: var(--primary);
-}
-
-.empty-hint {
-  background: #fff8e1;
-  color: #8a6d00;
-}
-
-.locked-hint {
-  background: #f5f5f5;
-  color: #666;
-  border: 1px dashed var(--border);
-}
-
-.empty-hint svg,
-.locked-hint svg {
-  width: 18px;
-  height: 18px;
-  flex-shrink: 0;
-}
-
-.rating-group {
-  display: flex;
-  flex-direction: column;
-  gap: 0.75rem;
-}
-
-.stars {
-  display: flex;
-  gap: 0.5rem;
-}
-
-.star-btn {
-  width: 48px;
-  height: 48px;
-  border: 2px solid var(--border);
-  background: var(--surface);
-  color: var(--border);
-  font-size: 1.75rem;
-  cursor: pointer;
-  border-radius: var(--radius-sm);
-  transition: all 0.2s;
-}
-
-.star-btn:hover {
-  border-color: var(--primary);
-  transform: scale(1.05);
-}
-
-.star-btn.active {
-  background: var(--primary);
-  border-color: var(--primary);
-  color: #fff;
-}
-
-.rating-value {
-  font-size: 0.9rem;
-  color: var(--text-muted);
-  font-weight: 600;
-}
-
-.form-actions {
-  margin-top: 2.5rem;
-  display: flex;
-  justify-content: flex-end;
-}
-
-.btn-primary {
-  padding: 0.85rem 2.5rem;
-  background: var(--primary);
-  color: #fff;
-  font-size: 1rem;
-  font-weight: 600;
-  font-family: inherit;
-  border: none;
-  border-radius: var(--radius-sm);
-  cursor: pointer;
-  transition: all 0.2s;
-  box-shadow: 0 4px 14px rgba(47, 79, 138, 0.25);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  min-width: 200px;
-}
-
-.btn-primary:hover:not(:disabled) {
-  background: var(--primary-hover);
-  transform: translateY(-1px);
-  box-shadow: 0 6px 18px rgba(47, 79, 138, 0.32);
-}
-
-.btn-primary:disabled {
-  opacity: 0.7;
-  cursor: not-allowed;
-}
-
-@keyframes fadeUp {
-  from { opacity: 0; transform: translateY(12px); }
-  to { opacity: 1; transform: translateY(0); }
-}
-
+.fill-form-page { width: 100%; max-width: 700px; margin: 0 auto; }
+.loading-state, .error-state { text-align: center; padding: 4rem 2rem; }
+.spinner { width: 40px; height: 40px; border: 3px solid var(--border); border-top-color: var(--primary); border-radius: 50%; animation: spin 0.7s linear infinite; margin: 0 auto 1rem; }
+.spinner-small { width: 18px; height: 18px; border: 2px solid rgba(255, 255, 255, 0.3); border-top-color: #ffffff; border-radius: 50%; animation: spin 0.7s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+.error-icon { width: 64px; height: 64px; background: #fdecec; color: #c53030; border-radius: 16px; display: flex; align-items: center; justify-content: center; margin: 0 auto 1.5rem; }
+.error-icon svg { width: 32px; height: 32px; }
+.error-state h2 { font-size: 1.5rem; font-weight: 700; color: var(--text); margin-bottom: 0.5rem; }
+.error-state p { color: var(--text-muted); margin-bottom: 1.5rem; }
+.btn-secondary { display: inline-flex; align-items: center; gap: 0.5rem; padding: 0.75rem 1.5rem; background: var(--surface); color: var(--text); border: 1.5px solid var(--border); border-radius: var(--radius-sm); text-decoration: none; font-weight: 600; transition: all 0.2s; cursor: pointer; }
+.btn-secondary:hover:not(:disabled) { background: var(--bg); border-color: var(--text-muted); }
+.btn-secondary:disabled { opacity: 0.5; cursor: not-allowed; color: var(--text-muted); }
+.form-container { animation: fadeUp 0.5s ease both; }
+.form-header { margin-bottom: 2rem; }
+.form-title { font-size: 2rem; font-weight: 700; color: var(--text); letter-spacing: -0.02em; margin-bottom: 0.75rem; }
+.form-description { font-size: 1.05rem; color: var(--text-muted); line-height: 1.6; margin-bottom: 1.5rem; }
+.progress-section { margin-top: 1.5rem; }
+.progress-info { display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem; }
+.step-counter { font-size: 0.9rem; font-weight: 600; color: var(--text); }
+.progress-percent { font-size: 0.85rem; font-weight: 600; color: var(--primary); }
+.progress-bar { width: 100%; height: 8px; background: var(--border); border-radius: var(--radius-sm); overflow: hidden; }
+.progress-fill { height: 100%; background: var(--primary); border-radius: var(--radius-sm); transition: width 0.4s cubic-bezier(0.4, 0, 0.2, 1); }
+.form-body { background: var(--surface); padding: 2.5rem; border-radius: var(--radius); border: 1px solid var(--border); box-shadow: var(--shadow-sm); }
+.question-block { margin-bottom: 2rem; animation: fadeUp 0.4s ease both; }
+.question-label { display: block; font-size: 1rem; font-weight: 600; color: var(--text); margin-bottom: 0.75rem; line-height: 1.5; }
+.question-number { color: var(--primary); font-weight: 700; margin-right: 0.25rem; }
+.required { color: #c53030; margin-left: 0.25rem; }
+.form-input, .form-textarea, .form-select { width: 100%; padding: 0.75rem 0.95rem; font-size: 0.95rem; font-family: inherit; color: var(--text); background: var(--bg); border: 1.5px solid var(--border); border-radius: var(--radius-sm); transition: all 0.2s; resize: vertical; }
+.form-input:disabled, .form-select:disabled { opacity: 0.6; cursor: not-allowed; background: #f5f5f5; }
+.form-input::placeholder, .form-textarea::placeholder { color: #a6afbf; }
+.form-input:hover:not(:disabled), .form-textarea:hover:not(:disabled), .form-select:hover:not(:disabled) { border-color: #cfd6e3; }
+.form-input:focus, .form-textarea:focus, .form-select:focus { outline: none; border-color: var(--primary); background: var(--surface); box-shadow: 0 0 0 4px rgba(47, 79, 138, 0.1); }
+.options-group { display: flex; flex-direction: column; gap: 0.75rem; }
+.option-label { display: flex; align-items: center; gap: 0.6rem; cursor: pointer; font-size: 0.95rem; color: var(--text); padding: 0.6rem 0.85rem; background: var(--bg); border: 1.5px solid var(--border); border-radius: var(--radius-sm); transition: all 0.2s; }
+.option-label:hover { border-color: var(--primary); background: var(--surface); }
+.option-label input[type="radio"], .option-label input[type="checkbox"] { width: 18px; height: 18px; cursor: pointer; accent-color: var(--primary); }
+.loading-hint, .empty-hint, .locked-hint { display: flex; align-items: center; gap: 0.6rem; padding: 0.85rem 1rem; border-radius: var(--radius-sm); font-size: 0.9rem; margin-top: 0.75rem; }
+.loading-hint { background: var(--primary-soft); color: var(--primary); }
+.empty-hint { background: #fff8e1; color: #8a6d00; }
+.locked-hint { background: #f5f5f5; color: #666; border: 1px dashed var(--border); }
+.empty-hint svg, .locked-hint svg { width: 18px; height: 18px; flex-shrink: 0; }
+.rating-group { display: flex; flex-direction: column; gap: 0.75rem; }
+.stars { display: flex; gap: 0.5rem; }
+.star-btn { width: 48px; height: 48px; border: 2px solid var(--border); background: var(--surface); color: var(--border); font-size: 1.75rem; cursor: pointer; border-radius: var(--radius-sm); transition: all 0.2s; }
+.star-btn:hover { border-color: var(--primary); transform: scale(1.05); }
+.star-btn.active { background: var(--primary); border-color: var(--primary); color: #fff; }
+.rating-value { font-size: 0.9rem; color: var(--text-muted); font-weight: 600; }
+.validation-error { display: flex; align-items: center; gap: 0.6rem; padding: 0.85rem 1rem; background: #fdecec; border: 1px solid #f5c6c6; border-radius: var(--radius-sm); color: #c53030; font-size: 0.9rem; margin-top: 1rem; }
+.validation-error svg { width: 18px; height: 18px; flex-shrink: 0; }
+.form-navigation { display: flex; gap: 1rem; justify-content: space-between; margin-top: 2.5rem; padding-top: 1.5rem; border-top: 1px solid var(--border); }
+.btn-primary { display: inline-flex; align-items: center; justify-content: center; gap: 0.5rem; padding: 0.85rem 2rem; background: var(--primary); color: #ffffff; font-size: 1rem; font-weight: 600; font-family: inherit; border: none; border-radius: var(--radius-sm); cursor: pointer; transition: all 0.2s; box-shadow: var(--shadow-sm); min-width: 160px; }
+.btn-primary:hover:not(:disabled) { background: var(--primary-hover, #243f72); transform: translateY(-1px); box-shadow: var(--shadow-md); }
+.btn-primary:disabled { opacity: 0.7; cursor: not-allowed; transform: none; }
+@keyframes fadeUp { from { opacity: 0; transform: translateY(12px); } to { opacity: 1; transform: translateY(0); } }
 @media (max-width: 720px) {
-  .form-body {
-    padding: 1.5rem 1.25rem;
-  }
-  .form-title {
-    font-size: 1.5rem;
-  }
-  .star-btn {
-    width: 40px;
-    height: 40px;
-    font-size: 1.5rem;
-  }
+  .form-body { padding: 1.5rem 1.25rem; }
+  .form-title { font-size: 1.5rem; }
+  .star-btn { width: 40px; height: 40px; font-size: 1.5rem; }
+  .form-navigation { flex-direction: column-reverse; }
+  .btn-primary, .btn-secondary { width: 100%; justify-content: center; }
 }
 </style>
