@@ -167,7 +167,7 @@
             <input
               type="text"
               readonly
-              :value="`${window.location.origin}/responses/${route.params.id}`"
+              :value="`${hostOrigin}/responses/${route.params.id}`"
               class="responses-link-input"
               @click="$event.target.select()"
             />
@@ -197,6 +197,7 @@ import FormResult from '../components/FormResult.vue'
 
 const route = useRoute()
 const router = useRouter()
+const hostOrigin = typeof window !== 'undefined' ? window.location.origin : ''
 
 const formData = reactive({
   title: '',

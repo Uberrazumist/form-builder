@@ -179,6 +179,7 @@ import FormResult from '../components/FormResult.vue'
 
 const route = useRoute()
 const router = useRouter()
+const hostOrigin = typeof window !== 'undefined' ? window.location.origin : ''
 
 const form = ref(null)
 const answers = reactive({})
