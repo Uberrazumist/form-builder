@@ -235,7 +235,7 @@ const loadForm = async () => {
   error.value = null
 
   try {
-    const formId = route.params.id
+    const formId = String(route.params.id)
     const token = localStorage.getItem('token')
 
     const response = await fetch(`/api/forms/${formId}`, {
@@ -253,37 +253,52 @@ const loadForm = async () => {
       return
     }
 
-    const data = await response.json()
+    const rawForm = await response.json()
 
-    // КРИТИЧЕСКАЯ НОРМАЛИЗАЦИЯ РЕГИСТРОВ
-    if (data.Questions) {
-      for (const q of data.Questions) {
-        if (!q) continue
-        q.ID = q.ID || q.id
-        q.DictionaryID = q.DictionaryID || q.dictionary_id
-        q.is_required = q.is_required || q.IsRequired || q.Required || false
-      }
+    // 1. Сквозная нормализация формы (Защита от PascalCase/snake_case)
+    const normalizedForm = {
+      ID: rawForm.ID || rawForm.id,
+      Title: rawForm.Title || rawForm.title || '',
+      Description: rawForm.Description || rawForm.description || '',
+      IsPublic: rawForm.IsPublic !== undefined ? rawForm.IsPublic : (rawForm.is_public !== undefined ? rawForm.is_public : true),
+      Questions: rawForm.Questions || rawForm.questions || []
     }
 
-    formData.title = data.Title || ''
-    formData.description = data.Description || ''
-    formData.is_public = data.IsPublic || false
-    formData.questions = (data.Questions || [])
+    // 2. Нормализация вопросов
+    for (const q of normalizedForm.Questions) {
+      if (!q) continue
+      q.ID = q.ID || q.id
+      q.Type = q.Type || q.type || 'text'
+      q.Title = q.Title || q.title || ''
+      q.DictionaryID = q.DictionaryID || q.dictionary_id
+      q.is_required = q.is_required || q.IsRequired || q.Required || false
+      q.IsRequired = q.is_required
+      q.Options = q.Options || q.options || []
+      q.RatingMax = q.RatingMax || q.rating_max || 5
+      q.IsBooking = q.IsBooking || q.is_booking || false
+    }
+
+    formData.title = normalizedForm.Title
+    formData.description = normalizedForm.Description
+    formData.is_public = normalizedForm.IsPublic
+    
+    formData.questions = normalizedForm.Questions
       .sort((a, b) => (a.OrderIndex || 0) - (b.OrderIndex || 0))
       .map(q => {
         if (!q) return null
         return {
           id: q.ID,
-          type: q.Type || 'text',
-          title: q.Title || '',
+          type: q.Type,
+          title: q.Title,
           is_required: q.is_required,
-          options: q.Options || [],
-          rating_max: q.RatingMax || 5,
-          dictionary_id: q.DictionaryID || null,
-          is_booking: q.IsBooking || false
+          options: q.Options,
+          rating_max: q.RatingMax,
+          dictionary_id: q.DictionaryID,
+          is_booking: q.IsBooking
         }
       })
       .filter(q => q !== null)
+
   } catch (err) {
     error.value = 'Ошибка сети. Попробуйте позже.'
   } finally {
@@ -345,7 +360,7 @@ const submitForm = async () => {
   result.value = null
 
   try {
-    const formId = route.params.id
+    const formId = String(route.params.id)
     const token = localStorage.getItem('token')
 
     const payload = {

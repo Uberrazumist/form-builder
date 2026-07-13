@@ -34,7 +34,7 @@
         <div
           v-for="(question, index) in form.Questions"
           :key="question.ID"
-          v-if="index === currentStep"
+          v-if="index === currentStep && isQuestionVisible(question)"
           class="question-block"
         >
           <label class="question-label">
@@ -202,7 +202,7 @@ const loadForm = async () => {
   error.value = null
 
   try {
-    const formId = route.params.id
+    const formId = String(route.params.id)
     const token = localStorage.getItem('token')
     const headers = {}
     if (token) headers['Authorization'] = `Bearer ${token}`
@@ -216,21 +216,32 @@ const loadForm = async () => {
       return
     }
 
-    const data = await response.json()
-    form.value = data
-
-    // КРИТИЧЕСКАЯ НОРМАЛИЗАЦИЯ РЕГИСТРОВ
-    if (form.value?.Questions) {
-      for (const q of form.value.Questions) {
-        if (!q) continue
-        q.ID = q.ID || q.id
-        q.DictionaryID = q.DictionaryID || q.dictionary_id
-        q.is_required = q.is_required || q.IsRequired || q.Required || false
-        q.IsRequired = q.is_required // Дублируем для совместимости
-      }
+    const rawForm = await response.json()
+    
+    // 1. Сквозная нормализация формы (Защита от PascalCase/snake_case)
+    form.value = {
+      ID: rawForm.ID || rawForm.id,
+      Title: rawForm.Title || rawForm.title || '',
+      Description: rawForm.Description || rawForm.description || '',
+      IsPublic: rawForm.IsPublic !== undefined ? rawForm.IsPublic : (rawForm.is_public !== undefined ? rawForm.is_public : true),
+      Questions: rawForm.Questions || rawForm.questions || []
     }
 
-    // Инициализация answers строго по нормализованным ID
+    // 2. Нормализация вопросов
+    for (const q of form.value.Questions) {
+      if (!q) continue
+      q.ID = q.ID || q.id
+      q.Type = q.Type || q.type || 'text'
+      q.Title = q.Title || q.title || ''
+      q.DictionaryID = q.DictionaryID || q.dictionary_id
+      q.is_required = q.is_required || q.IsRequired || q.Required || false
+      q.IsRequired = q.is_required
+      q.Options = q.Options || q.options || []
+      q.RatingMax = q.RatingMax || q.rating_max || 5
+      q.IsBooking = q.IsBooking || q.is_booking || false
+    }
+
+    // 3. Инициализация answers строго по нормализованным q.ID
     form.value.Questions.forEach(q => {
       if (!q) return
       if (q.Type === 'checkbox') {
@@ -240,6 +251,7 @@ const loadForm = async () => {
       }
     })
 
+    // Загрузка элементов справочников
     for (const q of form.value.Questions) {
       if (!q) continue
       if (q.Type === 'dictionary' && q.DictionaryID) {
@@ -247,7 +259,16 @@ const loadForm = async () => {
       }
     }
 
-    currentStep.value = 0
+    // 4. Умный старт: находим индекс первого видимого вопроса
+    let firstVisibleIndex = 0
+    for (let i = 0; i < form.value.Questions.length; i++) {
+      if (isQuestionVisible(form.value.Questions[i])) {
+        firstVisibleIndex = i
+        break
+      }
+    }
+    currentStep.value = firstVisibleIndex
+
   } catch (err) {
     error.value = 'Ошибка сети. Попробуйте позже.'
   } finally {
@@ -309,13 +330,7 @@ const findParentQuestion = (question) => {
 
 const isQuestionVisible = (question) => {
   if (!question) return false
-  
   if (question.Type !== 'dictionary') return true
-
-  const firstDictQuestion = form.value?.Questions?.find(q => q?.Type === 'dictionary')
-  if (firstDictQuestion && firstDictQuestion.ID === question.ID) {
-    return true
-  }
 
   const parentQuestion = findParentQuestion(question)
   if (!parentQuestion) return true
@@ -567,7 +582,7 @@ const nextStep = () => {
   const currentQ = form.value?.Questions?.[currentStep.value]
 
   if (currentQ && isQuestionVisible(currentQ)) {
-    const isRequired = currentQ.is_required || currentQ.IsRequired || currentQ.Required || false
+    const isRequired = currentQ.is_required || false
     if (isRequired) {
       const answer = answers[currentQ.ID]
       if (!answer || (Array.isArray(answer) && answer.length === 0) || answer === '') {
@@ -607,7 +622,7 @@ const submitResponses = async () => {
     if (!q) continue
     if (!isQuestionVisible(q)) continue
 
-    const isRequired = q.is_required || q.IsRequired || q.Required || false
+    const isRequired = q.is_required || false
     if (isRequired) {
       const answer = answers[q.ID]
       if (!answer || (Array.isArray(answer) && answer.length === 0) || answer === '') {
@@ -621,7 +636,7 @@ const submitResponses = async () => {
   result.value = null
 
   try {
-    const formId = route.params.id
+    const formId = String(route.params.id)
     const token = localStorage.getItem('token')
 
     const headers = { 'Content-Type': 'application/json' }
@@ -681,13 +696,20 @@ const submitResponses = async () => {
       availableSlots[key] = []
     })
 
-    currentStep.value = 0
+    let firstVisibleIndex = 0
+    for (let i = 0; i < form.value.Questions.length; i++) {
+      if (isQuestionVisible(form.value.Questions[i])) {
+        firstVisibleIndex = i
+        break
+      }
+    }
+    currentStep.value = firstVisibleIndex
   } catch (err) {
     if (import.meta.env.DEV) {
       result.value = {
         warning: 'Демо-режим',
         message: 'Ответы не отправлены (бэкенд недоступен)',
-        data: { form_id: route.params.id, answers }
+        data: { form_id: formId, answers }
       }
     } else {
       result.value = { error: 'Ошибка сети. Попробуйте позже.' }

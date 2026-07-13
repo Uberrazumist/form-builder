@@ -14,7 +14,7 @@ import (
     "github.com/Uberrazumist/form-builder/backend/internal/models"
 )
 
-// ---------- Вспомогательная функция для depends_on (оставлена для совместимости) ----------
+// ---------- Вспомогательная функция для depends_on ----------
 func parseDependsOn(dep interface{}) *uuid.UUID {
     if dep == nil {
         return nil
@@ -131,7 +131,7 @@ func ListForms(db *gorm.DB) gin.HandlerFunc {
     }
 }
 
-// ---------- GetForm ----------
+// ---------- GetForm (с правильным маппингом поля Questions) ----------
 func GetForm(db *gorm.DB) gin.HandlerFunc {
     return func(c *gin.Context) {
         formID := c.Param("id")
@@ -143,6 +143,7 @@ func GetForm(db *gorm.DB) gin.HandlerFunc {
             return
         }
 
+        // Проверка доступа
         if userID != "" && form.CreatedBy.String() == userID {
             // владелец
         } else if form.IsPublic {
@@ -152,11 +153,24 @@ func GetForm(db *gorm.DB) gin.HandlerFunc {
             return
         }
 
-        c.JSON(http.StatusOK, form)
+        // Формируем ответ с ключом "Questions" (с заглавной)
+        response := gin.H{
+            "ID":          form.ID,
+            "Title":       form.Title,
+            "Description": form.Description,
+            "CreatedBy":   form.CreatedBy,
+            "CreatedAt":   form.CreatedAt,
+            "UpdatedAt":   form.UpdatedAt,
+            "IsPublished": form.IsPublished,
+            "IsPublic":    form.IsPublic,
+            "Settings":    form.Settings,
+            "Questions":   form.Questions, // здесь ключ с заглавной
+        }
+        c.JSON(http.StatusOK, response)
     }
 }
 
-// ---------- SubmitResponse (с атомарным бронированием, опциональной авторизацией и защитой от пустых UUID) ----------
+// ---------- SubmitResponse (финальная версия) ----------
 func SubmitResponse(db *gorm.DB) gin.HandlerFunc {
     return func(c *gin.Context) {
         var input struct {
@@ -184,7 +198,7 @@ func SubmitResponse(db *gorm.DB) gin.HandlerFunc {
             isAuthenticated = true
         } else {
             if !form.IsPublic {
-                c.JSON(http.StatusUnauthorized, gin.H{"error": "Authentication required for this form"})
+                c.JSON(http.StatusUnauthorized, gin.H{"error": "Для заполнения этой формы требуется авторизация"})
                 return
             }
             isAuthenticated = false
@@ -217,17 +231,17 @@ func SubmitResponse(db *gorm.DB) gin.HandlerFunc {
                 resp.UserID = &uid
             }
             if err := db.Create(&resp).Error; err != nil {
-                c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to save response"})
+                c.JSON(http.StatusInternalServerError, gin.H{"error": "Не удалось сохранить ответ"})
                 return
             }
-            c.JSON(http.StatusCreated, gin.H{"message": "Response saved successfully"})
+            c.JSON(http.StatusCreated, gin.H{"message": "Ответ сохранён"})
             return
         }
 
         // --- Извлечение slot_id ---
         slotVal, ok := input.Answers[bookingQuestion.ID.String()]
         if !ok {
-            c.JSON(http.StatusBadRequest, gin.H{"error": "Slot value missing"})
+            c.JSON(http.StatusBadRequest, gin.H{"error": "Значение слота отсутствует"})
             return
         }
         slotIDStr, ok := slotVal.(string)
@@ -237,7 +251,7 @@ func SubmitResponse(db *gorm.DB) gin.HandlerFunc {
         }
         slotID, err := uuid.Parse(slotIDStr)
         if err != nil {
-            c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid slot UUID"})
+            c.JSON(http.StatusBadRequest, gin.H{"error": "Некорректный UUID слота"})
             return
         }
 
@@ -245,19 +259,19 @@ func SubmitResponse(db *gorm.DB) gin.HandlerFunc {
         var timeDictItem models.DictionaryItem
         if err := db.First(&timeDictItem, "id = ?", slotID).Error; err != nil {
             if err == gorm.ErrRecordNotFound {
-                c.JSON(http.StatusBadRequest, gin.H{"error": "Selected slot not found in time dictionary"})
+                c.JSON(http.StatusBadRequest, gin.H{"error": "Выбранный слот не найден в справочнике времени"})
             } else {
-                c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch time dictionary item"})
+                c.JSON(http.StatusInternalServerError, gin.H{"error": "Ошибка при получении элемента справочника"})
             }
             return
         }
         if timeDictItem.ParentID == nil {
-            c.JSON(http.StatusBadRequest, gin.H{"error": "Time slot must be linked to a resource"})
+            c.JSON(http.StatusBadRequest, gin.H{"error": "Слот времени должен быть привязан к ресурсу"})
             return
         }
         var parentItem models.DictionaryItem
         if err := db.First(&parentItem, "id = ?", timeDictItem.ParentID).Error; err != nil {
-            c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch parent item"})
+            c.JSON(http.StatusInternalServerError, gin.H{"error": "Ошибка при получении родительского элемента"})
             return
         }
         resourceDictionaryID := parentItem.DictionaryID
@@ -270,20 +284,20 @@ func SubmitResponse(db *gorm.DB) gin.HandlerFunc {
             }
         }
         if resourceQuestion == nil {
-            c.JSON(http.StatusBadRequest, gin.H{"error": "Resource question not found in form configuration"})
+            c.JSON(http.StatusBadRequest, gin.H{"error": "Вопрос ресурса не найден в конфигурации формы"})
             return
         }
 
         // Проверяем наличие даты
         if dateQuestion == nil {
-            c.JSON(http.StatusBadRequest, gin.H{"error": "Date question not found in form configuration"})
+            c.JSON(http.StatusBadRequest, gin.H{"error": "Вопрос даты не найден в конфигурации формы"})
             return
         }
 
         // --- Извлечение resource_id ---
         resourceVal, ok := input.Answers[resourceQuestion.ID.String()]
         if !ok {
-            c.JSON(http.StatusBadRequest, gin.H{"error": "Resource value missing"})
+            c.JSON(http.StatusBadRequest, gin.H{"error": "Значение ресурса отсутствует"})
             return
         }
         resourceIDStr, ok := resourceVal.(string)
@@ -293,14 +307,14 @@ func SubmitResponse(db *gorm.DB) gin.HandlerFunc {
         }
         resourceID, err := uuid.Parse(resourceIDStr)
         if err != nil {
-            c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid resource UUID"})
+            c.JSON(http.StatusBadRequest, gin.H{"error": "Некорректный UUID ресурса"})
             return
         }
 
         // --- Извлечение даты ---
         dateVal, ok := input.Answers[dateQuestion.ID.String()]
         if !ok {
-            c.JSON(http.StatusBadRequest, gin.H{"error": "Date value missing"})
+            c.JSON(http.StatusBadRequest, gin.H{"error": "Значение даты отсутствует"})
             return
         }
         dateStr, ok := dateVal.(string)
@@ -310,14 +324,14 @@ func SubmitResponse(db *gorm.DB) gin.HandlerFunc {
         }
         bookingDate, err := time.Parse("2006-01-02", dateStr)
         if err != nil {
-            c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid date format, use YYYY-MM-DD"})
+            c.JSON(http.StatusBadRequest, gin.H{"error": "Неверный формат даты, используйте YYYY-MM-DD"})
             return
         }
 
         // --- Транзакция с FOR UPDATE ---
         tx := db.Begin()
         if tx.Error != nil {
-            c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to start transaction"})
+            c.JSON(http.StatusInternalServerError, gin.H{"error": "Не удалось начать транзакцию"})
             return
         }
 
@@ -332,7 +346,7 @@ func SubmitResponse(db *gorm.DB) gin.HandlerFunc {
             return
         } else if err != gorm.ErrRecordNotFound {
             tx.Rollback()
-            c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to check booking availability"})
+            c.JSON(http.StatusInternalServerError, gin.H{"error": "Ошибка проверки доступности слота"})
             return
         }
 
@@ -346,7 +360,7 @@ func SubmitResponse(db *gorm.DB) gin.HandlerFunc {
         }
         if err := tx.Create(&booking).Error; err != nil {
             tx.Rollback()
-            c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create booking"})
+            c.JSON(http.StatusInternalServerError, gin.H{"error": "Не удалось создать бронирование"})
             return
         }
 
@@ -361,16 +375,16 @@ func SubmitResponse(db *gorm.DB) gin.HandlerFunc {
         }
         if err := tx.Create(&resp).Error; err != nil {
             tx.Rollback()
-            c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to save response"})
+            c.JSON(http.StatusInternalServerError, gin.H{"error": "Не удалось сохранить ответ"})
             return
         }
 
         if err := tx.Commit().Error; err != nil {
-            c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to commit transaction"})
+            c.JSON(http.StatusInternalServerError, gin.H{"error": "Не удалось завершить транзакцию"})
             return
         }
 
-        c.JSON(http.StatusCreated, gin.H{"message": "Response saved successfully"})
+        c.JSON(http.StatusCreated, gin.H{"message": "Ответ успешно сохранён"})
     }
 }
 
