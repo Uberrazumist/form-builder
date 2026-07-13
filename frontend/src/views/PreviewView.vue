@@ -45,14 +45,14 @@
           <label class="question-label">
             <span class="question-number">{{ currentVisibleStepNumber }}.</span>
             {{ question.Title }}
-            <span v-if="question.is_required || question.IsRequired || question.Required" class="required">*</span>
+            <span v-if="question.is_required" class="required">*</span>
           </label>
 
           <input
             v-if="question.Type === 'text'"
             type="text"
             v-model="answers[question.ID]"
-            :required="question.is_required || question.IsRequired || question.Required"
+            :required="question.is_required"
             placeholder="Введите ответ"
             class="form-input"
           />
@@ -60,7 +60,7 @@
           <textarea
             v-else-if="question.Type === 'textarea'"
             v-model="answers[question.ID]"
-            :required="question.is_required || question.IsRequired || question.Required"
+            :required="question.is_required"
             placeholder="Введите ответ"
             rows="4"
             class="form-textarea"
@@ -70,14 +70,14 @@
             v-else-if="question.Type === 'date'"
             type="date"
             v-model="answers[question.ID]"
-            :required="question.is_required || question.IsRequired || question.Required"
+            :required="question.is_required"
             class="form-input"
           />
 
           <select
             v-else-if="question.Type === 'dictionary'"
             v-model="answers[question.ID]"
-            :required="question.is_required || question.IsRequired || question.Required"
+            :required="question.is_required"
             :disabled="isSelectDisabled(question)"
             class="form-select"
           >
@@ -108,7 +108,7 @@
 
           <div v-else-if="question.Type === 'radio'" class="options-group">
             <label v-for="(option, optIdx) in question.Options" :key="optIdx" class="option-label">
-              <input type="radio" :name="'q_' + question.ID" :value="option" v-model="answers[question.ID]" :required="question.is_required || question.IsRequired || question.Required" />
+              <input type="radio" :name="'q_' + question.ID" :value="option" v-model="answers[question.ID]" :required="question.is_required" />
               <span>{{ option }}</span>
             </label>
           </div>
@@ -120,7 +120,7 @@
             </label>
           </div>
 
-          <select v-else-if="question.Type === 'select'" v-model="answers[question.ID]" :required="question.is_required || question.IsRequired || question.Required" class="form-select">
+          <select v-else-if="question.Type === 'select'" v-model="answers[question.ID]" :required="question.is_required" class="form-select">
             <option value="" disabled>Выберите вариант</option>
             <option v-for="(option, optIdx) in question.Options" :key="optIdx" :value="option">{{ option }}</option>
           </select>
@@ -221,6 +221,17 @@ const loadForm = async () => {
 
     const data = await response.json()
     form.value = data
+
+    // КРИТИЧЕСКАЯ НОРМАЛИЗАЦИЯ РЕГИСТРОВ
+    if (form.value?.Questions) {
+      for (const q of form.value.Questions) {
+        if (!q) continue
+        q.ID = q.ID || q.id
+        q.DictionaryID = q.DictionaryID || q.dictionary_id
+        q.is_required = q.is_required || q.IsRequired || q.Required || false
+        q.IsRequired = q.is_required
+      }
+    }
 
     form.value.Questions.forEach(q => {
       if (!q) return

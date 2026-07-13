@@ -175,7 +175,7 @@ func SubmitResponse(db *gorm.DB) gin.HandlerFunc {
             return
         }
 
-        // Получаем userID из контекста (может быть пустым для гостей)
+        // Опциональная авторизация
         userID := c.GetString("userID")
         var uid uuid.UUID
         var isAuthenticated bool
@@ -183,8 +183,6 @@ func SubmitResponse(db *gorm.DB) gin.HandlerFunc {
             uid = uuid.MustParse(userID)
             isAuthenticated = true
         } else {
-            // Гость
-            // Если форма не публичная – запрещаем
             if !form.IsPublic {
                 c.JSON(http.StatusUnauthorized, gin.H{"error": "Authentication required for this form"})
                 return
@@ -194,9 +192,9 @@ func SubmitResponse(db *gorm.DB) gin.HandlerFunc {
         }
 
         // --- Автоопределение вопросов ---
-        var bookingQuestion *models.Question // вопрос бронирования (IsBooking == true, тип dictionary)
-        var resourceQuestion *models.Question // вопрос-ресурс (dictionary, родительский для справочника времени)
-        var dateQuestion *models.Question     // вопрос с типом "date"
+        var bookingQuestion *models.Question // IsBooking == true, тип dictionary
+        var resourceQuestion *models.Question // родительский справочник для времени
+        var dateQuestion *models.Question     // тип date
 
         for _, q := range form.Questions {
             if q.Type == "date" {
@@ -208,13 +206,12 @@ func SubmitResponse(db *gorm.DB) gin.HandlerFunc {
             }
         }
 
-        // Если нет вопроса бронирования – просто сохраняем ответ
+        // Если нет бронирования – просто сохраняем ответ
         if bookingQuestion == nil {
             answersJSON, _ := json.Marshal(input.Answers)
             resp := models.Response{
                 FormID:  uuid.MustParse(input.FormID),
                 Answers: datatypes.JSON(answersJSON),
-                UserID:  nil, // гость или авторизованный? если авторизованный, то надо поставить uid
             }
             if isAuthenticated {
                 resp.UserID = &uid
@@ -227,20 +224,14 @@ func SubmitResponse(db *gorm.DB) gin.HandlerFunc {
             return
         }
 
-        // --- Извлечение значений из Answers ---
-
-        // Slot ID (из вопроса бронирования)
+        // --- Извлечение slot_id ---
         slotVal, ok := input.Answers[bookingQuestion.ID.String()]
         if !ok {
             c.JSON(http.StatusBadRequest, gin.H{"error": "Slot value missing"})
             return
         }
         slotIDStr, ok := slotVal.(string)
-        if !ok {
-            c.JSON(http.StatusBadRequest, gin.H{"error": "Slot value must be a string (UUID)"})
-            return
-        }
-        if slotIDStr == "" {
+        if !ok || slotIDStr == "" {
             c.JSON(http.StatusBadRequest, gin.H{"error": "Пожалуйста, выберите корректные значения в справочниках"})
             return
         }
@@ -250,8 +241,7 @@ func SubmitResponse(db *gorm.DB) gin.HandlerFunc {
             return
         }
 
-        // --- Определяем родительский справочник для справочника времени через выбранный слот ---
-        // 1. Получаем элемент справочника времени по ID слота
+        // --- Определение ресурса через выбранный слот ---
         var timeDictItem models.DictionaryItem
         if err := db.First(&timeDictItem, "id = ?", slotID).Error; err != nil {
             if err == gorm.ErrRecordNotFound {
@@ -261,14 +251,10 @@ func SubmitResponse(db *gorm.DB) gin.HandlerFunc {
             }
             return
         }
-
-        // 2. Проверяем, что элемент имеет родителя
         if timeDictItem.ParentID == nil {
-            c.JSON(http.StatusBadRequest, gin.H{"error": "Time dictionary items must be linked to a resource (parent_id required)"})
+            c.JSON(http.StatusBadRequest, gin.H{"error": "Time slot must be linked to a resource"})
             return
         }
-
-        // 3. Находим родительский элемент (ресурс) и его справочник
         var parentItem models.DictionaryItem
         if err := db.First(&parentItem, "id = ?", timeDictItem.ParentID).Error; err != nil {
             c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch parent item"})
@@ -276,14 +262,13 @@ func SubmitResponse(db *gorm.DB) gin.HandlerFunc {
         }
         resourceDictionaryID := parentItem.DictionaryID
 
-        // 4. Ищем вопрос в форме с этим DictionaryID
+        // Ищем вопрос с этим справочником
         for _, q := range form.Questions {
             if q.Type == "dictionary" && q.DictionaryID != nil && *q.DictionaryID == resourceDictionaryID {
                 resourceQuestion = &q
                 break
             }
         }
-
         if resourceQuestion == nil {
             c.JSON(http.StatusBadRequest, gin.H{"error": "Resource question not found in form configuration"})
             return
@@ -295,18 +280,14 @@ func SubmitResponse(db *gorm.DB) gin.HandlerFunc {
             return
         }
 
-        // Resource ID (из вопроса-ресурса)
+        // --- Извлечение resource_id ---
         resourceVal, ok := input.Answers[resourceQuestion.ID.String()]
         if !ok {
             c.JSON(http.StatusBadRequest, gin.H{"error": "Resource value missing"})
             return
         }
         resourceIDStr, ok := resourceVal.(string)
-        if !ok {
-            c.JSON(http.StatusBadRequest, gin.H{"error": "Resource value must be a string (UUID)"})
-            return
-        }
-        if resourceIDStr == "" {
+        if !ok || resourceIDStr == "" {
             c.JSON(http.StatusBadRequest, gin.H{"error": "Пожалуйста, выберите корректные значения в справочниках"})
             return
         }
@@ -316,18 +297,14 @@ func SubmitResponse(db *gorm.DB) gin.HandlerFunc {
             return
         }
 
-        // Date
+        // --- Извлечение даты ---
         dateVal, ok := input.Answers[dateQuestion.ID.String()]
         if !ok {
             c.JSON(http.StatusBadRequest, gin.H{"error": "Date value missing"})
             return
         }
         dateStr, ok := dateVal.(string)
-        if !ok {
-            c.JSON(http.StatusBadRequest, gin.H{"error": "Date value must be a string"})
-            return
-        }
-        if dateStr == "" {
+        if !ok || dateStr == "" {
             c.JSON(http.StatusBadRequest, gin.H{"error": "Пожалуйста, выберите корректную дату"})
             return
         }
@@ -337,35 +314,32 @@ func SubmitResponse(db *gorm.DB) gin.HandlerFunc {
             return
         }
 
-        // --- Транзакция с блокировкой FOR UPDATE ---
+        // --- Транзакция с FOR UPDATE ---
         tx := db.Begin()
         if tx.Error != nil {
             c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to start transaction"})
             return
         }
 
-        // Проверяем занятость с блокировкой строк
         var existingBooking models.Booking
         err = tx.Clauses(clause.Locking{Strength: "UPDATE"}).
             Where("teacher_id = ? AND slot_id = ? AND date = ?", resourceID, slotID, bookingDate).
             First(&existingBooking).Error
 
         if err == nil {
-            // Запись найдена -> конфликт
             tx.Rollback()
             c.JSON(http.StatusConflict, gin.H{"error": "Выбранное время уже занято, пожалуйста, выберите другой слот"})
             return
         } else if err != gorm.ErrRecordNotFound {
-            // Другая ошибка
             tx.Rollback()
             c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to check booking availability"})
             return
         }
 
-        // Свободно – создаём бронирование
+        // Создаём бронирование
         booking := models.Booking{
             FormID:    uuid.MustParse(input.FormID),
-            UserID:    uid, // если гость, uid = uuid.Nil (не NULL, но допустимо)
+            UserID:    uid,
             TeacherID: resourceID,
             SlotID:    slotID,
             Date:      bookingDate,
@@ -384,8 +358,6 @@ func SubmitResponse(db *gorm.DB) gin.HandlerFunc {
         }
         if isAuthenticated {
             resp.UserID = &uid
-        } else {
-            resp.UserID = nil
         }
         if err := tx.Create(&resp).Error; err != nil {
             tx.Rollback()
@@ -393,7 +365,6 @@ func SubmitResponse(db *gorm.DB) gin.HandlerFunc {
             return
         }
 
-        // Фиксируем транзакцию
         if err := tx.Commit().Error; err != nil {
             c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to commit transaction"})
             return
@@ -499,14 +470,12 @@ func UpdateForm(db *gorm.DB) gin.HandlerFunc {
             }
         }
 
-        // Удаляем отсутствующие
         for _, q := range existingQuestions {
             if !incomingIDs[q.ID] {
                 db.Delete(&q)
             }
         }
 
-        // Обновляем или создаём вопросы
         for _, qInput := range input.Questions {
             optsJSON, _ := json.Marshal(qInput.Options)
             depValsJSON, _ := json.Marshal(qInput.DependsValues)
@@ -575,7 +544,6 @@ func DeleteForm(db *gorm.DB) gin.HandlerFunc {
             return
         }
 
-        // Каскадное удаление
         db.Where("form_id = ?", form.ID).Delete(&models.Response{})
         db.Where("form_id = ?", form.ID).Delete(&models.Question{})
         db.Delete(&form)

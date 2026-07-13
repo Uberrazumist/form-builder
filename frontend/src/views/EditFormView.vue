@@ -255,6 +255,16 @@ const loadForm = async () => {
 
     const data = await response.json()
 
+    // КРИТИЧЕСКАЯ НОРМАЛИЗАЦИЯ РЕГИСТРОВ
+    if (data.Questions) {
+      for (const q of data.Questions) {
+        if (!q) continue
+        q.ID = q.ID || q.id
+        q.DictionaryID = q.DictionaryID || q.dictionary_id
+        q.is_required = q.is_required || q.IsRequired || q.Required || false
+      }
+    }
+
     formData.title = data.Title || ''
     formData.description = data.Description || ''
     formData.is_public = data.IsPublic || false
@@ -266,7 +276,7 @@ const loadForm = async () => {
           id: q.ID,
           type: q.Type || 'text',
           title: q.Title || '',
-          is_required: q.is_required || q.IsRequired || q.Required || false,
+          is_required: q.is_required,
           options: q.Options || [],
           rating_max: q.RatingMax || 5,
           dictionary_id: q.DictionaryID || null,
