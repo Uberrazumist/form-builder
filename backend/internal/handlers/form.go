@@ -156,7 +156,7 @@ func GetForm(db *gorm.DB) gin.HandlerFunc {
     }
 }
 
-// ---------- SubmitResponse (с атомарным бронированием и определением ресурса через выбранный слот) ----------
+// ---------- SubmitResponse (с атомарным бронированием, опциональной авторизацией и защитой от пустых UUID) ----------
 func SubmitResponse(db *gorm.DB) gin.HandlerFunc {
     return func(c *gin.Context) {
         var input struct {
@@ -175,13 +175,23 @@ func SubmitResponse(db *gorm.DB) gin.HandlerFunc {
             return
         }
 
-        // Получаем userID из контекста
+        // Получаем userID из контекста (может быть пустым для гостей)
         userID := c.GetString("userID")
-        if userID == "" {
-            c.JSON(http.StatusUnauthorized, gin.H{"error": "User not authenticated"})
-            return
+        var uid uuid.UUID
+        var isAuthenticated bool
+        if userID != "" {
+            uid = uuid.MustParse(userID)
+            isAuthenticated = true
+        } else {
+            // Гость
+            // Если форма не публичная – запрещаем
+            if !form.IsPublic {
+                c.JSON(http.StatusUnauthorized, gin.H{"error": "Authentication required for this form"})
+                return
+            }
+            isAuthenticated = false
+            uid = uuid.Nil
         }
-        uid := uuid.MustParse(userID)
 
         // --- Автоопределение вопросов ---
         var bookingQuestion *models.Question // вопрос бронирования (IsBooking == true, тип dictionary)
@@ -204,7 +214,10 @@ func SubmitResponse(db *gorm.DB) gin.HandlerFunc {
             resp := models.Response{
                 FormID:  uuid.MustParse(input.FormID),
                 Answers: datatypes.JSON(answersJSON),
-                UserID:  &uid,
+                UserID:  nil, // гость или авторизованный? если авторизованный, то надо поставить uid
+            }
+            if isAuthenticated {
+                resp.UserID = &uid
             }
             if err := db.Create(&resp).Error; err != nil {
                 c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to save response"})
@@ -225,6 +238,10 @@ func SubmitResponse(db *gorm.DB) gin.HandlerFunc {
         slotIDStr, ok := slotVal.(string)
         if !ok {
             c.JSON(http.StatusBadRequest, gin.H{"error": "Slot value must be a string (UUID)"})
+            return
+        }
+        if slotIDStr == "" {
+            c.JSON(http.StatusBadRequest, gin.H{"error": "Пожалуйста, выберите корректные значения в справочниках"})
             return
         }
         slotID, err := uuid.Parse(slotIDStr)
@@ -289,6 +306,10 @@ func SubmitResponse(db *gorm.DB) gin.HandlerFunc {
             c.JSON(http.StatusBadRequest, gin.H{"error": "Resource value must be a string (UUID)"})
             return
         }
+        if resourceIDStr == "" {
+            c.JSON(http.StatusBadRequest, gin.H{"error": "Пожалуйста, выберите корректные значения в справочниках"})
+            return
+        }
         resourceID, err := uuid.Parse(resourceIDStr)
         if err != nil {
             c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid resource UUID"})
@@ -304,6 +325,10 @@ func SubmitResponse(db *gorm.DB) gin.HandlerFunc {
         dateStr, ok := dateVal.(string)
         if !ok {
             c.JSON(http.StatusBadRequest, gin.H{"error": "Date value must be a string"})
+            return
+        }
+        if dateStr == "" {
+            c.JSON(http.StatusBadRequest, gin.H{"error": "Пожалуйста, выберите корректную дату"})
             return
         }
         bookingDate, err := time.Parse("2006-01-02", dateStr)
@@ -340,7 +365,7 @@ func SubmitResponse(db *gorm.DB) gin.HandlerFunc {
         // Свободно – создаём бронирование
         booking := models.Booking{
             FormID:    uuid.MustParse(input.FormID),
-            UserID:    uid,
+            UserID:    uid, // если гость, uid = uuid.Nil (не NULL, но допустимо)
             TeacherID: resourceID,
             SlotID:    slotID,
             Date:      bookingDate,
@@ -356,7 +381,11 @@ func SubmitResponse(db *gorm.DB) gin.HandlerFunc {
         resp := models.Response{
             FormID:  uuid.MustParse(input.FormID),
             Answers: datatypes.JSON(answersJSON),
-            UserID:  &uid,
+        }
+        if isAuthenticated {
+            resp.UserID = &uid
+        } else {
+            resp.UserID = nil
         }
         if err := tx.Create(&resp).Error; err != nil {
             tx.Rollback()

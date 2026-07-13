@@ -45,14 +45,14 @@
           <label class="question-label">
             <span class="question-number">{{ currentVisibleStepNumber }}.</span>
             {{ question.Title }}
-            <span v-if="question.IsRequired" class="required">*</span>
+            <span v-if="question.is_required || question.IsRequired || question.Required" class="required">*</span>
           </label>
 
           <input
             v-if="question.Type === 'text'"
             type="text"
             v-model="answers[question.ID]"
-            :required="question.IsRequired"
+            :required="question.is_required || question.IsRequired || question.Required"
             placeholder="Введите ответ"
             class="form-input"
           />
@@ -60,7 +60,7 @@
           <textarea
             v-else-if="question.Type === 'textarea'"
             v-model="answers[question.ID]"
-            :required="question.IsRequired"
+            :required="question.is_required || question.IsRequired || question.Required"
             placeholder="Введите ответ"
             rows="4"
             class="form-textarea"
@@ -70,14 +70,14 @@
             v-else-if="question.Type === 'date'"
             type="date"
             v-model="answers[question.ID]"
-            :required="question.IsRequired"
+            :required="question.is_required || question.IsRequired || question.Required"
             class="form-input"
           />
 
           <select
             v-else-if="question.Type === 'dictionary'"
             v-model="answers[question.ID]"
-            :required="question.IsRequired"
+            :required="question.is_required || question.IsRequired || question.Required"
             :disabled="isSelectDisabled(question)"
             class="form-select"
           >
@@ -108,7 +108,7 @@
 
           <div v-else-if="question.Type === 'radio'" class="options-group">
             <label v-for="(option, optIdx) in question.Options" :key="optIdx" class="option-label">
-              <input type="radio" :name="'q_' + question.ID" :value="option" v-model="answers[question.ID]" :required="question.IsRequired" />
+              <input type="radio" :name="'q_' + question.ID" :value="option" v-model="answers[question.ID]" :required="question.is_required || question.IsRequired || question.Required" />
               <span>{{ option }}</span>
             </label>
           </div>
@@ -120,7 +120,7 @@
             </label>
           </div>
 
-          <select v-else-if="question.Type === 'select'" v-model="answers[question.ID]" :required="question.IsRequired" class="form-select">
+          <select v-else-if="question.Type === 'select'" v-model="answers[question.ID]" :required="question.is_required || question.IsRequired || question.Required" class="form-select">
             <option value="" disabled>Выберите вариант</option>
             <option v-for="(option, optIdx) in question.Options" :key="optIdx" :value="option">{{ option }}</option>
           </select>
@@ -237,6 +237,8 @@ const loadForm = async () => {
         await loadDictionaryItems(q.DictionaryID)
       }
     }
+
+    currentStep.value = 0
   } catch (err) {
     error.value = 'Ошибка сети. Попробуйте позже.'
   } finally {
@@ -265,7 +267,7 @@ const loadDictionaryItems = async (dictionaryId) => {
 const findParentQuestion = (question) => {
   if (!question || question.Type !== 'dictionary' || !question.DictionaryID) return null
 
-  const items = dictionaryItemsCache[question.DictionaryID] || []
+  const items = dictionaryItemsCache[question.DictionaryID]
   if (!items || items.length === 0) return null
 
   let sampleLinkedId = null
@@ -293,7 +295,7 @@ const findParentQuestion = (question) => {
 
   if (!parentDictId) return null
 
-  return form.value.Questions.find(q => q?.Type === 'dictionary' && q?.DictionaryID === parentDictId) || null
+  return form.value?.Questions?.find(q => q?.Type === 'dictionary' && q?.DictionaryID === parentDictId) || null
 }
 
 const isQuestionVisible = (question) => {
@@ -306,7 +308,7 @@ const isQuestionVisible = (question) => {
   if (!isQuestionVisible(parentQuestion)) return false
 
   const parentAnswer = answers[parentQuestion.ID]
-  return !!parentAnswer
+  return !!parentAnswer && parentAnswer !== ''
 }
 
 const isSelectDisabled = (question) => {
@@ -552,10 +554,11 @@ const nextStep = () => {
   const currentQ = form.value?.Questions?.[currentStep.value]
 
   if (currentQ && isQuestionVisible(currentQ)) {
-    if (currentQ.IsRequired) {
+    const isRequired = currentQ.is_required || currentQ.IsRequired || currentQ.Required || false
+    if (isRequired) {
       const answer = answers[currentQ.ID]
-      if (!answer || (Array.isArray(answer) && answer.length === 0)) {
-        validationError.value = `Пожалуйста, ответьте на вопрос: "${currentQ.Title}"`
+      if (!answer || (Array.isArray(answer) && answer.length === 0) || answer === '') {
+        validationError.value = `Заполните обязательные поля`
         return
       }
     }
@@ -585,14 +588,17 @@ const nextStep = () => {
 }
 
 const showPreviewNotice = () => {
+  validationError.value = ''
+
   for (const q of form.value.Questions) {
     if (!q) continue
     if (!isQuestionVisible(q)) continue
 
-    if (q.IsRequired) {
+    const isRequired = q.is_required || q.IsRequired || q.Required || false
+    if (isRequired) {
       const answer = answers[q.ID]
-      if (!answer || (Array.isArray(answer) && answer.length === 0)) {
-        validationError.value = `Пожалуйста, ответьте на вопрос: "${q.Title}"`
+      if (!answer || (Array.isArray(answer) && answer.length === 0) || answer === '') {
+        validationError.value = `Заполните обязательные поля`
         return
       }
     }
