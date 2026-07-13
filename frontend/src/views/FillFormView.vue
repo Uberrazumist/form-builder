@@ -228,7 +228,6 @@ const loadForm = async () => {
       }
     })
 
-    // Загружаем элементы справочников
     for (const q of form.value.Questions) {
       if (!q) continue
       if (q.Type === 'dictionary' && q.DictionaryID) {
@@ -236,7 +235,6 @@ const loadForm = async () => {
       }
     }
 
-    // КРИТИЧЕСКОЕ ИСПРАВЛЕНИЕ: Принудительно устанавливаем первый шаг
     currentStep.value = 0
   } catch (err) {
     error.value = 'Ошибка сети. Попробуйте позже.'
@@ -263,7 +261,6 @@ const loadDictionaryItems = async (dictionaryId) => {
   }
 }
 
-// БЕЗОПАСНЫЙ ПОИСК РОДИТЕЛЯ: если кэш пуст или нет linked_ids, возвращаем null (корневой вопрос)
 const findParentQuestion = (question) => {
   if (!question || question.Type !== 'dictionary' || !question.DictionaryID) return null
 
@@ -298,10 +295,15 @@ const findParentQuestion = (question) => {
   return form.value?.Questions?.find(q => q?.Type === 'dictionary' && q?.DictionaryID === parentDictId) || null
 }
 
-// УМНАЯ ВИДИМОСТЬ: если родителя нет (корневой справочник), вопрос всегда видим
 const isQuestionVisible = (question) => {
   if (!question) return false
+  
   if (question.Type !== 'dictionary') return true
+
+  const firstDictQuestion = form.value?.Questions?.find(q => q?.Type === 'dictionary')
+  if (firstDictQuestion && firstDictQuestion.ID === question.ID) {
+    return true
+  }
 
   const parentQuestion = findParentQuestion(question)
   if (!parentQuestion) return true
@@ -589,7 +591,6 @@ const nextStep = () => {
 const submitResponses = async () => {
   validationError.value = ''
 
-  // 1. Строгая валидация видимых обязательных полей
   for (const q of form.value.Questions) {
     if (!q) continue
     if (!isQuestionVisible(q)) continue
@@ -614,15 +615,12 @@ const submitResponses = async () => {
     const headers = { 'Content-Type': 'application/json' }
     if (token) headers['Authorization'] = `Bearer ${token}`
 
-    // 2. КРИТИЧЕСКОЕ ИСПРАВЛЕНИЕ: Фильтруем ответы, оставляя ТОЛЬКО видимые вопросы
-    // Это исключает отправку пустых строк или мусорных UUID от скрытых полей
     const payloadAnswers = {}
     for (const q of form.value.Questions) {
       if (!q) continue
       if (!isQuestionVisible(q)) continue
       
       const answer = answers[q.ID]
-      // Отправляем только если есть реальное значение
       if (answer !== '' && answer !== null && answer !== undefined) {
         payloadAnswers[q.ID] = answer
       }

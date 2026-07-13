@@ -300,7 +300,13 @@ const findParentQuestion = (question) => {
 
 const isQuestionVisible = (question) => {
   if (!question) return false
+  
   if (question.Type !== 'dictionary') return true
+
+  const firstDictQuestion = form.value?.Questions?.find(q => q?.Type === 'dictionary')
+  if (firstDictQuestion && firstDictQuestion.ID === question.ID) {
+    return true
+  }
 
   const parentQuestion = findParentQuestion(question)
   if (!parentQuestion) return true
