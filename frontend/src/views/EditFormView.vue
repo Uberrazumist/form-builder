@@ -153,7 +153,7 @@
 
             <div class="checkbox-group">
               <label class="checkbox-label">
-                <input type="checkbox" v-model="question.is_required" />
+                <input type="checkbox" v-model="question.required" />
                 <span class="checkbox-text">Обязательный вопрос</span>
               </label>
             </div>
@@ -256,7 +256,6 @@ const loadForm = async () => {
 
     const rawForm = await response.json()
 
-    // 1. Сквозная нормализация формы (Защита от PascalCase/snake_case)
     const normalizedForm = {
       ID: rawForm.ID || rawForm.id,
       Title: rawForm.Title || rawForm.title || '',
@@ -265,15 +264,14 @@ const loadForm = async () => {
       Questions: rawForm.Questions || rawForm.questions || []
     }
 
-    // 2. Нормализация вопросов
     for (const q of normalizedForm.Questions) {
       if (!q) continue
       q.ID = q.ID || q.id
       q.Type = q.Type || q.type || 'text'
       q.Title = q.Title || q.title || ''
       q.DictionaryID = q.DictionaryID || q.dictionary_id
-      q.is_required = q.is_required || q.IsRequired || q.Required || false
-      q.IsRequired = q.is_required
+      // КРИТИЧЕСКОЕ ИСПРАВЛЕНИЕ: маппинг в локальное свойство required для v-model
+      q.required = q.is_required || q.IsRequired || q.Required || false
       q.Options = q.Options || q.options || []
       q.RatingMax = q.RatingMax || q.rating_max || 5
       q.IsBooking = q.IsBooking || q.is_booking || false
@@ -291,7 +289,7 @@ const loadForm = async () => {
           id: q.ID,
           type: q.Type,
           title: q.Title,
-          is_required: q.is_required,
+          required: q.required,
           options: q.Options,
           rating_max: q.RatingMax,
           dictionary_id: q.DictionaryID,
@@ -311,7 +309,7 @@ const addQuestion = () => {
   formData.questions.push({
     type: 'text',
     title: '',
-    is_required: false,
+    required: false,
     options: [],
     rating_max: 5,
     dictionary_id: null,
@@ -374,7 +372,7 @@ const submitForm = async () => {
           ID: q.id || undefined,
           Type: q.type,
           Title: q.title,
-          is_required: q.is_required,
+          is_required: q.required, // ОТПРАВЛЯЕМ is_required, используя значение из q.required
           Options: q.options,
           RatingMax: q.rating_max,
           DictionaryID: q.type === 'dictionary' ? q.dictionary_id : null,
