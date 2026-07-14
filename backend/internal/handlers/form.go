@@ -1,6 +1,7 @@
 package handlers
 
 import (
+    "encoding/json"
     "errors"
     "fmt"
     "net/http"
@@ -8,6 +9,7 @@ import (
 
     "github.com/gin-gonic/gin"
     "github.com/google/uuid"
+    "gorm.io/datatypes"
     "gorm.io/gorm"
     "gorm.io/gorm/clause"
 
@@ -17,9 +19,14 @@ import (
 // CreateForm – POST /api/forms
 func CreateForm(db *gorm.DB) gin.HandlerFunc {
     return func(c *gin.Context) {
-        userID := c.GetString("userID")
-        if userID == "" {
+        userIDStr := c.GetString("userID")
+        if userIDStr == "" {
             c.JSON(http.StatusUnauthorized, gin.H{"error": "Требуется авторизация"})
+            return
+        }
+        userID, err := uuid.Parse(userIDStr)
+        if err != nil {
+            c.JSON(http.StatusBadRequest, gin.H{"error": "Неверный идентификатор пользователя"})
             return
         }
 
@@ -48,6 +55,12 @@ func CreateForm(db *gorm.DB) gin.HandlerFunc {
             return
         }
 
+        settingsJSON, err := json.Marshal(input.Settings)
+        if err != nil {
+            c.JSON(http.StatusBadRequest, gin.H{"error": "Ошибка сериализации настроек"})
+            return
+        }
+
         tx := db.Begin()
         form := models.Form{
             Title:       input.Title,
@@ -55,7 +68,7 @@ func CreateForm(db *gorm.DB) gin.HandlerFunc {
             CreatedBy:   userID,
             IsPublished: input.IsPublished,
             IsPublic:    input.IsPublic,
-            Settings:    input.Settings,
+            Settings:    datatypes.JSON(settingsJSON),
         }
         if err := tx.Create(&form).Error; err != nil {
             tx.Rollback()
@@ -64,11 +77,39 @@ func CreateForm(db *gorm.DB) gin.HandlerFunc {
         }
 
         for i, q := range input.Questions {
-            // Если depends_on передан как пустая строка, превращаем в nil
-            dependsOn := q.DependsOn
-            if dependsOn != nil && *dependsOn == "" {
-                dependsOn = nil
+            optionsJSON, err := json.Marshal(q.Options)
+            if err != nil {
+                tx.Rollback()
+                c.JSON(http.StatusBadRequest, gin.H{"error": "Ошибка сериализации вариантов"})
+                return
             }
+            validationJSON, err := json.Marshal(q.Validation)
+            if err != nil {
+                tx.Rollback()
+                c.JSON(http.StatusBadRequest, gin.H{"error": "Ошибка сериализации валидации"})
+                return
+            }
+            var dependsOn *uuid.UUID
+            if q.DependsOn != nil && *q.DependsOn != "" {
+                parsed, err := uuid.Parse(*q.DependsOn)
+                if err != nil {
+                    tx.Rollback()
+                    c.JSON(http.StatusBadRequest, gin.H{"error": "Неверный ID родительского вопроса"})
+                    return
+                }
+                dependsOn = &parsed
+            }
+            var dictID *uuid.UUID
+            if q.DictionaryID != nil && *q.DictionaryID != "" {
+                parsed, err := uuid.Parse(*q.DictionaryID)
+                if err != nil {
+                    tx.Rollback()
+                    c.JSON(http.StatusBadRequest, gin.H{"error": "Неверный ID справочника"})
+                    return
+                }
+                dictID = &parsed
+            }
+
             question := models.Question{
                 FormID:       form.ID,
                 Type:         q.Type,
@@ -76,10 +117,10 @@ func CreateForm(db *gorm.DB) gin.HandlerFunc {
                 Description:  q.Description,
                 OrderIndex:   q.OrderIndex,
                 IsRequired:   q.IsRequired,
-                Options:      q.Options,
-                Validation:   q.Validation,
+                Options:      datatypes.JSON(optionsJSON),
+                Validation:   datatypes.JSON(validationJSON),
                 DependsOn:    dependsOn,
-                DictionaryID: q.DictionaryID,
+                DictionaryID: dictID,
                 IsBooking:    q.IsBooking,
             }
             if question.OrderIndex == 0 {
@@ -94,7 +135,7 @@ func CreateForm(db *gorm.DB) gin.HandlerFunc {
 
         tx.Commit()
         c.JSON(http.StatusCreated, gin.H{
-            "id":         form.ID,
+            "id":         form.ID.String(),
             "title":      form.Title,
             "created_at": form.CreatedAt,
         })
@@ -115,13 +156,18 @@ func GetForm(db *gorm.DB) gin.HandlerFunc {
             return
         }
 
-        userID := c.GetString("userID")
-        if userID == "" {
+        userIDStr := c.GetString("userID")
+        if userIDStr == "" {
             if !form.IsPublic {
                 c.JSON(http.StatusUnauthorized, gin.H{"error": "Форма приватная, требуется авторизация"})
                 return
             }
         } else {
+            userID, err := uuid.Parse(userIDStr)
+            if err != nil {
+                c.JSON(http.StatusBadRequest, gin.H{"error": "Неверный идентификатор пользователя"})
+                return
+            }
             if form.CreatedBy != userID && !form.IsPublic {
                 c.JSON(http.StatusForbidden, gin.H{"error": "Доступ запрещён"})
                 return
@@ -129,10 +175,10 @@ func GetForm(db *gorm.DB) gin.HandlerFunc {
         }
 
         c.JSON(http.StatusOK, gin.H{
-            "id":           form.ID,
+            "id":           form.ID.String(),
             "title":        form.Title,
             "description":  form.Description,
-            "created_by":   form.CreatedBy,
+            "created_by":   form.CreatedBy.String(),
             "created_at":   form.CreatedAt,
             "updated_at":   form.UpdatedAt,
             "is_published": form.IsPublished,
@@ -146,9 +192,14 @@ func GetForm(db *gorm.DB) gin.HandlerFunc {
 // ListForms – GET /api/forms
 func ListForms(db *gorm.DB) gin.HandlerFunc {
     return func(c *gin.Context) {
-        userID := c.GetString("userID")
-        if userID == "" {
+        userIDStr := c.GetString("userID")
+        if userIDStr == "" {
             c.JSON(http.StatusUnauthorized, gin.H{"error": "Требуется авторизация"})
+            return
+        }
+        userID, err := uuid.Parse(userIDStr)
+        if err != nil {
+            c.JSON(http.StatusBadRequest, gin.H{"error": "Неверный идентификатор пользователя"})
             return
         }
 
@@ -161,7 +212,7 @@ func ListForms(db *gorm.DB) gin.HandlerFunc {
         result := make([]gin.H, len(forms))
         for i, f := range forms {
             result[i] = gin.H{
-                "id":           f.ID,
+                "id":           f.ID.String(),
                 "title":        f.Title,
                 "description":  f.Description,
                 "created_at":   f.CreatedAt,
@@ -177,9 +228,14 @@ func ListForms(db *gorm.DB) gin.HandlerFunc {
 // UpdateForm – PUT /api/forms/:id
 func UpdateForm(db *gorm.DB) gin.HandlerFunc {
     return func(c *gin.Context) {
-        userID := c.GetString("userID")
-        if userID == "" {
+        userIDStr := c.GetString("userID")
+        if userIDStr == "" {
             c.JSON(http.StatusUnauthorized, gin.H{"error": "Требуется авторизация"})
+            return
+        }
+        userID, err := uuid.Parse(userIDStr)
+        if err != nil {
+            c.JSON(http.StatusBadRequest, gin.H{"error": "Неверный идентификатор пользователя"})
             return
         }
 
@@ -220,13 +276,19 @@ func UpdateForm(db *gorm.DB) gin.HandlerFunc {
             return
         }
 
+        settingsJSON, err := json.Marshal(input.Settings)
+        if err != nil {
+            c.JSON(http.StatusBadRequest, gin.H{"error": "Ошибка сериализации настроек"})
+            return
+        }
+
         tx := db.Begin()
         updates := map[string]interface{}{
             "title":        input.Title,
             "description":  input.Description,
             "is_published": input.IsPublished,
             "is_public":    input.IsPublic,
-            "settings":     input.Settings,
+            "settings":     datatypes.JSON(settingsJSON),
         }
         if err := tx.Model(&form).Updates(updates).Error; err != nil {
             tx.Rollback()
@@ -234,7 +296,6 @@ func UpdateForm(db *gorm.DB) gin.HandlerFunc {
             return
         }
 
-        // Удаляем старые вопросы и создаём новые
         if err := tx.Where("form_id = ?", form.ID).Delete(&models.Question{}).Error; err != nil {
             tx.Rollback()
             c.JSON(http.StatusInternalServerError, gin.H{"error": "Ошибка удаления старых вопросов"})
@@ -242,10 +303,39 @@ func UpdateForm(db *gorm.DB) gin.HandlerFunc {
         }
 
         for i, q := range input.Questions {
-            dependsOn := q.DependsOn
-            if dependsOn != nil && *dependsOn == "" {
-                dependsOn = nil
+            optionsJSON, err := json.Marshal(q.Options)
+            if err != nil {
+                tx.Rollback()
+                c.JSON(http.StatusBadRequest, gin.H{"error": "Ошибка сериализации вариантов"})
+                return
             }
+            validationJSON, err := json.Marshal(q.Validation)
+            if err != nil {
+                tx.Rollback()
+                c.JSON(http.StatusBadRequest, gin.H{"error": "Ошибка сериализации валидации"})
+                return
+            }
+            var dependsOn *uuid.UUID
+            if q.DependsOn != nil && *q.DependsOn != "" {
+                parsed, err := uuid.Parse(*q.DependsOn)
+                if err != nil {
+                    tx.Rollback()
+                    c.JSON(http.StatusBadRequest, gin.H{"error": "Неверный ID родительского вопроса"})
+                    return
+                }
+                dependsOn = &parsed
+            }
+            var dictID *uuid.UUID
+            if q.DictionaryID != nil && *q.DictionaryID != "" {
+                parsed, err := uuid.Parse(*q.DictionaryID)
+                if err != nil {
+                    tx.Rollback()
+                    c.JSON(http.StatusBadRequest, gin.H{"error": "Неверный ID справочника"})
+                    return
+                }
+                dictID = &parsed
+            }
+
             question := models.Question{
                 FormID:       form.ID,
                 Type:         q.Type,
@@ -253,10 +343,10 @@ func UpdateForm(db *gorm.DB) gin.HandlerFunc {
                 Description:  q.Description,
                 OrderIndex:   q.OrderIndex,
                 IsRequired:   q.IsRequired,
-                Options:      q.Options,
-                Validation:   q.Validation,
+                Options:      datatypes.JSON(optionsJSON),
+                Validation:   datatypes.JSON(validationJSON),
                 DependsOn:    dependsOn,
-                DictionaryID: q.DictionaryID,
+                DictionaryID: dictID,
                 IsBooking:    q.IsBooking,
             }
             if question.OrderIndex == 0 {
@@ -277,9 +367,14 @@ func UpdateForm(db *gorm.DB) gin.HandlerFunc {
 // DeleteForm – DELETE /api/forms/:id
 func DeleteForm(db *gorm.DB) gin.HandlerFunc {
     return func(c *gin.Context) {
-        userID := c.GetString("userID")
-        if userID == "" {
+        userIDStr := c.GetString("userID")
+        if userIDStr == "" {
             c.JSON(http.StatusUnauthorized, gin.H{"error": "Требуется авторизация"})
+            return
+        }
+        userID, err := uuid.Parse(userIDStr)
+        if err != nil {
+            c.JSON(http.StatusBadRequest, gin.H{"error": "Неверный идентификатор пользователя"})
             return
         }
 
@@ -300,7 +395,7 @@ func DeleteForm(db *gorm.DB) gin.HandlerFunc {
 // SubmitResponse – POST /api/responses
 func SubmitResponse(db *gorm.DB) gin.HandlerFunc {
     return func(c *gin.Context) {
-        userID := c.GetString("userID")
+        userIDStr := c.GetString("userID")
 
         var input struct {
             FormID  string                 `json:"form_id" binding:"required"`
@@ -321,21 +416,19 @@ func SubmitResponse(db *gorm.DB) gin.HandlerFunc {
             return
         }
 
-        // Проверка прав: если пользователь не авторизован, форма должна быть публичной
-        if userID == "" && !form.IsPublic {
+        if userIDStr == "" && !form.IsPublic {
             c.JSON(http.StatusUnauthorized, gin.H{"error": "Форма приватная, требуется авторизация"})
             return
         }
 
-        // Валидация только обязательных вопросов (без проверки depends_on)
+        // Валидация только обязательных вопросов
         for _, q := range form.Questions {
             if q.IsRequired {
-                val, has := input.Answers[q.ID]
+                val, has := input.Answers[q.ID.String()]
                 if !has || val == nil || val == "" {
                     c.JSON(http.StatusBadRequest, gin.H{"error": fmt.Sprintf("Вопрос '%s' обязателен", q.Title)})
                     return
                 }
-                // Для чекбоксов дополнительно проверяем, что массив не пуст
                 if q.Type == "checkbox" {
                     if arr, ok := val.([]interface{}); ok && len(arr) == 0 {
                         c.JSON(http.StatusBadRequest, gin.H{"error": fmt.Sprintf("Вопрос '%s' обязателен", q.Title)})
@@ -345,9 +438,7 @@ func SubmitResponse(db *gorm.DB) gin.HandlerFunc {
             }
         }
 
-        // Поиск вопросов для бронирования
         var bookingQuestion *models.Question
-        var resourceQuestion *models.Question
         var dateQuestion *models.Question
 
         for i := range form.Questions {
@@ -358,18 +449,14 @@ func SubmitResponse(db *gorm.DB) gin.HandlerFunc {
             if q.Type == "date" {
                 dateQuestion = q
             }
-            if q.DictionaryID != nil && !q.IsBooking {
-                resourceQuestion = q
-            }
         }
 
-        // Если есть бронирование – выполняем атомарную блокировку
         if bookingQuestion != nil {
             if dateQuestion == nil {
                 c.JSON(http.StatusBadRequest, gin.H{"error": "Для бронирования требуется вопрос типа 'date'"})
                 return
             }
-            dateStr, ok := input.Answers[dateQuestion.ID].(string)
+            dateStr, ok := input.Answers[dateQuestion.ID.String()].(string)
             if !ok || dateStr == "" {
                 c.JSON(http.StatusBadRequest, gin.H{"error": "Дата не указана или имеет неверный формат"})
                 return
@@ -380,7 +467,7 @@ func SubmitResponse(db *gorm.DB) gin.HandlerFunc {
                 return
             }
 
-            slotIDStr, ok := input.Answers[bookingQuestion.ID].(string)
+            slotIDStr, ok := input.Answers[bookingQuestion.ID.String()].(string)
             if !ok || slotIDStr == "" {
                 c.JSON(http.StatusBadRequest, gin.H{"error": "Не выбран слот для бронирования"})
                 return
@@ -402,7 +489,6 @@ func SubmitResponse(db *gorm.DB) gin.HandlerFunc {
             }
             resourceID := *slotItem.ParentID
 
-            // Транзакция с FOR UPDATE
             tx := db.Begin()
             var existingBooking models.Booking
             err = tx.Clauses(clause.Locking{Strength: "UPDATE"}).
@@ -419,16 +505,25 @@ func SubmitResponse(db *gorm.DB) gin.HandlerFunc {
                 return
             }
 
-            // Создаём бронирование
+            var userID uuid.UUID
+            if userIDStr != "" {
+                parsed, err := uuid.Parse(userIDStr)
+                if err != nil {
+                    tx.Rollback()
+                    c.JSON(http.StatusBadRequest, gin.H{"error": "Неверный ID пользователя"})
+                    return
+                }
+                userID = parsed
+            } else {
+                userID = uuid.Nil
+            }
+
             booking := models.Booking{
                 FormID:    form.ID,
-                UserID:    userID,
-                TeacherID: resourceID,
-                SlotID:    slotUUID.String(),
+                UserID:    userID,          // uuid.UUID
+                TeacherID: resourceID,      // uuid.UUID
+                SlotID:    slotUUID,        // uuid.UUID
                 Date:      date,
-            }
-            if userID == "" {
-                booking.UserID = uuid.Nil.String()
             }
             if err := tx.Create(&booking).Error; err != nil {
                 tx.Rollback()
@@ -436,15 +531,21 @@ func SubmitResponse(db *gorm.DB) gin.HandlerFunc {
                 return
             }
 
-            // Сохраняем ответ
-            var userIDPtr *string
-            if userID != "" {
-                userIDPtr = &userID
+            var userIDPtr *uuid.UUID
+            if userIDStr != "" {
+                parsed, _ := uuid.Parse(userIDStr)
+                userIDPtr = &parsed
+            }
+            answersJSON, err := json.Marshal(input.Answers)
+            if err != nil {
+                tx.Rollback()
+                c.JSON(http.StatusBadRequest, gin.H{"error": "Ошибка сериализации ответов"})
+                return
             }
             response := models.Response{
                 FormID:  form.ID,
                 UserID:  userIDPtr,
-                Answers: input.Answers,
+                Answers: datatypes.JSON(answersJSON),
             }
             if err := tx.Create(&response).Error; err != nil {
                 tx.Rollback()
@@ -457,15 +558,21 @@ func SubmitResponse(db *gorm.DB) gin.HandlerFunc {
             return
         }
 
-        // Если бронирования нет – просто сохраняем ответ
-        var userIDPtr *string
-        if userID != "" {
-            userIDPtr = &userID
+        // Без бронирования
+        var userIDPtr *uuid.UUID
+        if userIDStr != "" {
+            parsed, _ := uuid.Parse(userIDStr)
+            userIDPtr = &parsed
+        }
+        answersJSON, err := json.Marshal(input.Answers)
+        if err != nil {
+            c.JSON(http.StatusBadRequest, gin.H{"error": "Ошибка сериализации ответов"})
+            return
         }
         response := models.Response{
             FormID:  form.ID,
             UserID:  userIDPtr,
-            Answers: input.Answers,
+            Answers: datatypes.JSON(answersJSON),
         }
         if err := db.Create(&response).Error; err != nil {
             c.JSON(http.StatusInternalServerError, gin.H{"error": "Ошибка сохранения ответа"})
@@ -475,12 +582,17 @@ func SubmitResponse(db *gorm.DB) gin.HandlerFunc {
     }
 }
 
-// GetResponses – GET /api/forms/:id/responses (только владелец)
+// GetResponses – GET /api/forms/:id/responses
 func GetResponses(db *gorm.DB) gin.HandlerFunc {
     return func(c *gin.Context) {
-        userID := c.GetString("userID")
-        if userID == "" {
+        userIDStr := c.GetString("userID")
+        if userIDStr == "" {
             c.JSON(http.StatusUnauthorized, gin.H{"error": "Требуется авторизация"})
+            return
+        }
+        userID, err := uuid.Parse(userIDStr)
+        if err != nil {
+            c.JSON(http.StatusBadRequest, gin.H{"error": "Неверный идентификатор пользователя"})
             return
         }
 

@@ -1,4 +1,4 @@
-k<template>
+<template>
   <div class="fill-form-page">
     <div v-if="loading" class="loading-state">
       <div class="spinner"></div>
@@ -31,135 +31,135 @@ k<template>
       </div>
 
       <form @submit.prevent="submitResponses" class="form-body" novalidate>
-        <div
-          v-for="(question, index) in form.questions"
-          :key="question.id"
-          v-if="index === currentStep && isQuestionVisible(question)"
-          class="question-block"
-        >
-          <label :for="question.id" class="question-label">
-            <span class="question-number">{{ currentVisibleStepNumber }}.</span>
-            {{ question.title }}
-            <span v-if="question.is_required" class="required">*</span>
-          </label>
-
-          <input
-            v-if="question.type === 'text'"
-            :id="question.id"
-            :name="question.id"
-            type="text"
-            v-model="answers[question.id]"
-            :required="question.is_required"
-            placeholder="Введите ответ"
-            class="form-input"
-          />
-
-          <textarea
-            v-else-if="question.type === 'textarea'"
-            :id="question.id"
-            :name="question.id"
-            v-model="answers[question.id]"
-            :required="question.is_required"
-            placeholder="Введите ответ"
-            rows="4"
-            class="form-textarea"
-          ></textarea>
-
-          <input
-            v-else-if="question.type === 'date'"
-            :id="question.id"
-            :name="question.id"
-            type="date"
-            v-model="answers[question.id]"
-            :required="question.is_required"
-            class="form-input"
-          />
-
-          <select
-            v-else-if="question.type === 'dictionary'"
-            :id="question.id"
-            :name="question.id"
-            v-model="answers[question.id]"
-            :required="question.is_required"
-            :disabled="isSelectDisabled(question)"
-            class="form-select"
+        <template v-for="(question, index) in form.questions" :key="question.id">
+          <div
+            v-if="index === currentStep && isQuestionVisible(question)"
+            class="question-block"
           >
-            <option value="" disabled>— выберите значение —</option>
-            <option
-              v-for="item in getFilteredOptions(question)"
-              :key="getOptionValue(item)"
-              :value="getOptionValue(item)"
+            <label :for="question.id" class="question-label">
+              <span class="question-number">{{ currentVisibleStepNumber }}.</span>
+              {{ question.title }}
+              <span v-if="question.is_required" class="required">*</span>
+            </label>
+
+            <input
+              v-if="question.type === 'text'"
+              :id="question.id"
+              :name="question.id"
+              type="text"
+              v-model="answers[question.id]"
+              :required="question.is_required"
+              placeholder="Введите ответ"
+              class="form-input"
+            />
+
+            <textarea
+              v-else-if="question.type === 'textarea'"
+              :id="question.id"
+              :name="question.id"
+              v-model="answers[question.id]"
+              :required="question.is_required"
+              placeholder="Введите ответ"
+              rows="4"
+              class="form-textarea"
+            ></textarea>
+
+            <input
+              v-else-if="question.type === 'date'"
+              :id="question.id"
+              :name="question.id"
+              type="date"
+              v-model="answers[question.id]"
+              :required="question.is_required"
+              class="form-input"
+            />
+
+            <select
+              v-else-if="question.type === 'dictionary'"
+              :id="question.id"
+              :name="question.id"
+              v-model="answers[question.id]"
+              :required="question.is_required"
+              :disabled="isSelectDisabled(question)"
+              class="form-select"
             >
-              {{ getOptionLabel(item) }}
-            </option>
-          </select>
+              <option value="" disabled>— выберите значение —</option>
+              <option
+                v-for="item in getFilteredOptions(question)"
+                :key="getOptionValue(item)"
+                :value="getOptionValue(item)"
+              >
+                {{ getOptionLabel(item) }}
+              </option>
+            </select>
 
-          <div v-if="question.type === 'dictionary' && isSelectDisabled(question)" class="locked-hint">
-            <Icon name="lock" />
-            <span>{{ getLockReason(question) }}</span>
-          </div>
-
-          <div v-else-if="question.type === 'dictionary' && isQuestionLoading(question)" class="loading-hint">
-            <div class="spinner-small"></div>
-            <span>Загрузка вариантов...</span>
-          </div>
-
-          <div v-else-if="question.type === 'dictionary' && getFilteredOptions(question).length === 0 && !isSelectDisabled(question)" class="empty-hint">
-            <Icon name="alert" />
-            <span>Нет доступных вариантов</span>
-          </div>
-
-          <div v-else-if="question.type === 'radio'" class="options-group">
-            <label v-for="(option, optIdx) in question.options" :key="optIdx" class="option-label">
-              <input 
-                type="radio" 
-                :id="question.id + '_' + optIdx" 
-                :name="question.id" 
-                :value="option" 
-                v-model="answers[question.id]" 
-                :required="question.is_required" 
-              />
-              <span>{{ option }}</span>
-            </label>
-          </div>
-
-          <div v-else-if="question.type === 'checkbox'" class="options-group">
-            <label v-for="(option, optIdx) in question.options" :key="optIdx" class="option-label">
-              <input 
-                type="checkbox" 
-                :id="question.id + '_' + optIdx" 
-                :name="question.id" 
-                :value="option" 
-                v-model="answers[question.id]" 
-              />
-              <span>{{ option }}</span>
-            </label>
-          </div>
-
-          <select 
-            v-else-if="question.type === 'select'" 
-            :id="question.id" 
-            :name="question.id" 
-            v-model="answers[question.id]" 
-            :required="question.is_required" 
-            class="form-select"
-          >
-            <option value="" disabled>Выберите вариант</option>
-            <option v-for="(option, optIdx) in question.options" :key="optIdx" :value="option">{{ option }}</option>
-          </select>
-
-          <div v-else-if="question.type === 'rating'" class="rating-group">
-            <div class="stars">
-              <button v-for="star in question.rating_max || 5" :key="star" type="button" @click="answers[question.id] = star" class="star-btn" :class="{ active: answers[question.id] >= star }">★</button>
+            <div v-if="question.type === 'dictionary' && isSelectDisabled(question)" class="locked-hint">
+              <Icon name="lock" />
+              <span>{{ getLockReason(question) }}</span>
             </div>
-            <span v-if="answers[question.id]" class="rating-value">{{ answers[question.id] }} из {{ question.rating_max || 5 }}</span>
-          </div>
 
-          <div v-if="validationError" class="validation-error">
-            <Icon name="error" />
-            <span>{{ validationError }}</span>
+            <div v-else-if="question.type === 'dictionary' && isQuestionLoading(question)" class="loading-hint">
+              <div class="spinner-small"></div>
+              <span>Загрузка вариантов...</span>
+            </div>
+
+            <div v-else-if="question.type === 'dictionary' && getFilteredOptions(question).length === 0 && !isSelectDisabled(question)" class="empty-hint">
+              <Icon name="alert" />
+              <span>Нет доступных вариантов</span>
+            </div>
+
+            <div v-else-if="question.type === 'radio'" class="options-group">
+              <label v-for="(option, optIdx) in question.options" :key="optIdx" class="option-label">
+                <input 
+                  type="radio" 
+                  :id="question.id + '_' + optIdx" 
+                  :name="question.id" 
+                  :value="option" 
+                  v-model="answers[question.id]" 
+                  :required="question.is_required" 
+                />
+                <span>{{ option }}</span>
+              </label>
+            </div>
+
+            <div v-else-if="question.type === 'checkbox'" class="options-group">
+              <label v-for="(option, optIdx) in question.options" :key="optIdx" class="option-label">
+                <input 
+                  type="checkbox" 
+                  :id="question.id + '_' + optIdx" 
+                  :name="question.id" 
+                  :value="option" 
+                  v-model="answers[question.id]" 
+                />
+                <span>{{ option }}</span>
+              </label>
+            </div>
+
+            <select 
+              v-else-if="question.type === 'select'" 
+              :id="question.id" 
+              :name="question.id" 
+              v-model="answers[question.id]" 
+              :required="question.is_required" 
+              class="form-select"
+            >
+              <option value="" disabled>Выберите вариант</option>
+              <option v-for="(option, optIdx) in question.options" :key="optIdx" :value="option">{{ option }}</option>
+            </select>
+
+            <div v-else-if="question.type === 'rating'" class="rating-group">
+              <div class="stars">
+                <button v-for="star in question.rating_max || 5" :key="star" type="button" @click="answers[question.id] = star" class="star-btn" :class="{ active: answers[question.id] >= star }">★</button>
+              </div>
+              <span v-if="answers[question.id]" class="rating-value">{{ answers[question.id] }} из {{ question.rating_max || 5 }}</span>
+            </div>
+
+            <div v-if="validationError" class="validation-error">
+              <Icon name="error" />
+              <span>{{ validationError }}</span>
+            </div>
           </div>
-        </div>
+        </template>
 
         <div class="form-navigation">
           <button 
@@ -234,7 +234,7 @@ interface DictionaryItem {
   id: string
   name: string
   value?: string
-  parent_id?: string | null // КРИТИЧЕСКИ ВАЖНО: поле для каскадной фильтрации
+  parent_id?: string | null
 }
 
 // ==========================================
@@ -398,7 +398,7 @@ const isQuestionLoading = (question: Question): boolean => {
 }
 
 // ==========================================
-// КРИТИЧЕСКОЕ ИСПРАВЛЕНИЕ: ФИЛЬТРАЦИЯ ПО parent_id
+// ФИЛЬТРАЦИЯ ПО parent_id
 // ==========================================
 
 const getFilteredOptions = (question: Question): any[] => {
@@ -417,7 +417,6 @@ const getFilteredOptions = (question: Question): any[] => {
   const parentAnswer = answers[question.depends_on]
   if (!parentAnswer || parentAnswer === '') return []
 
-  // Строгая фильтрация: элемент остается только если его parent_id совпадает с ответом родителя
   return allItems.filter((item: DictionaryItem) => {
     return String(item.parent_id) === String(parentAnswer)
   })
@@ -442,9 +441,9 @@ const getOptionLabel = (option: any): string => {
 // ==========================================
 
 const loadAvailableSlots = async (question: Question) => {
-  if (!question || !question.is_booking) return
+  if (!question || !question.is_booking || !form.value) return
 
-  const dateQuestion = form.value?.questions.find(q => q.type === 'date')
+  const dateQuestion = form.value.questions.find(q => q.type === 'date')
   if (!dateQuestion || !answers[dateQuestion.id]) {
     availableSlots[question.id] = []
     return
@@ -522,10 +521,11 @@ watch(answers, (newVal, oldVal) => {
   }
 
   nextTick(() => {
-    const currentQ = form.value?.questions[currentStep.value]
+    if (!form.value) return
+    const currentQ = form.value.questions[currentStep.value]
     if (currentQ && !isQuestionVisible(currentQ)) {
       for (let i = currentStep.value; i >= 0; i--) {
-        const q = form.value?.questions[i]
+        const q = form.value.questions[i]
         if (q && isQuestionVisible(q)) {
           currentStep.value = i
           return
@@ -544,7 +544,7 @@ const visibleQuestionsCount = computed(() => {
   if (!form.value?.questions) return 0
   let count = 0
   for (const q of form.value.questions) {
-    if (isQuestionVisible(q)) count++
+    if (q && isQuestionVisible(q)) count++
   }
   return count
 })
@@ -554,7 +554,7 @@ const currentVisibleStepNumber = computed(() => {
   let visibleCount = 0
   for (let i = 0; i <= currentStep.value; i++) {
     const q = form.value.questions[i]
-    if (isQuestionVisible(q)) visibleCount++
+    if (q && isQuestionVisible(q)) visibleCount++
   }
   return Math.max(1, visibleCount)
 })
@@ -571,10 +571,11 @@ const progressPercent = computed(() => {
 
 const prevStep = () => {
   validationError.value = ''
+  if (!form.value) return
   let prevIndex = currentStep.value - 1
 
   while (prevIndex >= 0) {
-    const q = form.value?.questions[prevIndex]
+    const q = form.value.questions[prevIndex]
     if (q && isQuestionVisible(q)) {
       break
     }
@@ -586,7 +587,8 @@ const prevStep = () => {
 
 const nextStep = () => {
   validationError.value = ''
-  const currentQ = form.value?.questions[currentStep.value]
+  if (!form.value) return
+  const currentQ = form.value.questions[currentStep.value]
 
   if (currentQ && isQuestionVisible(currentQ)) {
     if (currentQ.is_required) {
@@ -604,11 +606,11 @@ const nextStep = () => {
   }
 
   let nextIndex = currentStep.value + 1
-  const totalQuestions = form.value?.questions.length || 0
+  const totalQuestions = form.value.questions.length || 0
 
   while (nextIndex < totalQuestions) {
     const q = form.value.questions[nextIndex]
-    if (isQuestionVisible(q)) {
+    if (q && isQuestionVisible(q)) {
       break
     }
     nextIndex++
@@ -623,8 +625,10 @@ const nextStep = () => {
 
 const submitResponses = async () => {
   validationError.value = ''
+  if (!form.value) return
 
-  for (const q of form.value?.questions || []) {
+  for (const q of form.value.questions) {
+    if (!q) continue
     if (!isQuestionVisible(q)) continue
 
     if (q.is_required) {
@@ -647,7 +651,8 @@ const submitResponses = async () => {
     if (token) headers['Authorization'] = `Bearer ${token}`
 
     const payloadAnswers: Record<string, any> = {}
-    for (const q of form.value?.questions || []) {
+    for (const q of form.value.questions) {
+      if (!q) continue
       if (!isQuestionVisible(q)) continue
       const answer = answers[q.id]
       if (answer !== '' && answer !== null && answer !== undefined) {
@@ -668,7 +673,7 @@ const submitResponses = async () => {
       result.value = {
         error: 'Извините, это время только что заняли. Пожалуйста, выберите другое время.'
       }
-      for (const q of form.value?.questions || []) {
+      for (const q of form.value.questions) {
         if (q.is_booking && q.type === 'dictionary') {
           await loadAvailableSlots(q)
         }
@@ -685,7 +690,7 @@ const submitResponses = async () => {
 
     result.value = { success: true, message: 'Спасибо! Ваши ответы успешно отправлены.' }
 
-    for (const q of form.value?.questions || []) {
+    for (const q of form.value.questions) {
       answers[q.id] = q.type === 'checkbox' ? [] : ''
     }
 
