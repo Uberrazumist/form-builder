@@ -1,4 +1,4 @@
-<template>
+k<template>
   <div class="fill-form-page">
     <div v-if="loading" class="loading-state">
       <div class="spinner"></div>
@@ -16,8 +16,8 @@
 
     <div v-else-if="form" class="form-container">
       <div class="form-header">
-        <h1 class="form-title">{{ form.Title }}</h1>
-        <p v-if="form.Description" class="form-description">{{ form.Description }}</p>
+        <h1 class="form-title">{{ form.title }}</h1>
+        <p v-if="form.description" class="form-description">{{ form.description }}</p>
         
         <div class="progress-section">
           <div class="progress-info">
@@ -32,55 +32,55 @@
 
       <form @submit.prevent="submitResponses" class="form-body" novalidate>
         <div
-          v-for="(question, index) in form.Questions"
-          :key="question.ID"
+          v-for="(question, index) in form.questions"
+          :key="question.id"
           v-if="index === currentStep && isQuestionVisible(question)"
           class="question-block"
         >
-          <label :for="question.ID" class="question-label">
+          <label :for="question.id" class="question-label">
             <span class="question-number">{{ currentVisibleStepNumber }}.</span>
-            {{ question.Title }}
-            <span v-if="question.required" class="required">*</span>
+            {{ question.title }}
+            <span v-if="question.is_required" class="required">*</span>
           </label>
 
           <input
-            v-if="question.Type === 'text'"
-            :id="question.ID"
-            :name="question.ID"
+            v-if="question.type === 'text'"
+            :id="question.id"
+            :name="question.id"
             type="text"
-            v-model="answers[question.ID]"
-            :required="question.required"
+            v-model="answers[question.id]"
+            :required="question.is_required"
             placeholder="Введите ответ"
             class="form-input"
           />
 
           <textarea
-            v-else-if="question.Type === 'textarea'"
-            :id="question.ID"
-            :name="question.ID"
-            v-model="answers[question.ID]"
-            :required="question.required"
+            v-else-if="question.type === 'textarea'"
+            :id="question.id"
+            :name="question.id"
+            v-model="answers[question.id]"
+            :required="question.is_required"
             placeholder="Введите ответ"
             rows="4"
             class="form-textarea"
           ></textarea>
 
           <input
-            v-else-if="question.Type === 'date'"
-            :id="question.ID"
-            :name="question.ID"
+            v-else-if="question.type === 'date'"
+            :id="question.id"
+            :name="question.id"
             type="date"
-            v-model="answers[question.ID]"
-            :required="question.required"
+            v-model="answers[question.id]"
+            :required="question.is_required"
             class="form-input"
           />
 
           <select
-            v-else-if="question.Type === 'dictionary'"
-            :id="question.ID"
-            :name="question.ID"
-            v-model="answers[question.ID]"
-            :required="question.required"
+            v-else-if="question.type === 'dictionary'"
+            :id="question.id"
+            :name="question.id"
+            v-model="answers[question.id]"
+            :required="question.is_required"
             :disabled="isSelectDisabled(question)"
             class="form-select"
           >
@@ -94,65 +94,65 @@
             </option>
           </select>
 
-          <div v-if="question.Type === 'dictionary' && isSelectDisabled(question)" class="locked-hint">
+          <div v-if="question.type === 'dictionary' && isSelectDisabled(question)" class="locked-hint">
             <Icon name="lock" />
             <span>{{ getLockReason(question) }}</span>
           </div>
 
-          <div v-else-if="question.Type === 'dictionary' && isQuestionLoading(question)" class="loading-hint">
+          <div v-else-if="question.type === 'dictionary' && isQuestionLoading(question)" class="loading-hint">
             <div class="spinner-small"></div>
             <span>Загрузка вариантов...</span>
           </div>
 
-          <div v-else-if="question.Type === 'dictionary' && getFilteredOptions(question).length === 0 && !isSelectDisabled(question)" class="empty-hint">
+          <div v-else-if="question.type === 'dictionary' && getFilteredOptions(question).length === 0 && !isSelectDisabled(question)" class="empty-hint">
             <Icon name="alert" />
             <span>Нет доступных вариантов</span>
           </div>
 
-          <div v-else-if="question.Type === 'radio'" class="options-group">
-            <label v-for="(option, optIdx) in question.Options" :key="optIdx" class="option-label">
+          <div v-else-if="question.type === 'radio'" class="options-group">
+            <label v-for="(option, optIdx) in question.options" :key="optIdx" class="option-label">
               <input 
                 type="radio" 
-                :id="question.ID + '_' + optIdx" 
-                :name="question.ID" 
+                :id="question.id + '_' + optIdx" 
+                :name="question.id" 
                 :value="option" 
-                v-model="answers[question.ID]" 
-                :required="question.required" 
+                v-model="answers[question.id]" 
+                :required="question.is_required" 
               />
               <span>{{ option }}</span>
             </label>
           </div>
 
-          <div v-else-if="question.Type === 'checkbox'" class="options-group">
-            <label v-for="(option, optIdx) in question.Options" :key="optIdx" class="option-label">
+          <div v-else-if="question.type === 'checkbox'" class="options-group">
+            <label v-for="(option, optIdx) in question.options" :key="optIdx" class="option-label">
               <input 
                 type="checkbox" 
-                :id="question.ID + '_' + optIdx" 
-                :name="question.ID" 
+                :id="question.id + '_' + optIdx" 
+                :name="question.id" 
                 :value="option" 
-                v-model="answers[question.ID]" 
+                v-model="answers[question.id]" 
               />
               <span>{{ option }}</span>
             </label>
           </div>
 
           <select 
-            v-else-if="question.Type === 'select'" 
-            :id="question.ID" 
-            :name="question.ID" 
-            v-model="answers[question.ID]" 
-            :required="question.required" 
+            v-else-if="question.type === 'select'" 
+            :id="question.id" 
+            :name="question.id" 
+            v-model="answers[question.id]" 
+            :required="question.is_required" 
             class="form-select"
           >
             <option value="" disabled>Выберите вариант</option>
-            <option v-for="(option, optIdx) in question.Options" :key="optIdx" :value="option">{{ option }}</option>
+            <option v-for="(option, optIdx) in question.options" :key="optIdx" :value="option">{{ option }}</option>
           </select>
 
-          <div v-else-if="question.Type === 'rating'" class="rating-group">
+          <div v-else-if="question.type === 'rating'" class="rating-group">
             <div class="stars">
-              <button v-for="star in question.RatingMax || 5" :key="star" type="button" @click="answers[question.ID] = star" class="star-btn" :class="{ active: answers[question.ID] >= star }">★</button>
+              <button v-for="star in question.rating_max || 5" :key="star" type="button" @click="answers[question.id] = star" class="star-btn" :class="{ active: answers[question.id] >= star }">★</button>
             </div>
-            <span v-if="answers[question.ID]" class="rating-value">{{ answers[question.ID] }} из {{ question.RatingMax || 5 }}</span>
+            <span v-if="answers[question.id]" class="rating-value">{{ answers[question.id] }} из {{ question.rating_max || 5 }}</span>
           </div>
 
           <div v-if="validationError" class="validation-error">
@@ -199,28 +199,67 @@
   </div>
 </template>
 
-<script setup>
+<script setup lang="ts">
 import { ref, reactive, onMounted, watch, nextTick, computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import Icon from '../components/Icon.vue'
 import FormResult from '../components/FormResult.vue'
 
+// ==========================================
+// СТРОГИЕ TYPESCRIPT ИНТЕРФЕЙСЫ (snake_case контракт)
+// ==========================================
+
+interface Question {
+  id: string
+  type: string
+  title: string
+  is_required: boolean
+  dictionary_id?: string | null
+  is_booking: boolean
+  depends_on?: string | null
+  options?: string[]
+  rating_max?: number
+  order_index?: number
+}
+
+interface Form {
+  id: string
+  title: string
+  description?: string
+  is_public: boolean
+  questions: Question[]
+}
+
+interface DictionaryItem {
+  id: string
+  name: string
+  value?: string
+  parent_id?: string | null // КРИТИЧЕСКИ ВАЖНО: поле для каскадной фильтрации
+}
+
+// ==========================================
+// РЕАКТИВНЫЙ СТЕЙТ
+// ==========================================
+
 const route = useRoute()
 const router = useRouter()
 const hostOrigin = typeof window !== 'undefined' ? window.location.origin : ''
 
-const form = ref(null)
-const answers = reactive({})
-const dictionaryItemsCache = reactive({})
+const form = ref<Form | null>(null)
+const answers = reactive<Record<string, any>>({})
+const dictionaryItemsCache = reactive<Record<string, DictionaryItem[]>>({})
 const loading = ref(true)
-const loadingSlots = reactive({})
-const availableSlots = reactive({})
-const error = ref(null)
-const result = ref(null)
+const loadingSlots = reactive<Record<string, boolean>>({})
+const availableSlots = reactive<Record<string, any[]>>({})
+const error = ref<string | null>(null)
+const result = ref<any>(null)
 const submitting = ref(false)
 const currentStep = ref(0)
 const validationError = ref('')
-const isProcessingWatch = ref(false)
+
+// ==========================================
+// ЗАГРУЗКА ДАННЫХ
+// ==========================================
 
 onMounted(async () => {
   await loadForm()
@@ -233,7 +272,7 @@ const loadForm = async () => {
   try {
     const formId = String(route.params.id)
     const token = localStorage.getItem('token')
-    const headers = {}
+    const headers: Record<string, string> = {}
     if (token) headers['Authorization'] = `Bearer ${token}`
 
     const response = await fetch(`/api/forms/${formId}`, { headers })
@@ -245,42 +284,38 @@ const loadForm = async () => {
       return
     }
 
-    const rawForm = await response.json()
+    const data = await response.json()
     
     form.value = {
-      ID: rawForm.ID || rawForm.id,
-      Title: rawForm.Title || rawForm.title || '',
-      Description: rawForm.Description || rawForm.description || '',
-      IsPublic: rawForm.IsPublic !== undefined ? rawForm.IsPublic : (rawForm.is_public !== undefined ? rawForm.is_public : true),
-      Questions: rawForm.Questions || rawForm.questions || []
+      id: data.id,
+      title: data.title || '',
+      description: data.description || '',
+      is_public: data.is_public ?? false,
+      questions: (data.questions || []).map((q: any) => ({
+        id: q.id,
+        type: q.type || 'text',
+        title: q.title || '',
+        is_required: q.is_required ?? false,
+        dictionary_id: q.dictionary_id || null,
+        is_booking: q.is_booking ?? false,
+        depends_on: q.depends_on || null,
+        options: q.options || [],
+        rating_max: q.rating_max || 5,
+        order_index: q.order_index || 0
+      }))
     }
 
-    // Строгая нормализация при получении данных
-    for (const q of form.value.Questions) {
-      if (!q) continue
-      q.ID = q.ID || q.id
-      q.Type = q.Type || q.type || 'text'
-      q.Title = q.Title || q.title || ''
-      q.DictionaryID = q.DictionaryID || q.dictionary_id || null
-      q.IsBooking = q.IsBooking !== undefined ? q.IsBooking : (q.is_booking !== undefined ? q.is_booking : false)
-      q.required = q.is_required || q.IsRequired || q.Required || false
-      q.Options = q.Options || q.options || []
-      q.RatingMax = q.RatingMax || q.rating_max || 5
-    }
-
-    form.value.Questions.forEach(q => {
-      if (!q) return
-      if (q.Type === 'checkbox') {
-        answers[q.ID] = []
+    for (const q of form.value.questions) {
+      if (q.type === 'checkbox') {
+        answers[q.id] = []
       } else {
-        answers[q.ID] = ''
+        answers[q.id] = ''
       }
-    })
+    }
 
-    for (const q of form.value.Questions) {
-      if (!q) continue
-      if (q.Type === 'dictionary' && q.DictionaryID) {
-        await loadDictionaryItems(q.DictionaryID)
+    for (const q of form.value.questions) {
+      if (q.type === 'dictionary' && q.dictionary_id) {
+        await loadDictionaryItems(q.dictionary_id)
       }
     }
 
@@ -293,12 +328,13 @@ const loadForm = async () => {
   }
 }
 
-const loadDictionaryItems = async (dictionaryId) => {
+const loadDictionaryItems = async (dictionaryId: string) => {
   if (dictionaryItemsCache[dictionaryId]) return
 
   try {
     const token = localStorage.getItem('token')
-    const headers = token ? { 'Authorization': `Bearer ${token}` } : {}
+    const headers: Record<string, string> = {}
+    if (token) headers['Authorization'] = `Bearer ${token}`
 
     const response = await fetch(`/api/dictionaries/${dictionaryId}/items`, { headers })
     if (response.ok) {
@@ -311,248 +347,213 @@ const loadDictionaryItems = async (dictionaryId) => {
   }
 }
 
-const getPreviousDictionaryQuestion = (currentQuestion) => {
-  if (!currentQuestion || currentQuestion.Type !== 'dictionary') return null
-  
-  const questions = form.value?.Questions
-  if (!questions || !Array.isArray(questions)) return null
+// ==========================================
+// ЛОГИКА ВИДИМОСТИ (через depends_on)
+// ==========================================
 
-  const currentIndex = questions.findIndex(q => q?.ID === currentQuestion.ID)
-  if (currentIndex === -1) return null
-
-  for (let i = currentIndex - 1; i >= 0; i--) {
-    const prevQ = questions[i]
-    if (prevQ && prevQ.Type === 'dictionary') {
-      return prevQ
-    }
-  }
-  
-  return null
-}
-
-const isQuestionVisible = (question) => {
+const isQuestionVisible = (question: Question): boolean => {
   if (!question) return false
-  
-  if (question.Type !== 'dictionary') return true
+  if (!question.depends_on) return true
 
-  const firstDictQuestion = form.value?.Questions?.find(q => q?.Type === 'dictionary')
-  if (firstDictQuestion && question.ID === firstDictQuestion.ID) {
-    return true
-  }
-
-  const previousDictQuestion = getPreviousDictionaryQuestion(question)
-  if (!previousDictQuestion) return true
-
-  const parentAnswer = answers[previousDictQuestion.ID]
+  const parentAnswer = answers[question.depends_on]
   return !!parentAnswer && parentAnswer !== ''
 }
 
-const isSelectDisabled = (question) => {
-  if (!question || question.Type !== 'dictionary') return false
+const isSelectDisabled = (question: Question): boolean => {
+  if (!question || question.type !== 'dictionary') return false
 
-  const previousDictQuestion = getPreviousDictionaryQuestion(question)
-  if (previousDictQuestion && isSelectDisabled(previousDictQuestion)) return true
+  if (question.depends_on && !answers[question.depends_on]) return true
 
-  if (question.IsBooking) {
-    const dateQuestion = form.value.Questions.find(q => q?.Type === 'date')
-    if (dateQuestion && !answers[dateQuestion.ID]) return true
-    if (previousDictQuestion && !answers[previousDictQuestion.ID]) return true
-    return false
+  if (question.is_booking) {
+    const dateQuestion = form.value?.questions.find(q => q.type === 'date')
+    if (dateQuestion && !answers[dateQuestion.id]) return true
   }
 
-  if (previousDictQuestion && !answers[previousDictQuestion.ID]) return true
   return false
 }
 
-const getLockReason = (question) => {
+const getLockReason = (question: Question): string => {
   if (!question) return 'Поле заблокировано'
 
-  if (question.IsBooking) {
-    const dateQuestion = form.value.Questions.find(q => q?.Type === 'date')
-    if (dateQuestion && !answers[dateQuestion.ID]) {
+  if (question.is_booking) {
+    const dateQuestion = form.value?.questions.find(q => q.type === 'date')
+    if (dateQuestion && !answers[dateQuestion.id]) {
       return 'Сначала выберите дату'
     }
   }
 
-  const previousDictQuestion = getPreviousDictionaryQuestion(question)
-  if (previousDictQuestion && !answers[previousDictQuestion.ID]) {
-    return `Сначала выберите: "${previousDictQuestion.Title}"`
+  if (question.depends_on) {
+    const parentQuestion = form.value?.questions.find(q => q.id === question.depends_on)
+    if (parentQuestion && !answers[parentQuestion.id]) {
+      return `Сначала выберите: "${parentQuestion.title}"`
+    }
   }
 
   return 'Поле заблокировано'
 }
 
-const isQuestionLoading = (question) => {
-  if (!question || question.Type !== 'dictionary' || !question.DictionaryID) return false
-  return loadingSlots[question.ID] || false
+const isQuestionLoading = (question: Question): boolean => {
+  if (!question || question.type !== 'dictionary' || !question.dictionary_id) return false
+  return loadingSlots[question.id] || false
 }
 
-const getFilteredOptions = (question) => {
-  if (!question || question.Type !== 'dictionary' || !question.DictionaryID) {
-    return question?.Options || []
+// ==========================================
+// КРИТИЧЕСКОЕ ИСПРАВЛЕНИЕ: ФИЛЬТРАЦИЯ ПО parent_id
+// ==========================================
+
+const getFilteredOptions = (question: Question): any[] => {
+  if (!question || question.type !== 'dictionary' || !question.dictionary_id) {
+    return question?.options || []
   }
 
-  const allItems = dictionaryItemsCache[question.DictionaryID] || []
+  const allItems = dictionaryItemsCache[question.dictionary_id] || []
 
-  if (question.IsBooking) {
-    return availableSlots[question.ID] || []
+  if (question.is_booking) {
+    return availableSlots[question.id] || []
   }
 
-  const previousDictQuestion = getPreviousDictionaryQuestion(question)
-  if (!previousDictQuestion) return allItems
+  if (!question.depends_on) return allItems
 
-  const parentAnswer = answers[previousDictQuestion.ID]
+  const parentAnswer = answers[question.depends_on]
   if (!parentAnswer || parentAnswer === '') return []
 
-  return allItems.filter(item => {
-    if (!item?.Metadata?.linked_ids || !Array.isArray(item.Metadata.linked_ids)) {
-      return false
-    }
-    return item.Metadata.linked_ids.includes(parentAnswer)
+  // Строгая фильтрация: элемент остается только если его parent_id совпадает с ответом родителя
+  return allItems.filter((item: DictionaryItem) => {
+    return String(item.parent_id) === String(parentAnswer)
   })
 }
 
-const getOptionValue = (option) => {
+const getOptionValue = (option: any): string => {
   if (typeof option === 'object' && option !== null) {
-    return option.Value || option.ID
+    return option.value || option.id
   }
   return option
 }
 
-const getOptionLabel = (option) => {
+const getOptionLabel = (option: any): string => {
   if (typeof option === 'object' && option !== null) {
-    return option.Name || option.Label || option.Value || ''
+    return option.name || option.label || option.value || ''
   }
   return option
 }
 
-const loadAvailableSlots = async (question) => {
-  if (!question || !question.IsBooking) return
+// ==========================================
+// ЗАГРУЗКА СЛОТОВ БРОНИРОВАНИЯ
+// ==========================================
 
-  const dateQuestion = form.value.Questions.find(q => q?.Type === 'date')
-  if (!dateQuestion || !answers[dateQuestion.ID]) {
-    availableSlots[question.ID] = []
+const loadAvailableSlots = async (question: Question) => {
+  if (!question || !question.is_booking) return
+
+  const dateQuestion = form.value?.questions.find(q => q.type === 'date')
+  if (!dateQuestion || !answers[dateQuestion.id]) {
+    availableSlots[question.id] = []
     return
   }
 
-  const previousDictQuestion = getPreviousDictionaryQuestion(question)
-  if (previousDictQuestion && !answers[previousDictQuestion.ID]) {
-    availableSlots[question.ID] = []
+  if (question.depends_on && !answers[question.depends_on]) {
+    availableSlots[question.id] = []
     return
   }
 
-  loadingSlots[question.ID] = true
+  loadingSlots[question.id] = true
 
   try {
     const token = localStorage.getItem('token')
-    const dateValue = answers[dateQuestion.ID]
+    const dateValue = answers[dateQuestion.id]
 
     const params = new URLSearchParams({ date: dateValue })
 
-    if (previousDictQuestion && answers[previousDictQuestion.ID]) {
-      params.append('teacher_id', answers[previousDictQuestion.ID])
+    if (question.depends_on && answers[question.depends_on]) {
+      params.append('teacher_id', answers[question.depends_on])
     }
 
     const url = `/api/bookings/available?${params.toString()}`
 
     const response = await fetch(url, {
-      headers: { 'Authorization': `Bearer ${token}` }
+      headers: { 'Authorization': `Bearer ${token || ''}` }
     })
 
     if (response.ok) {
       const data = await response.json()
-      availableSlots[question.ID] = data.slots || data || []
-      if (data.busy_slots) {
-        availableSlots[question.ID + '_busy'] = data.busy_slots
-      }
+      availableSlots[question.id] = data.slots || data || []
     } else {
-      availableSlots[question.ID] = []
+      availableSlots[question.id] = []
     }
   } catch (err) {
     console.error('[FillForm] Failed to load available slots:', err)
-    availableSlots[question.ID] = []
+    availableSlots[question.id] = []
   } finally {
-    loadingSlots[question.ID] = false
+    loadingSlots[question.id] = false
   }
 }
 
-watch(
-  () => JSON.stringify(answers),
-  async (newVal, oldVal) => {
-    if (!form.value || newVal === oldVal || isProcessingWatch.value) return
+// ==========================================
+// OPTIMIZED WATCH (без JSON.stringify)
+// ==========================================
 
-    isProcessingWatch.value = true
+watch(answers, (newVal, oldVal) => {
+  if (!form.value || !oldVal) return
 
-    try {
-      const newAnswers = JSON.parse(newVal)
-      const oldAnswers = oldVal ? JSON.parse(oldVal) : {}
-      const questionsToReset = []
+  for (const q of form.value.questions) {
+    if (!q) continue
 
-      for (const q of form.value.Questions) {
-        if (!q) continue
+    if (q.depends_on && newVal[q.depends_on] !== oldVal[q.depends_on]) {
+      const newParentValue = newVal[q.depends_on]
+      const oldParentValue = oldVal[q.depends_on]
 
-        if (q.Type === 'dictionary') {
-          const previousDictQuestion = getPreviousDictionaryQuestion(q)
-          if (previousDictQuestion) {
-            const oldParentValue = oldAnswers[previousDictQuestion.ID]
-            const newParentValue = newAnswers[previousDictQuestion.ID]
-
-            if (oldParentValue !== newParentValue && oldParentValue !== '' && oldParentValue !== null && oldParentValue !== undefined) {
-              if (answers[q.ID] !== '' && answers[q.ID] !== null && answers[q.ID] !== undefined) {
-                questionsToReset.push(q.ID)
-              }
-              if (q.IsBooking) {
-                await loadAvailableSlots(q)
-              }
-            }
-          }
-        }
-
-        if (q.Type === 'date' && newAnswers[q.ID] !== oldAnswers[q.ID]) {
-          for (const resourceQ of form.value.Questions) {
-            if (!resourceQ) continue
-            if (resourceQ.IsBooking && resourceQ.Type === 'dictionary') {
-              if (answers[resourceQ.ID] !== '' && answers[resourceQ.ID] !== null && answers[resourceQ.ID] !== undefined) {
-                questionsToReset.push(resourceQ.ID)
-              }
-              await loadAvailableSlots(resourceQ)
-            }
-          }
+      if (oldParentValue && !newParentValue) {
+        if (answers[q.id] !== '') {
+          answers[q.id] = q.type === 'checkbox' ? [] : ''
         }
       }
 
-      if (questionsToReset.length > 0) {
-        await nextTick()
-        for (const qId of questionsToReset) {
-          if (answers[qId] !== '') {
-            answers[qId] = ''
-          }
-        }
+      if (q.is_booking) {
+        loadAvailableSlots(q)
       }
-    } finally {
-      await nextTick()
-      isProcessingWatch.value = false
     }
-  },
-  { deep: true }
-)
+
+    if (q.type === 'date' && newVal[q.id] !== oldVal[q.id]) {
+      for (const resourceQ of form.value.questions) {
+        if (resourceQ.is_booking && resourceQ.type === 'dictionary') {
+          loadAvailableSlots(resourceQ)
+        }
+      }
+    }
+  }
+
+  nextTick(() => {
+    const currentQ = form.value?.questions[currentStep.value]
+    if (currentQ && !isQuestionVisible(currentQ)) {
+      for (let i = currentStep.value; i >= 0; i--) {
+        const q = form.value?.questions[i]
+        if (q && isQuestionVisible(q)) {
+          currentStep.value = i
+          return
+        }
+      }
+      currentStep.value = 0
+    }
+  })
+}, { deep: true })
+
+// ==========================================
+// ВЫЧИСЛЯЕМЫЕ СВОЙСТВА
+// ==========================================
 
 const visibleQuestionsCount = computed(() => {
-  if (!form.value?.Questions) return 0
+  if (!form.value?.questions) return 0
   let count = 0
-  for (const q of form.value.Questions) {
-    if (!q) continue
+  for (const q of form.value.questions) {
     if (isQuestionVisible(q)) count++
   }
   return count
 })
 
 const currentVisibleStepNumber = computed(() => {
-  if (!form.value?.Questions) return 1
+  if (!form.value?.questions) return 1
   let visibleCount = 0
   for (let i = 0; i <= currentStep.value; i++) {
-    const q = form.value.Questions[i]
-    if (!q) continue
+    const q = form.value.questions[i]
     if (isQuestionVisible(q)) visibleCount++
   }
   return Math.max(1, visibleCount)
@@ -564,17 +565,17 @@ const progressPercent = computed(() => {
   return Math.round((currentVisibleStepNumber.value / total) * 100)
 })
 
+// ==========================================
+// НАВИГАЦИЯ
+// ==========================================
+
 const prevStep = () => {
   validationError.value = ''
   let prevIndex = currentStep.value - 1
 
   while (prevIndex >= 0) {
-    const q = form.value?.Questions?.[prevIndex]
-    if (!q) {
-      prevIndex--
-      continue
-    }
-    if (isQuestionVisible(q)) {
+    const q = form.value?.questions[prevIndex]
+    if (q && isQuestionVisible(q)) {
       break
     }
     prevIndex--
@@ -585,13 +586,13 @@ const prevStep = () => {
 
 const nextStep = () => {
   validationError.value = ''
-  const currentQ = form.value?.Questions?.[currentStep.value]
+  const currentQ = form.value?.questions[currentStep.value]
 
   if (currentQ && isQuestionVisible(currentQ)) {
-    if (currentQ.required) {
-      const answer = answers[currentQ.ID]
+    if (currentQ.is_required) {
+      const answer = answers[currentQ.id]
       if (!answer || (Array.isArray(answer) && answer.length === 0) || answer === '') {
-        validationError.value = `Заполните обязательные поля`
+        validationError.value = 'Заполните обязательные поля'
         return
       }
     }
@@ -603,14 +604,10 @@ const nextStep = () => {
   }
 
   let nextIndex = currentStep.value + 1
-  const totalQuestions = form.value?.Questions?.length || 0
+  const totalQuestions = form.value?.questions.length || 0
 
   while (nextIndex < totalQuestions) {
-    const q = form.value.Questions[nextIndex]
-    if (!q) {
-      nextIndex++
-      continue
-    }
+    const q = form.value.questions[nextIndex]
     if (isQuestionVisible(q)) {
       break
     }
@@ -620,17 +617,20 @@ const nextStep = () => {
   currentStep.value = nextIndex < totalQuestions ? nextIndex : totalQuestions - 1
 }
 
+// ==========================================
+// ОТПРАВКА ОТВЕТОВ
+// ==========================================
+
 const submitResponses = async () => {
   validationError.value = ''
 
-  for (const q of form.value.Questions) {
-    if (!q) continue
+  for (const q of form.value?.questions || []) {
     if (!isQuestionVisible(q)) continue
 
-    if (q.required) {
-      const answer = answers[q.ID]
+    if (q.is_required) {
+      const answer = answers[q.id]
       if (!answer || (Array.isArray(answer) && answer.length === 0) || answer === '') {
-        validationError.value = `Заполните обязательные поля`
+        validationError.value = 'Заполните обязательные поля'
         return
       }
     }
@@ -643,17 +643,15 @@ const submitResponses = async () => {
     const formId = String(route.params.id)
     const token = localStorage.getItem('token')
 
-    const headers = { 'Content-Type': 'application/json' }
+    const headers: Record<string, string> = { 'Content-Type': 'application/json' }
     if (token) headers['Authorization'] = `Bearer ${token}`
 
-    const payloadAnswers = {}
-    for (const q of form.value.Questions) {
-      if (!q) continue
+    const payloadAnswers: Record<string, any> = {}
+    for (const q of form.value?.questions || []) {
       if (!isQuestionVisible(q)) continue
-      
-      const answer = answers[q.ID]
+      const answer = answers[q.id]
       if (answer !== '' && answer !== null && answer !== undefined) {
-        payloadAnswers[q.ID] = answer
+        payloadAnswers[q.id] = answer
       }
     }
 
@@ -670,12 +668,12 @@ const submitResponses = async () => {
       result.value = {
         error: 'Извините, это время только что заняли. Пожалуйста, выберите другое время.'
       }
-      for (const q of form.value.Questions) {
-        if (!q) continue
-        if (q.IsBooking && q.Type === 'dictionary') {
+      for (const q of form.value?.questions || []) {
+        if (q.is_booking && q.type === 'dictionary') {
           await loadAvailableSlots(q)
         }
       }
+      submitting.value = false
       return
     }
 
@@ -687,14 +685,9 @@ const submitResponses = async () => {
 
     result.value = { success: true, message: 'Спасибо! Ваши ответы успешно отправлены.' }
 
-    form.value.Questions.forEach(q => {
-      if (!q) return
-      if (q.Type === 'checkbox') {
-        answers[q.ID] = []
-      } else {
-        answers[q.ID] = ''
-      }
-    })
+    for (const q of form.value?.questions || []) {
+      answers[q.id] = q.type === 'checkbox' ? [] : ''
+    }
 
     Object.keys(availableSlots).forEach(key => {
       availableSlots[key] = []
@@ -705,8 +698,7 @@ const submitResponses = async () => {
     if (import.meta.env.DEV) {
       result.value = {
         warning: 'Демо-режим',
-        message: 'Ответы не отправлены (бэкенд недоступен)',
-        data: { form_id: formId, answers }
+        message: 'Ответы не отправлены (бэкенд недоступен)'
       }
     } else {
       result.value = { error: 'Ошибка сети. Попробуйте позже.' }

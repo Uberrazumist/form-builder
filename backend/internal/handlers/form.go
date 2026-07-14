@@ -1,577 +1,506 @@
 package handlers
 
 import (
-    "encoding/json"
+    "errors"
+    "fmt"
     "net/http"
     "time"
 
     "github.com/gin-gonic/gin"
     "github.com/google/uuid"
-    "gorm.io/datatypes"
     "gorm.io/gorm"
     "gorm.io/gorm/clause"
 
     "github.com/Uberrazumist/form-builder/backend/internal/models"
 )
 
-// ---------- Вспомогательная функция для depends_on ----------
-func parseDependsOn(dep interface{}) *uuid.UUID {
-    if dep == nil {
-        return nil
-    }
-    if str, ok := dep.(string); ok && str != "" {
-        if uid, err := uuid.Parse(str); err == nil {
-            return &uid
-        }
-        return nil
-    }
-    return nil
-}
-
-// ---------- CreateForm ----------
-type CreateQuestionInput struct {
-    Type          string      `json:"type" binding:"required"`
-    Title         string      `json:"title" binding:"required"`
-    Description   string      `json:"description"`
-    OrderIndex    int         `json:"order_index"`
-    IsRequired    bool        `json:"is_required"`
-    Options       []string    `json:"options"`
-    DependsOn     interface{} `json:"depends_on"`
-    DependsValues []string    `json:"depends_values"`
-    DictionaryID  *string     `json:"dictionary_id"`
-    IsBooking     bool        `json:"is_booking"`
-}
-
-type CreateFormInput struct {
-    Title       string                 `json:"title" binding:"required"`
-    Description string                 `json:"description"`
-    IsPublic    bool                   `json:"is_public"`
-    Questions   []CreateQuestionInput  `json:"questions" binding:"required"`
-}
-
+// CreateForm – POST /api/forms
 func CreateForm(db *gorm.DB) gin.HandlerFunc {
     return func(c *gin.Context) {
         userID := c.GetString("userID")
         if userID == "" {
-            c.JSON(http.StatusUnauthorized, gin.H{"error": "Unauthorized"})
+            c.JSON(http.StatusUnauthorized, gin.H{"error": "Требуется авторизация"})
             return
         }
 
-        var input CreateFormInput
+        var input struct {
+            Title       string                 `json:"title" binding:"required"`
+            Description string                 `json:"description"`
+            IsPublished bool                   `json:"is_published"`
+            IsPublic    bool                   `json:"is_public"`
+            Settings    map[string]interface{} `json:"settings"`
+            Questions   []struct {
+                Type         string                 `json:"type" binding:"required"`
+                Title        string                 `json:"title" binding:"required"`
+                Description  string                 `json:"description"`
+                OrderIndex   int                    `json:"order_index"`
+                IsRequired   bool                   `json:"is_required"`
+                Options      map[string]interface{} `json:"options"`
+                Validation   map[string]interface{} `json:"validation"`
+                DependsOn    *string                `json:"depends_on"`
+                DictionaryID *string                `json:"dictionary_id"`
+                IsBooking    bool                   `json:"is_booking"`
+            } `json:"questions"`
+        }
+
         if err := c.ShouldBindJSON(&input); err != nil {
-            c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+            c.JSON(http.StatusBadRequest, gin.H{"error": "Некорректный JSON: " + err.Error()})
             return
         }
 
-        emptyJSON := datatypes.JSON([]byte("{}"))
+        tx := db.Begin()
         form := models.Form{
             Title:       input.Title,
             Description: input.Description,
-            CreatedBy:   uuid.MustParse(userID),
+            CreatedBy:   userID,
+            IsPublished: input.IsPublished,
             IsPublic:    input.IsPublic,
-            Settings:    emptyJSON,
+            Settings:    input.Settings,
         }
-        if err := db.Create(&form).Error; err != nil {
-            c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create form"})
+        if err := tx.Create(&form).Error; err != nil {
+            tx.Rollback()
+            c.JSON(http.StatusInternalServerError, gin.H{"error": "Ошибка создания формы"})
             return
         }
 
-        for _, q := range input.Questions {
-            optsJSON, _ := json.Marshal(q.Options)
-            depValsJSON, _ := json.Marshal(q.DependsValues)
-            dependsOn := parseDependsOn(q.DependsOn)
-
+        for i, q := range input.Questions {
+            // Если depends_on передан как пустая строка, превращаем в nil
+            dependsOn := q.DependsOn
+            if dependsOn != nil && *dependsOn == "" {
+                dependsOn = nil
+            }
             question := models.Question{
-                FormID:        form.ID,
-                Type:          q.Type,
-                Title:         q.Title,
-                Description:   q.Description,
-                OrderIndex:    q.OrderIndex,
-                IsRequired:    q.IsRequired,
-                Options:       datatypes.JSON(optsJSON),
-                DependsValues: datatypes.JSON(depValsJSON),
-                IsBooking:     q.IsBooking,
-                DependsOn:     dependsOn,
+                FormID:       form.ID,
+                Type:         q.Type,
+                Title:        q.Title,
+                Description:  q.Description,
+                OrderIndex:   q.OrderIndex,
+                IsRequired:   q.IsRequired,
+                Options:      q.Options,
+                Validation:   q.Validation,
+                DependsOn:    dependsOn,
+                DictionaryID: q.DictionaryID,
+                IsBooking:    q.IsBooking,
             }
-            if q.DictionaryID != nil {
-                dictUUID := uuid.MustParse(*q.DictionaryID)
-                question.DictionaryID = &dictUUID
+            if question.OrderIndex == 0 {
+                question.OrderIndex = i
             }
-            if err := db.Create(&question).Error; err != nil {
-                c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create question"})
+            if err := tx.Create(&question).Error; err != nil {
+                tx.Rollback()
+                c.JSON(http.StatusInternalServerError, gin.H{"error": "Ошибка создания вопросов"})
                 return
             }
         }
 
+        tx.Commit()
         c.JSON(http.StatusCreated, gin.H{
-            "id":          form.ID,
-            "title":       form.Title,
-            "description": form.Description,
-            "is_public":   form.IsPublic,
+            "id":         form.ID,
+            "title":      form.Title,
+            "created_at": form.CreatedAt,
         })
     }
 }
 
-// ---------- ListForms ----------
-func ListForms(db *gorm.DB) gin.HandlerFunc {
-    return func(c *gin.Context) {
-        userID := c.GetString("userID")
-        if userID == "" {
-            c.JSON(http.StatusUnauthorized, gin.H{"error": "Unauthorized"})
-            return
-        }
-
-        var forms []models.Form
-        if err := db.Where("created_by = ?", userID).Order("created_at desc").Find(&forms).Error; err != nil {
-            c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch forms"})
-            return
-        }
-
-        c.JSON(http.StatusOK, gin.H{"forms": forms})
-    }
-}
-
-// ---------- GetForm (исправлен: поддержка публичных форм для гостей) ----------
+// GetForm – GET /api/forms/:id
 func GetForm(db *gorm.DB) gin.HandlerFunc {
     return func(c *gin.Context) {
         formID := c.Param("id")
-
-        // 1. Загружаем форму с вопросами
         var form models.Form
         if err := db.Preload("Questions").First(&form, "id = ?", formID).Error; err != nil {
-            c.JSON(http.StatusNotFound, gin.H{"error": "Форма не найдена"})
+            if errors.Is(err, gorm.ErrRecordNotFound) {
+                c.JSON(http.StatusNotFound, gin.H{"error": "Форма не найдена"})
+            } else {
+                c.JSON(http.StatusInternalServerError, gin.H{"error": "Ошибка базы данных"})
+            }
             return
         }
 
-        // 2. Получаем userID (может быть пустым для гостей)
         userID := c.GetString("userID")
-
-        // 3. Проверка доступа
         if userID == "" {
-            // Гость: доступ разрешён только если форма публичная
             if !form.IsPublic {
                 c.JSON(http.StatusUnauthorized, gin.H{"error": "Форма приватная, требуется авторизация"})
                 return
             }
-            // Иначе – разрешаем (форма публичная)
         } else {
-            // Авторизованный пользователь: доступ есть, если он владелец ИЛИ форма публичная
-            if form.CreatedBy.String() != userID && !form.IsPublic {
+            if form.CreatedBy != userID && !form.IsPublic {
                 c.JSON(http.StatusForbidden, gin.H{"error": "Доступ запрещён"})
                 return
             }
-            // Иначе – доступ разрешён
         }
 
-        // 4. Формируем ответ с ключом "Questions" (для консистентности с фронтендом)
-        response := gin.H{
-            "ID":          form.ID,
-            "Title":       form.Title,
-            "Description": form.Description,
-            "CreatedBy":   form.CreatedBy,
-            "CreatedAt":   form.CreatedAt,
-            "UpdatedAt":   form.UpdatedAt,
-            "IsPublished": form.IsPublished,
-            "IsPublic":    form.IsPublic,
-            "Settings":    form.Settings,
-            "Questions":   form.Questions,
-        }
-        c.JSON(http.StatusOK, response)
+        c.JSON(http.StatusOK, gin.H{
+            "id":           form.ID,
+            "title":        form.Title,
+            "description":  form.Description,
+            "created_by":   form.CreatedBy,
+            "created_at":   form.CreatedAt,
+            "updated_at":   form.UpdatedAt,
+            "is_published": form.IsPublished,
+            "is_public":    form.IsPublic,
+            "settings":     form.Settings,
+            "questions":    form.Questions,
+        })
     }
 }
 
-// ---------- SubmitResponse (финальная версия) ----------
+// ListForms – GET /api/forms
+func ListForms(db *gorm.DB) gin.HandlerFunc {
+    return func(c *gin.Context) {
+        userID := c.GetString("userID")
+        if userID == "" {
+            c.JSON(http.StatusUnauthorized, gin.H{"error": "Требуется авторизация"})
+            return
+        }
+
+        var forms []models.Form
+        if err := db.Where("created_by = ?", userID).Find(&forms).Error; err != nil {
+            c.JSON(http.StatusInternalServerError, gin.H{"error": "Ошибка получения списка"})
+            return
+        }
+
+        result := make([]gin.H, len(forms))
+        for i, f := range forms {
+            result[i] = gin.H{
+                "id":           f.ID,
+                "title":        f.Title,
+                "description":  f.Description,
+                "created_at":   f.CreatedAt,
+                "updated_at":   f.UpdatedAt,
+                "is_published": f.IsPublished,
+                "is_public":    f.IsPublic,
+            }
+        }
+        c.JSON(http.StatusOK, result)
+    }
+}
+
+// UpdateForm – PUT /api/forms/:id
+func UpdateForm(db *gorm.DB) gin.HandlerFunc {
+    return func(c *gin.Context) {
+        userID := c.GetString("userID")
+        if userID == "" {
+            c.JSON(http.StatusUnauthorized, gin.H{"error": "Требуется авторизация"})
+            return
+        }
+
+        formID := c.Param("id")
+        var form models.Form
+        if err := db.First(&form, "id = ? AND created_by = ?", formID, userID).Error; err != nil {
+            if errors.Is(err, gorm.ErrRecordNotFound) {
+                c.JSON(http.StatusNotFound, gin.H{"error": "Форма не найдена или доступ запрещён"})
+            } else {
+                c.JSON(http.StatusInternalServerError, gin.H{"error": "Ошибка базы данных"})
+            }
+            return
+        }
+
+        var input struct {
+            Title       string                 `json:"title"`
+            Description string                 `json:"description"`
+            IsPublished bool                   `json:"is_published"`
+            IsPublic    bool                   `json:"is_public"`
+            Settings    map[string]interface{} `json:"settings"`
+            Questions   []struct {
+                ID           *string                `json:"id,omitempty"`
+                Type         string                 `json:"type" binding:"required"`
+                Title        string                 `json:"title" binding:"required"`
+                Description  string                 `json:"description"`
+                OrderIndex   int                    `json:"order_index"`
+                IsRequired   bool                   `json:"is_required"`
+                Options      map[string]interface{} `json:"options"`
+                Validation   map[string]interface{} `json:"validation"`
+                DependsOn    *string                `json:"depends_on"`
+                DictionaryID *string                `json:"dictionary_id"`
+                IsBooking    bool                   `json:"is_booking"`
+            } `json:"questions"`
+        }
+
+        if err := c.ShouldBindJSON(&input); err != nil {
+            c.JSON(http.StatusBadRequest, gin.H{"error": "Некорректный JSON: " + err.Error()})
+            return
+        }
+
+        tx := db.Begin()
+        updates := map[string]interface{}{
+            "title":        input.Title,
+            "description":  input.Description,
+            "is_published": input.IsPublished,
+            "is_public":    input.IsPublic,
+            "settings":     input.Settings,
+        }
+        if err := tx.Model(&form).Updates(updates).Error; err != nil {
+            tx.Rollback()
+            c.JSON(http.StatusInternalServerError, gin.H{"error": "Ошибка обновления формы"})
+            return
+        }
+
+        // Удаляем старые вопросы и создаём новые
+        if err := tx.Where("form_id = ?", form.ID).Delete(&models.Question{}).Error; err != nil {
+            tx.Rollback()
+            c.JSON(http.StatusInternalServerError, gin.H{"error": "Ошибка удаления старых вопросов"})
+            return
+        }
+
+        for i, q := range input.Questions {
+            dependsOn := q.DependsOn
+            if dependsOn != nil && *dependsOn == "" {
+                dependsOn = nil
+            }
+            question := models.Question{
+                FormID:       form.ID,
+                Type:         q.Type,
+                Title:        q.Title,
+                Description:  q.Description,
+                OrderIndex:   q.OrderIndex,
+                IsRequired:   q.IsRequired,
+                Options:      q.Options,
+                Validation:   q.Validation,
+                DependsOn:    dependsOn,
+                DictionaryID: q.DictionaryID,
+                IsBooking:    q.IsBooking,
+            }
+            if question.OrderIndex == 0 {
+                question.OrderIndex = i
+            }
+            if err := tx.Create(&question).Error; err != nil {
+                tx.Rollback()
+                c.JSON(http.StatusInternalServerError, gin.H{"error": "Ошибка создания вопросов"})
+                return
+            }
+        }
+
+        tx.Commit()
+        c.JSON(http.StatusOK, gin.H{"message": "Форма обновлена"})
+    }
+}
+
+// DeleteForm – DELETE /api/forms/:id
+func DeleteForm(db *gorm.DB) gin.HandlerFunc {
+    return func(c *gin.Context) {
+        userID := c.GetString("userID")
+        if userID == "" {
+            c.JSON(http.StatusUnauthorized, gin.H{"error": "Требуется авторизация"})
+            return
+        }
+
+        formID := c.Param("id")
+        result := db.Where("id = ? AND created_by = ?", formID, userID).Delete(&models.Form{})
+        if result.Error != nil {
+            c.JSON(http.StatusInternalServerError, gin.H{"error": "Ошибка удаления"})
+            return
+        }
+        if result.RowsAffected == 0 {
+            c.JSON(http.StatusNotFound, gin.H{"error": "Форма не найдена или доступ запрещён"})
+            return
+        }
+        c.JSON(http.StatusOK, gin.H{"message": "Форма удалена"})
+    }
+}
+
+// SubmitResponse – POST /api/responses
 func SubmitResponse(db *gorm.DB) gin.HandlerFunc {
     return func(c *gin.Context) {
+        userID := c.GetString("userID")
+
         var input struct {
             FormID  string                 `json:"form_id" binding:"required"`
             Answers map[string]interface{} `json:"answers" binding:"required"`
         }
         if err := c.ShouldBindJSON(&input); err != nil {
-            c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+            c.JSON(http.StatusBadRequest, gin.H{"error": "Некорректный JSON: " + err.Error()})
             return
         }
 
-        // Получаем форму с вопросами
         var form models.Form
         if err := db.Preload("Questions").First(&form, "id = ?", input.FormID).Error; err != nil {
-            c.JSON(http.StatusNotFound, gin.H{"error": "Form not found"})
-            return
-        }
-
-        // Опциональная авторизация
-        userID := c.GetString("userID")
-        var uid uuid.UUID
-        var isAuthenticated bool
-        if userID != "" {
-            uid = uuid.MustParse(userID)
-            isAuthenticated = true
-        } else {
-            if !form.IsPublic {
-                c.JSON(http.StatusUnauthorized, gin.H{"error": "Для заполнения этой формы требуется авторизация"})
-                return
-            }
-            isAuthenticated = false
-            uid = uuid.Nil
-        }
-
-        // --- Автоопределение вопросов ---
-        var bookingQuestion *models.Question // IsBooking == true, тип dictionary
-        var resourceQuestion *models.Question // родительский справочник для времени
-        var dateQuestion *models.Question     // тип date
-
-        for _, q := range form.Questions {
-            if q.Type == "date" {
-                dateQuestion = &q
-                continue
-            }
-            if q.Type == "dictionary" && q.IsBooking {
-                bookingQuestion = &q
-            }
-        }
-
-        // Если нет бронирования – просто сохраняем ответ
-        if bookingQuestion == nil {
-            answersJSON, _ := json.Marshal(input.Answers)
-            resp := models.Response{
-                FormID:  uuid.MustParse(input.FormID),
-                Answers: datatypes.JSON(answersJSON),
-            }
-            if isAuthenticated {
-                resp.UserID = &uid
-            }
-            if err := db.Create(&resp).Error; err != nil {
-                c.JSON(http.StatusInternalServerError, gin.H{"error": "Не удалось сохранить ответ"})
-                return
-            }
-            c.JSON(http.StatusCreated, gin.H{"message": "Ответ сохранён"})
-            return
-        }
-
-        // --- Извлечение slot_id ---
-        slotVal, ok := input.Answers[bookingQuestion.ID.String()]
-        if !ok {
-            c.JSON(http.StatusBadRequest, gin.H{"error": "Значение слота отсутствует"})
-            return
-        }
-        slotIDStr, ok := slotVal.(string)
-        if !ok || slotIDStr == "" {
-            c.JSON(http.StatusBadRequest, gin.H{"error": "Пожалуйста, выберите корректные значения в справочниках"})
-            return
-        }
-        slotID, err := uuid.Parse(slotIDStr)
-        if err != nil {
-            c.JSON(http.StatusBadRequest, gin.H{"error": "Некорректный UUID слота"})
-            return
-        }
-
-        // --- Определение ресурса через выбранный слот ---
-        var timeDictItem models.DictionaryItem
-        if err := db.First(&timeDictItem, "id = ?", slotID).Error; err != nil {
-            if err == gorm.ErrRecordNotFound {
-                c.JSON(http.StatusBadRequest, gin.H{"error": "Выбранный слот не найден в справочнике времени"})
+            if errors.Is(err, gorm.ErrRecordNotFound) {
+                c.JSON(http.StatusNotFound, gin.H{"error": "Форма не найдена"})
             } else {
-                c.JSON(http.StatusInternalServerError, gin.H{"error": "Ошибка при получении элемента справочника"})
+                c.JSON(http.StatusInternalServerError, gin.H{"error": "Ошибка базы данных"})
             }
             return
         }
-        if timeDictItem.ParentID == nil {
-            c.JSON(http.StatusBadRequest, gin.H{"error": "Слот времени должен быть привязан к ресурсу"})
-            return
-        }
-        var parentItem models.DictionaryItem
-        if err := db.First(&parentItem, "id = ?", timeDictItem.ParentID).Error; err != nil {
-            c.JSON(http.StatusInternalServerError, gin.H{"error": "Ошибка при получении родительского элемента"})
-            return
-        }
-        resourceDictionaryID := parentItem.DictionaryID
 
-        // Ищем вопрос с этим справочником
+        // Проверка прав: если пользователь не авторизован, форма должна быть публичной
+        if userID == "" && !form.IsPublic {
+            c.JSON(http.StatusUnauthorized, gin.H{"error": "Форма приватная, требуется авторизация"})
+            return
+        }
+
+        // Валидация только обязательных вопросов (без проверки depends_on)
         for _, q := range form.Questions {
-            if q.Type == "dictionary" && q.DictionaryID != nil && *q.DictionaryID == resourceDictionaryID {
-                resourceQuestion = &q
-                break
+            if q.IsRequired {
+                val, has := input.Answers[q.ID]
+                if !has || val == nil || val == "" {
+                    c.JSON(http.StatusBadRequest, gin.H{"error": fmt.Sprintf("Вопрос '%s' обязателен", q.Title)})
+                    return
+                }
+                // Для чекбоксов дополнительно проверяем, что массив не пуст
+                if q.Type == "checkbox" {
+                    if arr, ok := val.([]interface{}); ok && len(arr) == 0 {
+                        c.JSON(http.StatusBadRequest, gin.H{"error": fmt.Sprintf("Вопрос '%s' обязателен", q.Title)})
+                        return
+                    }
+                }
             }
         }
-        if resourceQuestion == nil {
-            c.JSON(http.StatusBadRequest, gin.H{"error": "Вопрос ресурса не найден в конфигурации формы"})
+
+        // Поиск вопросов для бронирования
+        var bookingQuestion *models.Question
+        var resourceQuestion *models.Question
+        var dateQuestion *models.Question
+
+        for i := range form.Questions {
+            q := &form.Questions[i]
+            if q.IsBooking && q.DictionaryID != nil {
+                bookingQuestion = q
+            }
+            if q.Type == "date" {
+                dateQuestion = q
+            }
+            if q.DictionaryID != nil && !q.IsBooking {
+                resourceQuestion = q
+            }
+        }
+
+        // Если есть бронирование – выполняем атомарную блокировку
+        if bookingQuestion != nil {
+            if dateQuestion == nil {
+                c.JSON(http.StatusBadRequest, gin.H{"error": "Для бронирования требуется вопрос типа 'date'"})
+                return
+            }
+            dateStr, ok := input.Answers[dateQuestion.ID].(string)
+            if !ok || dateStr == "" {
+                c.JSON(http.StatusBadRequest, gin.H{"error": "Дата не указана или имеет неверный формат"})
+                return
+            }
+            date, err := time.Parse("2006-01-02", dateStr)
+            if err != nil {
+                c.JSON(http.StatusBadRequest, gin.H{"error": "Неверный формат даты, ожидается YYYY-MM-DD"})
+                return
+            }
+
+            slotIDStr, ok := input.Answers[bookingQuestion.ID].(string)
+            if !ok || slotIDStr == "" {
+                c.JSON(http.StatusBadRequest, gin.H{"error": "Не выбран слот для бронирования"})
+                return
+            }
+            slotUUID, err := uuid.Parse(slotIDStr)
+            if err != nil {
+                c.JSON(http.StatusBadRequest, gin.H{"error": "Неверный ID слота"})
+                return
+            }
+
+            var slotItem models.DictionaryItem
+            if err := db.First(&slotItem, "id = ?", slotUUID).Error; err != nil {
+                c.JSON(http.StatusBadRequest, gin.H{"error": "Выбранный слот не найден"})
+                return
+            }
+            if slotItem.ParentID == nil {
+                c.JSON(http.StatusBadRequest, gin.H{"error": "Слот не привязан к ресурсу"})
+                return
+            }
+            resourceID := *slotItem.ParentID
+
+            // Транзакция с FOR UPDATE
+            tx := db.Begin()
+            var existingBooking models.Booking
+            err = tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+                Where("teacher_id = ? AND slot_id = ? AND date = ?", resourceID, slotUUID, date).
+                First(&existingBooking).Error
+
+            if err == nil {
+                tx.Rollback()
+                c.JSON(http.StatusConflict, gin.H{"error": "Выбранное время уже занято, пожалуйста, выберите другой слот"})
+                return
+            } else if !errors.Is(err, gorm.ErrRecordNotFound) {
+                tx.Rollback()
+                c.JSON(http.StatusInternalServerError, gin.H{"error": "Ошибка проверки бронирования"})
+                return
+            }
+
+            // Создаём бронирование
+            booking := models.Booking{
+                FormID:    form.ID,
+                UserID:    userID,
+                TeacherID: resourceID,
+                SlotID:    slotUUID.String(),
+                Date:      date,
+            }
+            if userID == "" {
+                booking.UserID = uuid.Nil.String()
+            }
+            if err := tx.Create(&booking).Error; err != nil {
+                tx.Rollback()
+                c.JSON(http.StatusInternalServerError, gin.H{"error": "Ошибка создания бронирования"})
+                return
+            }
+
+            // Сохраняем ответ
+            var userIDPtr *string
+            if userID != "" {
+                userIDPtr = &userID
+            }
+            response := models.Response{
+                FormID:  form.ID,
+                UserID:  userIDPtr,
+                Answers: input.Answers,
+            }
+            if err := tx.Create(&response).Error; err != nil {
+                tx.Rollback()
+                c.JSON(http.StatusInternalServerError, gin.H{"error": "Ошибка сохранения ответа"})
+                return
+            }
+
+            tx.Commit()
+            c.JSON(http.StatusCreated, gin.H{"message": "Ответ сохранён и бронирование выполнено"})
             return
         }
 
-        // Проверяем наличие даты
-        if dateQuestion == nil {
-            c.JSON(http.StatusBadRequest, gin.H{"error": "Вопрос даты не найден в конфигурации формы"})
+        // Если бронирования нет – просто сохраняем ответ
+        var userIDPtr *string
+        if userID != "" {
+            userIDPtr = &userID
+        }
+        response := models.Response{
+            FormID:  form.ID,
+            UserID:  userIDPtr,
+            Answers: input.Answers,
+        }
+        if err := db.Create(&response).Error; err != nil {
+            c.JSON(http.StatusInternalServerError, gin.H{"error": "Ошибка сохранения ответа"})
             return
         }
-
-        // --- Извлечение resource_id ---
-        resourceVal, ok := input.Answers[resourceQuestion.ID.String()]
-        if !ok {
-            c.JSON(http.StatusBadRequest, gin.H{"error": "Значение ресурса отсутствует"})
-            return
-        }
-        resourceIDStr, ok := resourceVal.(string)
-        if !ok || resourceIDStr == "" {
-            c.JSON(http.StatusBadRequest, gin.H{"error": "Пожалуйста, выберите корректные значения в справочниках"})
-            return
-        }
-        resourceID, err := uuid.Parse(resourceIDStr)
-        if err != nil {
-            c.JSON(http.StatusBadRequest, gin.H{"error": "Некорректный UUID ресурса"})
-            return
-        }
-
-        // --- Извлечение даты ---
-        dateVal, ok := input.Answers[dateQuestion.ID.String()]
-        if !ok {
-            c.JSON(http.StatusBadRequest, gin.H{"error": "Значение даты отсутствует"})
-            return
-        }
-        dateStr, ok := dateVal.(string)
-        if !ok || dateStr == "" {
-            c.JSON(http.StatusBadRequest, gin.H{"error": "Пожалуйста, выберите корректную дату"})
-            return
-        }
-        bookingDate, err := time.Parse("2006-01-02", dateStr)
-        if err != nil {
-            c.JSON(http.StatusBadRequest, gin.H{"error": "Неверный формат даты, используйте YYYY-MM-DD"})
-            return
-        }
-
-        // --- Транзакция с FOR UPDATE ---
-        tx := db.Begin()
-        if tx.Error != nil {
-            c.JSON(http.StatusInternalServerError, gin.H{"error": "Не удалось начать транзакцию"})
-            return
-        }
-
-        var existingBooking models.Booking
-        err = tx.Clauses(clause.Locking{Strength: "UPDATE"}).
-            Where("teacher_id = ? AND slot_id = ? AND date = ?", resourceID, slotID, bookingDate).
-            First(&existingBooking).Error
-
-        if err == nil {
-            tx.Rollback()
-            c.JSON(http.StatusConflict, gin.H{"error": "Выбранное время уже занято, пожалуйста, выберите другой слот"})
-            return
-        } else if err != gorm.ErrRecordNotFound {
-            tx.Rollback()
-            c.JSON(http.StatusInternalServerError, gin.H{"error": "Ошибка проверки доступности слота"})
-            return
-        }
-
-        // Создаём бронирование
-        booking := models.Booking{
-            FormID:    uuid.MustParse(input.FormID),
-            UserID:    uid,
-            TeacherID: resourceID,
-            SlotID:    slotID,
-            Date:      bookingDate,
-        }
-        if err := tx.Create(&booking).Error; err != nil {
-            tx.Rollback()
-            c.JSON(http.StatusInternalServerError, gin.H{"error": "Не удалось создать бронирование"})
-            return
-        }
-
-        // Сохраняем ответ
-        answersJSON, _ := json.Marshal(input.Answers)
-        resp := models.Response{
-            FormID:  uuid.MustParse(input.FormID),
-            Answers: datatypes.JSON(answersJSON),
-        }
-        if isAuthenticated {
-            resp.UserID = &uid
-        }
-        if err := tx.Create(&resp).Error; err != nil {
-            tx.Rollback()
-            c.JSON(http.StatusInternalServerError, gin.H{"error": "Не удалось сохранить ответ"})
-            return
-        }
-
-        if err := tx.Commit().Error; err != nil {
-            c.JSON(http.StatusInternalServerError, gin.H{"error": "Не удалось завершить транзакцию"})
-            return
-        }
-
-        c.JSON(http.StatusCreated, gin.H{"message": "Ответ успешно сохранён"})
+        c.JSON(http.StatusCreated, gin.H{"message": "Ответ сохранён"})
     }
 }
 
-// ---------- GetResponses ----------
+// GetResponses – GET /api/forms/:id/responses (только владелец)
 func GetResponses(db *gorm.DB) gin.HandlerFunc {
     return func(c *gin.Context) {
-        formID := c.Param("id")
         userID := c.GetString("userID")
         if userID == "" {
-            c.JSON(http.StatusUnauthorized, gin.H{"error": "Unauthorized"})
+            c.JSON(http.StatusUnauthorized, gin.H{"error": "Требуется авторизация"})
             return
         }
 
+        formID := c.Param("id")
         var form models.Form
-        if err := db.First(&form, "id = ?", formID).Error; err != nil {
-            c.JSON(http.StatusNotFound, gin.H{"error": "Form not found"})
-            return
-        }
-        if form.CreatedBy.String() != userID {
-            c.JSON(http.StatusForbidden, gin.H{"error": "Only owner can view responses"})
+        if err := db.First(&form, "id = ? AND created_by = ?", formID, userID).Error; err != nil {
+            if errors.Is(err, gorm.ErrRecordNotFound) {
+                c.JSON(http.StatusNotFound, gin.H{"error": "Форма не найдена или доступ запрещён"})
+            } else {
+                c.JSON(http.StatusInternalServerError, gin.H{"error": "Ошибка базы данных"})
+            }
             return
         }
 
         var responses []models.Response
         if err := db.Where("form_id = ?", formID).Find(&responses).Error; err != nil {
-            c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch responses"})
+            c.JSON(http.StatusInternalServerError, gin.H{"error": "Ошибка получения ответов"})
             return
         }
 
-        c.JSON(http.StatusOK, gin.H{"responses": responses})
-    }
-}
-
-// ---------- UpdateForm ----------
-type UpdateQuestionInput struct {
-    ID            *uuid.UUID `json:"id"`
-    Type          string     `json:"type" binding:"required"`
-    Title         string     `json:"title" binding:"required"`
-    Description   string     `json:"description"`
-    OrderIndex    int        `json:"order_index"`
-    IsRequired    bool       `json:"is_required"`
-    Options       []string   `json:"options"`
-    DependsOn     interface{} `json:"depends_on"`
-    DependsValues []string   `json:"depends_values"`
-    DictionaryID  *string    `json:"dictionary_id"`
-    IsBooking     bool       `json:"is_booking"`
-}
-
-type UpdateFormInput struct {
-    Title       string               `json:"title" binding:"required"`
-    Description string               `json:"description"`
-    IsPublic    bool                 `json:"is_public"`
-    Questions   []UpdateQuestionInput `json:"questions" binding:"required"`
-}
-
-func UpdateForm(db *gorm.DB) gin.HandlerFunc {
-    return func(c *gin.Context) {
-        userID := c.GetString("userID")
-        if userID == "" {
-            c.JSON(http.StatusUnauthorized, gin.H{"error": "Unauthorized"})
-            return
-        }
-
-        formID := c.Param("id")
-        var form models.Form
-        if err := db.First(&form, "id = ? AND created_by = ?", formID, userID).Error; err != nil {
-            c.JSON(http.StatusNotFound, gin.H{"error": "Form not found or access denied"})
-            return
-        }
-
-        var input UpdateFormInput
-        if err := c.ShouldBindJSON(&input); err != nil {
-            c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-            return
-        }
-
-        form.Title = input.Title
-        form.Description = input.Description
-        form.IsPublic = input.IsPublic
-        if err := db.Save(&form).Error; err != nil {
-            c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to update form"})
-            return
-        }
-
-        // Обновление вопросов
-        var existingQuestions []models.Question
-        db.Where("form_id = ?", form.ID).Find(&existingQuestions)
-        existingIDs := make(map[uuid.UUID]bool)
-        for _, q := range existingQuestions {
-            existingIDs[q.ID] = true
-        }
-
-        incomingIDs := make(map[uuid.UUID]bool)
-        for _, qInput := range input.Questions {
-            if qInput.ID != nil {
-                incomingIDs[*qInput.ID] = true
-            }
-        }
-
-        for _, q := range existingQuestions {
-            if !incomingIDs[q.ID] {
-                db.Delete(&q)
-            }
-        }
-
-        for _, qInput := range input.Questions {
-            optsJSON, _ := json.Marshal(qInput.Options)
-            depValsJSON, _ := json.Marshal(qInput.DependsValues)
-            dependsOn := parseDependsOn(qInput.DependsOn)
-
-            if qInput.ID != nil {
-                var question models.Question
-                if err := db.First(&question, "id = ? AND form_id = ?", qInput.ID, form.ID).Error; err != nil {
-                    c.JSON(http.StatusBadRequest, gin.H{"error": "Question not found"})
-                    return
-                }
-                question.Type = qInput.Type
-                question.Title = qInput.Title
-                question.Description = qInput.Description
-                question.OrderIndex = qInput.OrderIndex
-                question.IsRequired = qInput.IsRequired
-                question.Options = datatypes.JSON(optsJSON)
-                question.DependsValues = datatypes.JSON(depValsJSON)
-                question.IsBooking = qInput.IsBooking
-                question.DependsOn = dependsOn
-                if qInput.DictionaryID != nil {
-                    dictUUID := uuid.MustParse(*qInput.DictionaryID)
-                    question.DictionaryID = &dictUUID
-                } else {
-                    question.DictionaryID = nil
-                }
-                db.Save(&question)
-            } else {
-                newQ := models.Question{
-                    FormID:        form.ID,
-                    Type:          qInput.Type,
-                    Title:         qInput.Title,
-                    Description:   qInput.Description,
-                    OrderIndex:    qInput.OrderIndex,
-                    IsRequired:    qInput.IsRequired,
-                    Options:       datatypes.JSON(optsJSON),
-                    DependsValues: datatypes.JSON(depValsJSON),
-                    IsBooking:     qInput.IsBooking,
-                    DependsOn:     dependsOn,
-                }
-                if qInput.DictionaryID != nil {
-                    dictUUID := uuid.MustParse(*qInput.DictionaryID)
-                    newQ.DictionaryID = &dictUUID
-                }
-                db.Create(&newQ)
-            }
-        }
-
-        c.JSON(http.StatusOK, gin.H{"message": "Form updated successfully"})
-    }
-}
-
-// ---------- DeleteForm ----------
-func DeleteForm(db *gorm.DB) gin.HandlerFunc {
-    return func(c *gin.Context) {
-        userID := c.GetString("userID")
-        if userID == "" {
-            c.JSON(http.StatusUnauthorized, gin.H{"error": "Unauthorized"})
-            return
-        }
-
-        formID := c.Param("id")
-        var form models.Form
-        if err := db.First(&form, "id = ? AND created_by = ?", formID, userID).Error; err != nil {
-            c.JSON(http.StatusNotFound, gin.H{"error": "Form not found or access denied"})
-            return
-        }
-
-        db.Where("form_id = ?", form.ID).Delete(&models.Response{})
-        db.Where("form_id = ?", form.ID).Delete(&models.Question{})
-        db.Delete(&form)
-
-        c.JSON(http.StatusOK, gin.H{"message": "Form deleted successfully"})
+        c.JSON(http.StatusOK, responses)
     }
 }
