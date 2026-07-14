@@ -64,7 +64,7 @@
             <p>Пока нет вопросов. Нажмите "Добавить вопрос", чтобы начать.</p>
           </div>
 
-          <div v-for="(question, index) in formData.questions" :key="question.id || index" class="question-card">
+          <div v-for="(question, index) in formData.questions" :key="question.ID || index" class="question-card">
             <div class="question-header">
               <span class="question-number">Вопрос {{ index + 1 }}</span>
               <button type="button" class="btn-remove" @click="removeQuestion(index)">
@@ -74,7 +74,7 @@
 
             <div class="form-group">
               <label>Тип вопроса</label>
-              <select v-model="question.type">
+              <select v-model="question.Type">
                 <option value="text">Текст (одна строка)</option>
                 <option value="textarea">Текст (несколько строк)</option>
                 <option value="radio">Один вариант (radio)</option>
@@ -88,10 +88,10 @@
 
             <div class="form-group">
               <label>Текст вопроса <span class="required">*</span></label>
-              <input type="text" v-model="question.title" required placeholder="Введите вопрос" />
+              <input type="text" v-model="question.Title" required placeholder="Введите вопрос" />
             </div>
 
-            <div v-if="['radio', 'checkbox', 'select'].includes(question.type)" class="options-section">
+            <div v-if="['radio', 'checkbox', 'select'].includes(question.Type)" class="options-section">
               <label>Варианты ответов</label>
               <div class="options-list">
                 <div v-for="(option, optIndex) in question.options" :key="optIndex" class="option-item">
@@ -107,18 +107,18 @@
               </button>
             </div>
 
-            <div v-if="question.type === 'date'" class="info-hint">
+            <div v-if="question.Type === 'date'" class="info-hint">
               <Icon name="calendar" />
               <span>Пользователь сможет выбрать дату через стандартный календарь браузера</span>
             </div>
 
-            <div v-if="question.type === 'dictionary'" class="dictionary-section">
+            <div v-if="question.Type === 'dictionary'" class="dictionary-section">
               <div class="form-group">
                 <label>
                   <Icon name="book" />
                   Выберите справочник <span class="required">*</span>
                 </label>
-                <select v-model="question.dictionary_id">
+                <select v-model="question.DictionaryID">
                   <option :value="null" disabled>— выберите справочник —</option>
                   <option v-for="dict in dictionaries" :key="dict.ID" :value="dict.ID">{{ dict.Name }}</option>
                 </select>
@@ -134,7 +134,7 @@
 
               <div class="checkbox-group">
                 <label class="checkbox-label">
-                  <input type="checkbox" v-model="question.is_booking" />
+                  <input type="checkbox" v-model="question.IsBooking" />
                   <span class="checkbox-text">
                     Проверять занятость
                     <span class="hint">Включите, если это запись. Занятые варианты будут отмечены.</span>
@@ -143,7 +143,7 @@
               </div>
             </div>
 
-            <div v-if="question.type === 'rating'" class="form-group">
+            <div v-if="question.Type === 'rating'" class="form-group">
               <label>Максимальный рейтинг</label>
               <select v-model="question.rating_max">
                 <option :value="5">5 звёзд</option>
@@ -153,7 +153,7 @@
 
             <div class="checkbox-group">
               <label class="checkbox-label">
-                <input type="checkbox" v-model="question.is_required" />
+                <input type="checkbox" v-model="question.required" />
                 <span class="checkbox-text">Обязательный вопрос</span>
               </label>
             </div>
@@ -256,49 +256,27 @@ const loadForm = async () => {
 
     const rawForm = await response.json()
 
-    // 1. Сквозная нормализация формы (Защита от PascalCase/snake_case)
-    const normalizedForm = {
-      ID: rawForm.ID || rawForm.id,
-      Title: rawForm.Title || rawForm.title || '',
-      Description: rawForm.Description || rawForm.description || '',
-      IsPublic: rawForm.IsPublic !== undefined ? rawForm.IsPublic : (rawForm.is_public !== undefined ? rawForm.is_public : true),
-      Questions: rawForm.Questions || rawForm.questions || []
-    }
-
-    // 2. Нормализация вопросов
-    for (const q of normalizedForm.Questions) {
-      if (!q) continue
-      q.ID = q.ID || q.id
-      q.Type = q.Type || q.type || 'text'
-      q.Title = q.Title || q.title || ''
-      q.DictionaryID = q.DictionaryID || q.dictionary_id
-      q.is_required = q.is_required || q.IsRequired || q.Required || false
-      q.IsRequired = q.is_required
-      q.Options = q.Options || q.options || []
-      q.RatingMax = q.RatingMax || q.rating_max || 5
-      q.IsBooking = q.IsBooking || q.is_booking || false
-    }
-
-    formData.title = normalizedForm.Title
-    formData.description = normalizedForm.Description
-    formData.is_public = normalizedForm.IsPublic
+    formData.title = rawForm.Title || rawForm.title || ''
+    formData.description = rawForm.Description || rawForm.description || ''
+    formData.is_public = rawForm.IsPublic !== undefined ? rawForm.IsPublic : (rawForm.is_public !== undefined ? rawForm.is_public : false)
     
-    formData.questions = normalizedForm.Questions
-      .sort((a, b) => (a.OrderIndex || 0) - (b.OrderIndex || 0))
-      .map(q => {
-        if (!q) return null
-        return {
-          id: q.ID,
-          type: q.Type,
-          title: q.Title,
-          is_required: q.is_required,
-          options: q.Options,
-          rating_max: q.RatingMax,
-          dictionary_id: q.DictionaryID,
-          is_booking: q.IsBooking
-        }
-      })
-      .filter(q => q !== null)
+    const rawQuestions = rawForm.Questions || rawForm.questions || []
+    
+    // 1. Схема Нормализации при ПОЛУЧЕНИИ данных
+    formData.questions = rawQuestions.map((q, idx) => {
+      if (!q) return null
+      return {
+        ID: q.ID || q.id,
+        Type: q.Type || q.type || 'text',
+        Title: q.Title || q.title || '',
+        DictionaryID: q.DictionaryID || q.dictionary_id || null,
+        IsBooking: q.IsBooking !== undefined ? q.IsBooking : (q.is_booking !== undefined ? q.is_booking : false),
+        required: q.is_required || q.IsRequired || q.Required || false,
+        options: q.Options || q.options || [],
+        rating_max: q.RatingMax || q.rating_max || 5,
+        OrderIndex: q.OrderIndex || q.order_index || idx
+      }
+    }).filter(q => q !== null)
 
   } catch (err) {
     error.value = 'Ошибка сети. Попробуйте позже.'
@@ -309,13 +287,15 @@ const loadForm = async () => {
 
 const addQuestion = () => {
   formData.questions.push({
-    type: 'text',
-    title: '',
-    is_required: false,
+    ID: crypto.randomUUID(),
+    Type: 'text',
+    Title: '',
+    DictionaryID: null,
+    IsBooking: false,
+    required: false,
     options: [],
     rating_max: 5,
-    dictionary_id: null,
-    is_booking: false
+    OrderIndex: formData.questions.length
   })
 }
 
@@ -343,16 +323,16 @@ const submitForm = async () => {
   }
 
   for (const q of formData.questions) {
-    if (!q?.title?.trim()) {
+    if (!q?.Title?.trim()) {
       result.value = { error: 'Все вопросы должны иметь текст' }
       return
     }
-    if (['radio', 'checkbox', 'select'].includes(q?.type) && q.options.length === 0) {
-      result.value = { error: `Вопрос "${q.title}" должен иметь хотя бы один вариант ответа` }
+    if (['radio', 'checkbox', 'select'].includes(q?.Type) && (!q.options || q.options.length === 0)) {
+      result.value = { error: `Вопрос "${q.Title}" должен иметь хотя бы один вариант ответа` }
       return
     }
-    if (q?.type === 'dictionary' && !q.dictionary_id) {
-      result.value = { error: `Вопрос "${q.title}" должен иметь выбранный справочник` }
+    if (q?.Type === 'dictionary' && !q.DictionaryID) {
+      result.value = { error: `Вопрос "${q.Title}" должен иметь выбранный справочник` }
       return
     }
   }
@@ -364,22 +344,23 @@ const submitForm = async () => {
     const formId = String(route.params.id)
     const token = localStorage.getItem('token')
 
+    // 2. Схема Сборки при ОТПРАВКЕ данных (строгий snake_case)
     const payload = {
-      Title: formData.title,
-      Description: formData.description,
-      IsPublic: formData.is_public,
-      Questions: formData.questions.map((q, idx) => {
+      title: formData.title,
+      description: formData.description,
+      is_public: formData.is_public,
+      questions: formData.questions.map((q, idx) => {
         if (!q) return null
         return {
-          ID: q.id || undefined,
-          Type: q.type,
-          Title: q.title,
-          is_required: q.is_required,
-          Options: q.options,
-          RatingMax: q.rating_max,
-          DictionaryID: q.type === 'dictionary' ? q.dictionary_id : null,
-          IsBooking: q.type === 'dictionary' ? q.is_booking : false,
-          OrderIndex: idx
+          id: q.ID,
+          type: q.Type,
+          title: q.Title,
+          order_index: q.OrderIndex || q.order_index || idx,
+          is_required: q.required,
+          dictionary_id: q.DictionaryID,
+          is_booking: q.IsBooking,
+          options: q.options,
+          rating_max: q.rating_max
         }
       }).filter(q => q !== null)
     }

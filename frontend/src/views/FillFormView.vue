@@ -37,25 +37,29 @@
           v-if="index === currentStep && isQuestionVisible(question)"
           class="question-block"
         >
-          <label class="question-label">
+          <label :for="question.ID" class="question-label">
             <span class="question-number">{{ currentVisibleStepNumber }}.</span>
             {{ question.Title }}
-            <span v-if="question.is_required" class="required">*</span>
+            <span v-if="question.required" class="required">*</span>
           </label>
 
           <input
             v-if="question.Type === 'text'"
+            :id="question.ID"
+            :name="question.ID"
             type="text"
             v-model="answers[question.ID]"
-            :required="question.is_required"
+            :required="question.required"
             placeholder="Введите ответ"
             class="form-input"
           />
 
           <textarea
             v-else-if="question.Type === 'textarea'"
+            :id="question.ID"
+            :name="question.ID"
             v-model="answers[question.ID]"
-            :required="question.is_required"
+            :required="question.required"
             placeholder="Введите ответ"
             rows="4"
             class="form-textarea"
@@ -63,26 +67,30 @@
 
           <input
             v-else-if="question.Type === 'date'"
+            :id="question.ID"
+            :name="question.ID"
             type="date"
             v-model="answers[question.ID]"
-            :required="question.is_required"
+            :required="question.required"
             class="form-input"
           />
 
           <select
             v-else-if="question.Type === 'dictionary'"
+            :id="question.ID"
+            :name="question.ID"
             v-model="answers[question.ID]"
-            :required="question.is_required"
+            :required="question.required"
             :disabled="isSelectDisabled(question)"
             class="form-select"
           >
             <option value="" disabled>— выберите значение —</option>
             <option
-              v-for="option in getFilteredOptions(question)"
-              :key="getOptionValue(option)"
-              :value="getOptionValue(option)"
+              v-for="item in getFilteredOptions(question)"
+              :key="getOptionValue(item)"
+              :value="getOptionValue(item)"
             >
-              {{ getOptionLabel(option) }}
+              {{ getOptionLabel(item) }}
             </option>
           </select>
 
@@ -103,19 +111,39 @@
 
           <div v-else-if="question.Type === 'radio'" class="options-group">
             <label v-for="(option, optIdx) in question.Options" :key="optIdx" class="option-label">
-              <input type="radio" :name="'q_' + question.ID" :value="option" v-model="answers[question.ID]" :required="question.is_required" />
+              <input 
+                type="radio" 
+                :id="question.ID + '_' + optIdx" 
+                :name="question.ID" 
+                :value="option" 
+                v-model="answers[question.ID]" 
+                :required="question.required" 
+              />
               <span>{{ option }}</span>
             </label>
           </div>
 
           <div v-else-if="question.Type === 'checkbox'" class="options-group">
             <label v-for="(option, optIdx) in question.Options" :key="optIdx" class="option-label">
-              <input type="checkbox" :value="option" v-model="answers[question.ID]" />
+              <input 
+                type="checkbox" 
+                :id="question.ID + '_' + optIdx" 
+                :name="question.ID" 
+                :value="option" 
+                v-model="answers[question.ID]" 
+              />
               <span>{{ option }}</span>
             </label>
           </div>
 
-          <select v-else-if="question.Type === 'select'" v-model="answers[question.ID]" :required="question.is_required" class="form-select">
+          <select 
+            v-else-if="question.Type === 'select'" 
+            :id="question.ID" 
+            :name="question.ID" 
+            v-model="answers[question.ID]" 
+            :required="question.required" 
+            class="form-select"
+          >
             <option value="" disabled>Выберите вариант</option>
             <option v-for="(option, optIdx) in question.Options" :key="optIdx" :value="option">{{ option }}</option>
           </select>
@@ -219,7 +247,6 @@ const loadForm = async () => {
 
     const rawForm = await response.json()
     
-    // 1. Сквозная нормализация формы (Защита от PascalCase/snake_case)
     form.value = {
       ID: rawForm.ID || rawForm.id,
       Title: rawForm.Title || rawForm.title || '',
@@ -228,21 +255,19 @@ const loadForm = async () => {
       Questions: rawForm.Questions || rawForm.questions || []
     }
 
-    // 2. Нормализация вопросов
+    // 1. Схема Нормализации при ПОЛУЧЕНИИ данных
     for (const q of form.value.Questions) {
       if (!q) continue
       q.ID = q.ID || q.id
       q.Type = q.Type || q.type || 'text'
       q.Title = q.Title || q.title || ''
-      q.DictionaryID = q.DictionaryID || q.dictionary_id
-      q.is_required = q.is_required || q.IsRequired || q.Required || false
-      q.IsRequired = q.is_required
+      q.DictionaryID = q.DictionaryID || q.dictionary_id || null
+      q.IsBooking = q.IsBooking !== undefined ? q.IsBooking : (q.is_booking !== undefined ? q.is_booking : false)
+      q.required = q.is_required || q.IsRequired || q.Required || false
       q.Options = q.Options || q.options || []
       q.RatingMax = q.RatingMax || q.rating_max || 5
-      q.IsBooking = q.IsBooking || q.is_booking || false
     }
 
-    // 3. Инициализация answers строго по нормализованным q.ID
     form.value.Questions.forEach(q => {
       if (!q) return
       if (q.Type === 'checkbox') {
@@ -252,7 +277,6 @@ const loadForm = async () => {
       }
     })
 
-    // Загрузка элементов справочников
     for (const q of form.value.Questions) {
       if (!q) continue
       if (q.Type === 'dictionary' && q.DictionaryID) {
@@ -260,15 +284,7 @@ const loadForm = async () => {
       }
     }
 
-    // 4. Умный старт: находим индекс первого видимого вопроса
-    let firstVisibleIndex = 0
-    for (let i = 0; i < form.value.Questions.length; i++) {
-      if (isQuestionVisible(form.value.Questions[i])) {
-        firstVisibleIndex = i
-        break
-      }
-    }
-    currentStep.value = firstVisibleIndex
+    currentStep.value = 0
 
   } catch (err) {
     error.value = 'Ошибка сети. Попробуйте позже.'
@@ -329,14 +345,15 @@ const findParentQuestion = (question) => {
   return form.value?.Questions?.find(q => q?.Type === 'dictionary' && q?.DictionaryID === parentDictId) || null
 }
 
-const isQuestionVisible = (question) => {
-  if (!question) return false
-  if (question.Type !== 'dictionary') return true
+const isQuestionVisible = (q) => {
+  if (!q) return false
+  if (q.Type !== 'dictionary') return true
 
-  const parentQuestion = findParentQuestion(question)
+  const firstDict = form.value?.Questions?.find(item => item?.Type === 'dictionary')
+  if (firstDict && q.ID === firstDict.ID) return true
+
+  const parentQuestion = findParentQuestion(q)
   if (!parentQuestion) return true
-
-  if (!isQuestionVisible(parentQuestion)) return false
 
   const parentAnswer = answers[parentQuestion.ID]
   return !!parentAnswer && parentAnswer !== ''
@@ -583,8 +600,7 @@ const nextStep = () => {
   const currentQ = form.value?.Questions?.[currentStep.value]
 
   if (currentQ && isQuestionVisible(currentQ)) {
-    const isRequired = currentQ.is_required || false
-    if (isRequired) {
+    if (currentQ.required) {
       const answer = answers[currentQ.ID]
       if (!answer || (Array.isArray(answer) && answer.length === 0) || answer === '') {
         validationError.value = `Заполните обязательные поля`
@@ -623,8 +639,7 @@ const submitResponses = async () => {
     if (!q) continue
     if (!isQuestionVisible(q)) continue
 
-    const isRequired = q.is_required || false
-    if (isRequired) {
+    if (q.required) {
       const answer = answers[q.ID]
       if (!answer || (Array.isArray(answer) && answer.length === 0) || answer === '') {
         validationError.value = `Заполните обязательные поля`
@@ -697,14 +712,7 @@ const submitResponses = async () => {
       availableSlots[key] = []
     })
 
-    let firstVisibleIndex = 0
-    for (let i = 0; i < form.value.Questions.length; i++) {
-      if (isQuestionVisible(form.value.Questions[i])) {
-        firstVisibleIndex = i
-        break
-      }
-    }
-    currentStep.value = firstVisibleIndex
+    currentStep.value = 0
   } catch (err) {
     if (import.meta.env.DEV) {
       result.value = {
