@@ -77,18 +77,6 @@ func CreateForm(db *gorm.DB) gin.HandlerFunc {
         }
 
         for i, q := range input.Questions {
-            optionsJSON, err := json.Marshal(q.Options)
-            if err != nil {
-                tx.Rollback()
-                c.JSON(http.StatusBadRequest, gin.H{"error": "Ошибка сериализации вариантов"})
-                return
-            }
-            validationJSON, err := json.Marshal(q.Validation)
-            if err != nil {
-                tx.Rollback()
-                c.JSON(http.StatusBadRequest, gin.H{"error": "Ошибка сериализации валидации"})
-                return
-            }
             var dependsOn *uuid.UUID
             if q.DependsOn != nil && *q.DependsOn != "" {
                 parsed, err := uuid.Parse(*q.DependsOn)
@@ -108,6 +96,19 @@ func CreateForm(db *gorm.DB) gin.HandlerFunc {
                     return
                 }
                 dictID = &parsed
+            }
+
+            optionsJSON, err := json.Marshal(q.Options)
+            if err != nil {
+                tx.Rollback()
+                c.JSON(http.StatusBadRequest, gin.H{"error": "Ошибка сериализации вариантов"})
+                return
+            }
+            validationJSON, err := json.Marshal(q.Validation)
+            if err != nil {
+                tx.Rollback()
+                c.JSON(http.StatusBadRequest, gin.H{"error": "Ошибка сериализации валидации"})
+                return
             }
 
             question := models.Question{
@@ -303,18 +304,6 @@ func UpdateForm(db *gorm.DB) gin.HandlerFunc {
         }
 
         for i, q := range input.Questions {
-            optionsJSON, err := json.Marshal(q.Options)
-            if err != nil {
-                tx.Rollback()
-                c.JSON(http.StatusBadRequest, gin.H{"error": "Ошибка сериализации вариантов"})
-                return
-            }
-            validationJSON, err := json.Marshal(q.Validation)
-            if err != nil {
-                tx.Rollback()
-                c.JSON(http.StatusBadRequest, gin.H{"error": "Ошибка сериализации валидации"})
-                return
-            }
             var dependsOn *uuid.UUID
             if q.DependsOn != nil && *q.DependsOn != "" {
                 parsed, err := uuid.Parse(*q.DependsOn)
@@ -334,6 +323,19 @@ func UpdateForm(db *gorm.DB) gin.HandlerFunc {
                     return
                 }
                 dictID = &parsed
+            }
+
+            optionsJSON, err := json.Marshal(q.Options)
+            if err != nil {
+                tx.Rollback()
+                c.JSON(http.StatusBadRequest, gin.H{"error": "Ошибка сериализации вариантов"})
+                return
+            }
+            validationJSON, err := json.Marshal(q.Validation)
+            if err != nil {
+                tx.Rollback()
+                c.JSON(http.StatusBadRequest, gin.H{"error": "Ошибка сериализации валидации"})
+                return
             }
 
             question := models.Question{
@@ -421,20 +423,23 @@ func SubmitResponse(db *gorm.DB) gin.HandlerFunc {
             return
         }
 
-        // Валидация только обязательных вопросов (без проверки depends_on)
+        // Валидация обязательных вопросов с корректной обработкой строк и массивов
         for _, q := range form.Questions {
             if q.IsRequired {
-                val, has := input.Answers[q.ID.String()] // q.ID – uuid.UUID, преобразуем в строку
-                if !has || val == nil || val == "" {
+                val, has := input.Answers[q.ID.String()]
+                if !has || val == nil {
                     c.JSON(http.StatusBadRequest, gin.H{"error": fmt.Sprintf("Вопрос '%s' обязателен", q.Title)})
                     return
                 }
-                // Для чекбоксов дополнительно проверяем, что массив не пуст
-                if q.Type == "checkbox" {
-                    if arr, ok := val.([]interface{}); ok && len(arr) == 0 {
-                        c.JSON(http.StatusBadRequest, gin.H{"error": fmt.Sprintf("Вопрос '%s' обязателен", q.Title)})
-                        return
-                    }
+                // Проверка на пустую строку для текстовых полей
+                if str, ok := val.(string); ok && str == "" {
+                    c.JSON(http.StatusBadRequest, gin.H{"error": fmt.Sprintf("Вопрос '%s' обязателен", q.Title)})
+                    return
+                }
+                // Проверка на пустой массив для чекбоксов
+                if arr, ok := val.([]interface{}); ok && len(arr) == 0 {
+                    c.JSON(http.StatusBadRequest, gin.H{"error": fmt.Sprintf("Вопрос '%s' обязателен", q.Title)})
+                    return
                 }
             }
         }
@@ -459,7 +464,6 @@ func SubmitResponse(db *gorm.DB) gin.HandlerFunc {
                 c.JSON(http.StatusBadRequest, gin.H{"error": "Для бронирования требуется вопрос типа 'date'"})
                 return
             }
-            // Извлекаем дату
             dateStr, ok := input.Answers[dateQuestion.ID.String()].(string)
             if !ok || dateStr == "" {
                 c.JSON(http.StatusBadRequest, gin.H{"error": "Дата не указана или имеет неверный формат"})
@@ -471,7 +475,6 @@ func SubmitResponse(db *gorm.DB) gin.HandlerFunc {
                 return
             }
 
-            // Извлекаем ID слота
             slotIDStr, ok := input.Answers[bookingQuestion.ID.String()].(string)
             if !ok || slotIDStr == "" {
                 c.JSON(http.StatusBadRequest, gin.H{"error": "Не выбран слот для бронирования"})
