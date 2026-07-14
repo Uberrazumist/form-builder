@@ -255,7 +255,7 @@ const loadForm = async () => {
       Questions: rawForm.Questions || rawForm.questions || []
     }
 
-    // 1. Схема Нормализации при ПОЛУЧЕНИИ данных
+    // Строгая нормализация при получении данных
     for (const q of form.value.Questions) {
       if (!q) continue
       q.ID = q.ID || q.id
@@ -311,68 +311,56 @@ const loadDictionaryItems = async (dictionaryId) => {
   }
 }
 
-const findParentQuestion = (question) => {
-  if (!question || question.Type !== 'dictionary' || !question.DictionaryID) return null
+const getPreviousDictionaryQuestion = (currentQuestion) => {
+  if (!currentQuestion || currentQuestion.Type !== 'dictionary') return null
+  
+  const questions = form.value?.Questions
+  if (!questions || !Array.isArray(questions)) return null
 
-  const items = dictionaryItemsCache[question.DictionaryID]
-  if (!items || items.length === 0) return null
+  const currentIndex = questions.findIndex(q => q?.ID === currentQuestion.ID)
+  if (currentIndex === -1) return null
 
-  let sampleLinkedId = null
-  for (const item of items) {
-    if (!item) continue
-    const firstLinkedId = item?.Metadata?.linked_ids?.[0]
-    if (firstLinkedId) {
-      sampleLinkedId = firstLinkedId
-      break
+  for (let i = currentIndex - 1; i >= 0; i--) {
+    const prevQ = questions[i]
+    if (prevQ && prevQ.Type === 'dictionary') {
+      return prevQ
     }
   }
-
-  if (!sampleLinkedId) return null
-
-  let parentDictId = null
-  for (const dictId in dictionaryItemsCache) {
-    if (dictId === question.DictionaryID) continue
-    const dictItems = dictionaryItemsCache[dictId] || []
-    const found = dictItems.find(i => i?.ID === sampleLinkedId)
-    if (found) {
-      parentDictId = dictId
-      break
-    }
-  }
-
-  if (!parentDictId) return null
-
-  return form.value?.Questions?.find(q => q?.Type === 'dictionary' && q?.DictionaryID === parentDictId) || null
+  
+  return null
 }
 
-const isQuestionVisible = (q) => {
-  if (!q) return false
-  if (q.Type !== 'dictionary') return true
+const isQuestionVisible = (question) => {
+  if (!question) return false
+  
+  if (question.Type !== 'dictionary') return true
 
-  const firstDict = form.value?.Questions?.find(item => item?.Type === 'dictionary')
-  if (firstDict && q.ID === firstDict.ID) return true
+  const firstDictQuestion = form.value?.Questions?.find(q => q?.Type === 'dictionary')
+  if (firstDictQuestion && question.ID === firstDictQuestion.ID) {
+    return true
+  }
 
-  const parentQuestion = findParentQuestion(q)
-  if (!parentQuestion) return true
+  const previousDictQuestion = getPreviousDictionaryQuestion(question)
+  if (!previousDictQuestion) return true
 
-  const parentAnswer = answers[parentQuestion.ID]
+  const parentAnswer = answers[previousDictQuestion.ID]
   return !!parentAnswer && parentAnswer !== ''
 }
 
 const isSelectDisabled = (question) => {
   if (!question || question.Type !== 'dictionary') return false
 
-  const parentQuestion = findParentQuestion(question)
-  if (parentQuestion && isSelectDisabled(parentQuestion)) return true
+  const previousDictQuestion = getPreviousDictionaryQuestion(question)
+  if (previousDictQuestion && isSelectDisabled(previousDictQuestion)) return true
 
   if (question.IsBooking) {
     const dateQuestion = form.value.Questions.find(q => q?.Type === 'date')
     if (dateQuestion && !answers[dateQuestion.ID]) return true
-    if (parentQuestion && !answers[parentQuestion.ID]) return true
+    if (previousDictQuestion && !answers[previousDictQuestion.ID]) return true
     return false
   }
 
-  if (parentQuestion && !answers[parentQuestion.ID]) return true
+  if (previousDictQuestion && !answers[previousDictQuestion.ID]) return true
   return false
 }
 
@@ -386,9 +374,9 @@ const getLockReason = (question) => {
     }
   }
 
-  const parentQuestion = findParentQuestion(question)
-  if (parentQuestion && !answers[parentQuestion.ID]) {
-    return `Сначала выберите: "${parentQuestion.Title}"`
+  const previousDictQuestion = getPreviousDictionaryQuestion(question)
+  if (previousDictQuestion && !answers[previousDictQuestion.ID]) {
+    return `Сначала выберите: "${previousDictQuestion.Title}"`
   }
 
   return 'Поле заблокировано'
@@ -410,11 +398,11 @@ const getFilteredOptions = (question) => {
     return availableSlots[question.ID] || []
   }
 
-  const parentQuestion = findParentQuestion(question)
-  if (!parentQuestion) return allItems
+  const previousDictQuestion = getPreviousDictionaryQuestion(question)
+  if (!previousDictQuestion) return allItems
 
-  const parentAnswer = answers[parentQuestion.ID]
-  if (!parentAnswer) return []
+  const parentAnswer = answers[previousDictQuestion.ID]
+  if (!parentAnswer || parentAnswer === '') return []
 
   return allItems.filter(item => {
     if (!item?.Metadata?.linked_ids || !Array.isArray(item.Metadata.linked_ids)) {
@@ -447,8 +435,8 @@ const loadAvailableSlots = async (question) => {
     return
   }
 
-  const parentQuestion = findParentQuestion(question)
-  if (parentQuestion && !answers[parentQuestion.ID]) {
+  const previousDictQuestion = getPreviousDictionaryQuestion(question)
+  if (previousDictQuestion && !answers[previousDictQuestion.ID]) {
     availableSlots[question.ID] = []
     return
   }
@@ -461,8 +449,8 @@ const loadAvailableSlots = async (question) => {
 
     const params = new URLSearchParams({ date: dateValue })
 
-    if (parentQuestion && answers[parentQuestion.ID]) {
-      params.append('teacher_id', answers[parentQuestion.ID])
+    if (previousDictQuestion && answers[previousDictQuestion.ID]) {
+      params.append('teacher_id', answers[previousDictQuestion.ID])
     }
 
     const url = `/api/bookings/available?${params.toString()}`
@@ -504,10 +492,10 @@ watch(
         if (!q) continue
 
         if (q.Type === 'dictionary') {
-          const parentQuestion = findParentQuestion(q)
-          if (parentQuestion) {
-            const oldParentValue = oldAnswers[parentQuestion.ID]
-            const newParentValue = newAnswers[parentQuestion.ID]
+          const previousDictQuestion = getPreviousDictionaryQuestion(q)
+          if (previousDictQuestion) {
+            const oldParentValue = oldAnswers[previousDictQuestion.ID]
+            const newParentValue = newAnswers[previousDictQuestion.ID]
 
             if (oldParentValue !== newParentValue && oldParentValue !== '' && oldParentValue !== null && oldParentValue !== undefined) {
               if (answers[q.ID] !== '' && answers[q.ID] !== null && answers[q.ID] !== undefined) {

@@ -131,29 +131,39 @@ func ListForms(db *gorm.DB) gin.HandlerFunc {
     }
 }
 
-// ---------- GetForm (с правильным маппингом поля Questions) ----------
+// ---------- GetForm (исправлен: поддержка публичных форм для гостей) ----------
 func GetForm(db *gorm.DB) gin.HandlerFunc {
     return func(c *gin.Context) {
         formID := c.Param("id")
-        userID := c.GetString("userID")
 
+        // 1. Загружаем форму с вопросами
         var form models.Form
         if err := db.Preload("Questions").First(&form, "id = ?", formID).Error; err != nil {
-            c.JSON(http.StatusNotFound, gin.H{"error": "Form not found"})
+            c.JSON(http.StatusNotFound, gin.H{"error": "Форма не найдена"})
             return
         }
 
-        // Проверка доступа
-        if userID != "" && form.CreatedBy.String() == userID {
-            // владелец
-        } else if form.IsPublic {
-            // публичная
+        // 2. Получаем userID (может быть пустым для гостей)
+        userID := c.GetString("userID")
+
+        // 3. Проверка доступа
+        if userID == "" {
+            // Гость: доступ разрешён только если форма публичная
+            if !form.IsPublic {
+                c.JSON(http.StatusUnauthorized, gin.H{"error": "Форма приватная, требуется авторизация"})
+                return
+            }
+            // Иначе – разрешаем (форма публичная)
         } else {
-            c.JSON(http.StatusForbidden, gin.H{"error": "Access denied"})
-            return
+            // Авторизованный пользователь: доступ есть, если он владелец ИЛИ форма публичная
+            if form.CreatedBy.String() != userID && !form.IsPublic {
+                c.JSON(http.StatusForbidden, gin.H{"error": "Доступ запрещён"})
+                return
+            }
+            // Иначе – доступ разрешён
         }
 
-        // Формируем ответ с ключом "Questions" (с заглавной)
+        // 4. Формируем ответ с ключом "Questions" (для консистентности с фронтендом)
         response := gin.H{
             "ID":          form.ID,
             "Title":       form.Title,
@@ -164,7 +174,7 @@ func GetForm(db *gorm.DB) gin.HandlerFunc {
             "IsPublished": form.IsPublished,
             "IsPublic":    form.IsPublic,
             "Settings":    form.Settings,
-            "Questions":   form.Questions, // здесь ключ с заглавной
+            "Questions":   form.Questions,
         }
         c.JSON(http.StatusOK, response)
     }

@@ -262,7 +262,7 @@ const loadForm = async () => {
     
     const rawQuestions = rawForm.Questions || rawForm.questions || []
     
-    // 1. Схема Нормализации при ПОЛУЧЕНИИ данных
+    // Строгая нормализация при получении данных
     formData.questions = rawQuestions.map((q, idx) => {
       if (!q) return null
       return {
@@ -344,7 +344,7 @@ const submitForm = async () => {
     const formId = String(route.params.id)
     const token = localStorage.getItem('token')
 
-    // 2. Схема Сборки при ОТПРАВКЕ данных (строгий snake_case)
+    // Строгая сборка payload в snake_case перед отправкой
     const payload = {
       title: formData.title,
       description: formData.description,
