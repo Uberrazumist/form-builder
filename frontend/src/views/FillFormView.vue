@@ -296,7 +296,7 @@ const loadForm = async () => {
         type: q.type || 'text',
         title: q.title || '',
         is_required: q.is_required ?? false,
-        dictionary_id: q.dictionary_id || null,
+        dictionary_id: q.dictionary_id || null, // СТРОГО snake_case
         is_booking: q.is_booking ?? false,
         depends_on: q.depends_on || null,
         options: q.options || [],
@@ -313,8 +313,13 @@ const loadForm = async () => {
       }
     }
 
+    // КРИТИЧЕСКОЕ ИСПРАВЛЕНИЕ: Загрузка справочников с жестким гвардом
     for (const q of form.value.questions) {
-      if (q.type === 'dictionary' && q.dictionary_id) {
+      if (q.type === 'dictionary') {
+        // Гвард предотвращает запросы с 'undefined' или 'null'
+        if (!q.dictionary_id || String(q.dictionary_id) === 'undefined' || String(q.dictionary_id) === 'null') {
+          continue
+        }
         await loadDictionaryItems(q.dictionary_id)
       }
     }
