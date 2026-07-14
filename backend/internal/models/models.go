@@ -18,7 +18,7 @@ type User struct {
     CreatedAt time.Time `json:"created_at"`
 }
 
-// EmailVerification – для подтверждения email и сброса пароля
+// EmailVerification – подтверждение email и сброс пароля
 type EmailVerification struct {
     ID        uuid.UUID `gorm:"type:uuid;primaryKey;default:gen_random_uuid()" json:"id"`
     Email     string    `gorm:"not null;index" json:"email"`
@@ -64,7 +64,7 @@ type Question struct {
 type Response struct {
     ID        uuid.UUID      `gorm:"type:uuid;primaryKey;default:gen_random_uuid()" json:"id"`
     FormID    uuid.UUID      `gorm:"type:uuid;not null;index" json:"form_id"`
-    UserID    *uuid.UUID     `gorm:"type:uuid" json:"user_id,omitempty"`
+    UserID    *uuid.UUID     `gorm:"type:uuid" json:"user_id,omitempty"` // NULL для гостей
     Answers   datatypes.JSON `gorm:"type:jsonb" json:"answers"`
     CreatedAt time.Time      `json:"created_at"`
 }
@@ -95,20 +95,20 @@ type DictionaryItem struct {
 type Booking struct {
     ID        uuid.UUID `gorm:"type:uuid;primaryKey;default:gen_random_uuid()" json:"id"`
     FormID    uuid.UUID `gorm:"type:uuid;not null;index" json:"form_id"`
-    UserID    uuid.UUID `gorm:"type:uuid;not null" json:"user_id"`
+    UserID    uuid.UUID `gorm:"type:uuid;not null" json:"user_id"` // для гостей – uuid.Nil
     TeacherID uuid.UUID `gorm:"type:uuid;not null;index" json:"teacher_id"`
     SlotID    uuid.UUID `gorm:"type:uuid;not null;index" json:"slot_id"`
     Date      time.Time `gorm:"type:date;not null;index" json:"date"`
     CreatedAt time.Time `json:"created_at"`
 }
 
-// Class – класс (для совместимости)
+// Class – класс (для обратной совместимости)
 type Class struct {
     ID   uuid.UUID `gorm:"type:uuid;primaryKey;default:gen_random_uuid()" json:"id"`
     Name string    `gorm:"unique;not null" json:"name"`
 }
 
-// Teacher – учитель (для совместимости)
+// Teacher – учитель (для обратной совместимости)
 type Teacher struct {
     ID        uuid.UUID      `gorm:"type:uuid;primaryKey;default:gen_random_uuid()" json:"id"`
     FullName  string         `gorm:"not null" json:"full_name"`
@@ -118,7 +118,7 @@ type Teacher struct {
     UpdatedAt time.Time      `json:"updated_at"`
 }
 
-// TimeSlot – временной слот (для совместимости)
+// TimeSlot – временной слот (для обратной совместимости)
 type TimeSlot struct {
     ID        uuid.UUID `gorm:"type:uuid;primaryKey;default:gen_random_uuid()" json:"id"`
     TeacherID uuid.UUID `gorm:"type:uuid;index" json:"teacher_id"`
