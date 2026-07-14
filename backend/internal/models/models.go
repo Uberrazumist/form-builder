@@ -43,7 +43,7 @@ type Form struct {
     Questions   []Question     `gorm:"foreignKey:FormID;constraint:OnDelete:CASCADE" json:"questions"`
 }
 
-// Question – модель вопроса
+// Question – модель вопроса (исправлено: убраны omitempty для DependsOn и DictionaryID)
 type Question struct {
     ID            uuid.UUID      `gorm:"type:uuid;primaryKey;default:gen_random_uuid()" json:"id"`
     FormID        uuid.UUID      `gorm:"type:uuid;not null;index" json:"form_id"`
@@ -54,9 +54,9 @@ type Question struct {
     IsRequired    bool           `gorm:"default:false" json:"is_required"`
     Options       datatypes.JSON `gorm:"type:jsonb" json:"options,omitempty"`
     Validation    datatypes.JSON `gorm:"type:jsonb" json:"validation,omitempty"`
-    DependsOn     *uuid.UUID     `gorm:"type:uuid;index" json:"depends_on,omitempty"`
+    DependsOn     *uuid.UUID     `gorm:"type:uuid;index" json:"depends_on"`          // omitempty удалён
     DependsValues datatypes.JSON `gorm:"type:jsonb" json:"depends_values,omitempty"`
-    DictionaryID  *uuid.UUID     `gorm:"type:uuid;index" json:"dictionary_id,omitempty"`
+    DictionaryID  *uuid.UUID     `gorm:"type:uuid;index" json:"dictionary_id"`       // omitempty удалён
     IsBooking     bool           `gorm:"default:false" json:"is_booking"`
 }
 
@@ -64,7 +64,7 @@ type Question struct {
 type Response struct {
     ID        uuid.UUID      `gorm:"type:uuid;primaryKey;default:gen_random_uuid()" json:"id"`
     FormID    uuid.UUID      `gorm:"type:uuid;not null;index" json:"form_id"`
-    UserID    *uuid.UUID     `gorm:"type:uuid" json:"user_id,omitempty"` // NULL для гостей
+    UserID    *uuid.UUID     `gorm:"type:uuid" json:"user_id,omitempty"`
     Answers   datatypes.JSON `gorm:"type:jsonb" json:"answers"`
     CreatedAt time.Time      `json:"created_at"`
 }
@@ -79,11 +79,11 @@ type Dictionary struct {
     Items       []DictionaryItem `gorm:"foreignKey:DictionaryID;constraint:OnDelete:CASCADE" json:"items,omitempty"`
 }
 
-// DictionaryItem – элемент справочника
+// DictionaryItem – элемент справочника (исправлено: убран omitempty для ParentID)
 type DictionaryItem struct {
     ID           uuid.UUID      `gorm:"type:uuid;primaryKey;default:gen_random_uuid()" json:"id"`
     DictionaryID uuid.UUID      `gorm:"type:uuid;not null;index" json:"dictionary_id"`
-    ParentID     *uuid.UUID     `gorm:"type:uuid;index" json:"parent_id,omitempty"`
+    ParentID     *uuid.UUID     `gorm:"type:uuid;index" json:"parent_id"`            // omitempty удалён
     Name         string         `gorm:"not null" json:"name"`
     Code         string         `json:"code"`
     Metadata     datatypes.JSON `gorm:"type:jsonb" json:"metadata,omitempty"`
@@ -95,7 +95,7 @@ type DictionaryItem struct {
 type Booking struct {
     ID        uuid.UUID `gorm:"type:uuid;primaryKey;default:gen_random_uuid()" json:"id"`
     FormID    uuid.UUID `gorm:"type:uuid;not null;index" json:"form_id"`
-    UserID    uuid.UUID `gorm:"type:uuid;not null" json:"user_id"` // для гостей – uuid.Nil
+    UserID    uuid.UUID `gorm:"type:uuid;not null" json:"user_id"`
     TeacherID uuid.UUID `gorm:"type:uuid;not null;index" json:"teacher_id"`
     SlotID    uuid.UUID `gorm:"type:uuid;not null;index" json:"slot_id"`
     Date      time.Time `gorm:"type:date;not null;index" json:"date"`
