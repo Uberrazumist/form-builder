@@ -421,14 +421,15 @@ func SubmitResponse(db *gorm.DB) gin.HandlerFunc {
             return
         }
 
-        // Валидация только обязательных вопросов
+        // Валидация только обязательных вопросов (без проверки depends_on)
         for _, q := range form.Questions {
             if q.IsRequired {
-                val, has := input.Answers[q.ID.String()]
+                val, has := input.Answers[q.ID.String()] // q.ID – uuid.UUID, преобразуем в строку
                 if !has || val == nil || val == "" {
                     c.JSON(http.StatusBadRequest, gin.H{"error": fmt.Sprintf("Вопрос '%s' обязателен", q.Title)})
                     return
                 }
+                // Для чекбоксов дополнительно проверяем, что массив не пуст
                 if q.Type == "checkbox" {
                     if arr, ok := val.([]interface{}); ok && len(arr) == 0 {
                         c.JSON(http.StatusBadRequest, gin.H{"error": fmt.Sprintf("Вопрос '%s' обязателен", q.Title)})
@@ -438,6 +439,7 @@ func SubmitResponse(db *gorm.DB) gin.HandlerFunc {
             }
         }
 
+        // Поиск вопросов для бронирования
         var bookingQuestion *models.Question
         var dateQuestion *models.Question
 
@@ -451,11 +453,13 @@ func SubmitResponse(db *gorm.DB) gin.HandlerFunc {
             }
         }
 
+        // Если есть бронирование – выполняем атомарную блокировку
         if bookingQuestion != nil {
             if dateQuestion == nil {
                 c.JSON(http.StatusBadRequest, gin.H{"error": "Для бронирования требуется вопрос типа 'date'"})
                 return
             }
+            // Извлекаем дату
             dateStr, ok := input.Answers[dateQuestion.ID.String()].(string)
             if !ok || dateStr == "" {
                 c.JSON(http.StatusBadRequest, gin.H{"error": "Дата не указана или имеет неверный формат"})
@@ -467,6 +471,7 @@ func SubmitResponse(db *gorm.DB) gin.HandlerFunc {
                 return
             }
 
+            // Извлекаем ID слота
             slotIDStr, ok := input.Answers[bookingQuestion.ID.String()].(string)
             if !ok || slotIDStr == "" {
                 c.JSON(http.StatusBadRequest, gin.H{"error": "Не выбран слот для бронирования"})
@@ -520,9 +525,9 @@ func SubmitResponse(db *gorm.DB) gin.HandlerFunc {
 
             booking := models.Booking{
                 FormID:    form.ID,
-                UserID:    userID,          // uuid.UUID
-                TeacherID: resourceID,      // uuid.UUID
-                SlotID:    slotUUID,        // uuid.UUID
+                UserID:    userID,
+                TeacherID: resourceID,
+                SlotID:    slotUUID,
                 Date:      date,
             }
             if err := tx.Create(&booking).Error; err != nil {
@@ -558,7 +563,7 @@ func SubmitResponse(db *gorm.DB) gin.HandlerFunc {
             return
         }
 
-        // Без бронирования
+        // Если бронирования нет – просто сохраняем ответ
         var userIDPtr *uuid.UUID
         if userIDStr != "" {
             parsed, _ := uuid.Parse(userIDStr)
