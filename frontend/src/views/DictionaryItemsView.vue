@@ -127,12 +127,19 @@
               <div v-if="selectedParentDictionaryId" class="parent-items-section">
                 <label>Родительский элемент</label>
                 <div class="parent-items-list">
+                  <label class="parent-item-checkbox">
+                    <input
+                      type="radio"
+                      value="__none__"
+                      v-model="formData.parent_id"
+                    />
+                    <span>Без родителя</span>
+                  </label>
                   <label v-for="item in parentDictionaryItems" :key="item.id" class="parent-item-checkbox">
                     <input
                       type="radio"
                       :value="item.id"
                       v-model="formData.parent_id"
-                      :checked="formData.parent_id === item.id"
                     />
                     <span>{{ item.name }}</span>
                   </label>
@@ -419,7 +426,7 @@ const saveItem = async () => {
     const payload = {
       name: formData.name,
       code: formData.code || undefined,
-      parent_id: formData.parent_id || null,
+      parent_id: formData.parent_id === '__none__' ? null : formData.parent_id,
       metadata: metadata || undefined
     }
 
@@ -505,8 +512,8 @@ const deleteItem = async (itemId: string) => {
 .back-link svg { width: 14px; height: 14px; }
 .page-title { font-size: 2rem; font-weight: 700; color: var(--text); letter-spacing: -0.02em; margin-bottom: 0.5rem; }
 .page-subtitle { color: var(--text-muted); font-size: 1rem; }
-.btn-primary { display: inline-flex; align-items: center; gap: 0.5rem; padding: 0.75rem 1.5rem; background: var(--primary); color: #fff; border: none; border-radius: var(--radius-sm); font-size: 0.95rem; font-weight: 600; cursor: pointer; transition: all 0.2s; box-shadow: var(--shadow-sm); }
-.btn-primary:hover:not(:disabled) { background: var(--primary-hover, #243f72); transform: translateY(-1px); }
+.btn-primary { display: inline-flex; align-items: center; gap: 0.4rem; padding: 0.6rem 1rem; background: var(--primary); color: #fff; border: none; border-radius: var(--radius-sm); font-size: 0.9rem; font-weight: 600; cursor: pointer; transition: all 0.2s; }
+.btn-primary:hover:not(:disabled) { background: var(--primary-hover, #243f72); }
 .btn-primary:disabled { opacity: 0.7; cursor: not-allowed; }
 .btn-primary svg { width: 16px; height: 16px; }
 .empty-state { text-align: center; padding: 3rem 2rem; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); }

@@ -232,14 +232,19 @@ func UpdateDictionaryItem(db *gorm.DB) gin.HandlerFunc {
         if input.Code != "" {
             item.Code = input.Code
         }
-        if input.ParentID != nil && *input.ParentID != "" {
-            pid, err := uuid.Parse(*input.ParentID)
-            if err != nil {
-                c.JSON(http.StatusBadRequest, gin.H{"error": "Неверный формат parent_id"})
-                return
+        if input.ParentID != nil {
+            if *input.ParentID == "" {
+                item.ParentID = nil
+            } else {
+                pid, err := uuid.Parse(*input.ParentID)
+                if err != nil {
+                    c.JSON(http.StatusBadRequest, gin.H{"error": "Неверный формат parent_id"})
+                    return
+                }
+                item.ParentID = &pid
             }
-            item.ParentID = &pid
         } else {
+            // Явно сбрасываем parent_id в nil, если фронтенд прислал parent_id: null
             item.ParentID = nil
         }
         if input.Metadata != nil {
