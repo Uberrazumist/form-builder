@@ -107,31 +107,33 @@ func main() {
         c.Next()
     })
     {
-        // Формы
+        // Формы (создание, список, обновление, удаление — только авторизованным)
         auth.POST("/forms", handlers.CreateForm(db))
         auth.GET("/forms", handlers.ListForms(db))
-        auth.GET("/forms/:id", handlers.GetForm(db))
         auth.PUT("/forms/:id", handlers.UpdateForm(db))
         auth.DELETE("/forms/:id", handlers.DeleteForm(db))
-        auth.POST("/responses", handlers.SubmitResponse(db))
         auth.GET("/forms/:id/responses", handlers.GetResponses(db))
 
-        // Справочники
+        // Справочники (только авторизованным)
         auth.GET("/dictionaries", handlers.ListDictionaries(db))
         auth.POST("/dictionaries", handlers.CreateDictionary(db))
         auth.GET("/dictionaries/:id", handlers.GetDictionary(db))
         auth.PUT("/dictionaries/:id", handlers.UpdateDictionary(db))
         auth.DELETE("/dictionaries/:id", handlers.DeleteDictionary(db))
 
-        // Элементы справочников
+        // Элементы справочников (только авторизованным)
         auth.GET("/dictionaries/:id/items", handlers.ListDictionaryItems(db))
         auth.POST("/dictionaries/:id/items", handlers.CreateDictionaryItem(db))
         auth.PUT("/dictionaries/:id/items/:itemId", handlers.UpdateDictionaryItem(db))
         auth.DELETE("/dictionaries/:id/items/:itemId", handlers.DeleteDictionaryItem(db))
 
-        // Бронирование
+        // Бронирование (только авторизованным)
         auth.GET("/bookings/available", handlers.GetAvailableSlots(db))
     }
+
+    // Публичные маршруты — не требуют авторизации (проверка isPublic внутри хендлеров)
+    r.GET("/forms/:id", handlers.GetForm(db))
+    r.POST("/responses", handlers.SubmitResponse(db))
 
     log.Println("Server starting on :8080")
     r.Run(":8080")

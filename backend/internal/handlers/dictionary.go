@@ -140,7 +140,7 @@ func CreateDictionaryItem(db *gorm.DB) gin.HandlerFunc {
         dictID := c.Param("id")
         var input struct {
             ParentID *string                `json:"parent_id"`
-            Name     string                 `json:"Name" binding:"required"` // с заглавной
+            Name     string                 `json:"name" binding:"required"`
             Code     string                 `json:"code"`
             Metadata map[string]interface{} `json:"metadata"`
         }
