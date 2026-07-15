@@ -1,4 +1,4 @@
-<template>
+k<template>
   <div class="edit-form-page">
     <div v-if="loading" class="loading-state">
       <div class="spinner"></div>
@@ -64,7 +64,7 @@
             <p>Пока нет вопросов. Нажмите "Добавить вопрос", чтобы начать.</p>
           </div>
 
-          <div v-for="(question, index) in formData.questions" :key="question.ID || index" class="question-card">
+          <div v-for="(question, index) in formData.questions" :key="question.id || index" class="question-card">
             <div class="question-header">
               <span class="question-number">Вопрос {{ index + 1 }}</span>
               <button type="button" class="btn-remove" @click="removeQuestion(index)">
@@ -74,7 +74,7 @@
 
             <div class="form-group">
               <label>Тип вопроса</label>
-              <select v-model="question.Type">
+              <select v-model="question.type">
                 <option value="text">Текст (одна строка)</option>
                 <option value="textarea">Текст (несколько строк)</option>
                 <option value="radio">Один вариант (radio)</option>
@@ -88,10 +88,10 @@
 
             <div class="form-group">
               <label>Текст вопроса <span class="required">*</span></label>
-              <input type="text" v-model="question.Title" required placeholder="Введите вопрос" />
+              <input type="text" v-model="question.title" required placeholder="Введите вопрос" />
             </div>
 
-            <div v-if="['radio', 'checkbox', 'select'].includes(question.Type)" class="options-section">
+            <div v-if="['radio', 'checkbox', 'select'].includes(question.type)" class="options-section">
               <label>Варианты ответов</label>
               <div class="options-list">
                 <div v-for="(option, optIndex) in question.options" :key="optIndex" class="option-item">
@@ -107,20 +107,20 @@
               </button>
             </div>
 
-            <div v-if="question.Type === 'date'" class="info-hint">
+            <div v-if="question.type === 'date'" class="info-hint">
               <Icon name="calendar" />
               <span>Пользователь сможет выбрать дату через стандартный календарь браузера</span>
             </div>
 
-            <div v-if="question.Type === 'dictionary'" class="dictionary-section">
+            <div v-if="question.type === 'dictionary'" class="dictionary-section">
               <div class="form-group">
                 <label>
                   <Icon name="book" />
                   Выберите справочник <span class="required">*</span>
                 </label>
-                <select v-model="question.DictionaryID">
+                <select v-model="question.dictionary_id">
                   <option :value="null" disabled>— выберите справочник —</option>
-                  <option v-for="dict in dictionaries" :key="dict.ID" :value="dict.ID">{{ dict.Name }}</option>
+                  <option v-for="dict in dictionaries" :key="dict.id" :value="dict.id">{{ dict.name }}</option>
                 </select>
                 <span class="hint" v-if="dictionaries.length === 0">
                   Сначала создайте справочник в разделе «Справочники»
@@ -134,7 +134,7 @@
 
               <div class="checkbox-group">
                 <label class="checkbox-label">
-                  <input type="checkbox" v-model="question.IsBooking" />
+                  <input type="checkbox" v-model="question.is_booking" />
                   <span class="checkbox-text">
                     Проверять занятость
                     <span class="hint">Включите, если это запись. Занятые варианты будут отмечены.</span>
@@ -143,7 +143,7 @@
               </div>
             </div>
 
-            <div v-if="question.Type === 'rating'" class="form-group">
+            <div v-if="question.type === 'rating'" class="form-group">
               <label>Максимальный рейтинг</label>
               <select v-model="question.rating_max">
                 <option :value="5">5 звёзд</option>
@@ -153,7 +153,7 @@
 
             <div class="checkbox-group">
               <label class="checkbox-label">
-                <input type="checkbox" v-model="question.required" />
+                <input type="checkbox" v-model="question.is_required" />
                 <span class="checkbox-text">Обязательный вопрос</span>
               </label>
             </div>
@@ -169,10 +169,10 @@
               readonly
               :value="`${hostOrigin}/responses/${route.params.id}`"
               class="responses-link-input"
-              @click="$event.target.select()"
+              @click="($event.target as HTMLInputElement).select()"
             />
           </div>
-          <router-link :to="'/form/' + route.params.id + '/responses'" class="btn-secondary">
+          <router-link :to="`/form/${route.params.id}/responses`" class="btn-secondary">
             <Icon name="document" />
             Посмотреть ответы
           </router-link>
@@ -189,27 +189,51 @@
   </div>
 </template>
 
-<script setup>
+<script setup lang="ts">
 import { ref, reactive, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import Icon from '../components/Icon.vue'
 import FormResult from '../components/FormResult.vue'
 
+interface Question {
+  id: string
+  type: string
+  title: string
+  is_required: boolean
+  dictionary_id: string | null
+  is_booking: boolean
+  depends_on: string | null
+  options: string[]
+  rating_max: number
+  order_index: number
+}
+
+interface Dictionary {
+  id: string
+  name: string
+  description: string
+}
+
 const route = useRoute()
 const router = useRouter()
 const hostOrigin = typeof window !== 'undefined' ? window.location.origin : ''
 
-const formData = reactive({
+const formData = reactive<{
+  title: string
+  description: string
+  is_public: boolean
+  questions: Question[]
+}>({
   title: '',
   description: '',
   is_public: false,
   questions: []
 })
 
-const dictionaries = ref([])
+const dictionaries = ref<Dictionary[]>([])
 const loading = ref(true)
-const error = ref(null)
-const result = ref(null)
+const error = ref<string | null>(null)
+const result = ref<any>(null)
 const submitting = ref(false)
 
 onMounted(async () => {
@@ -220,11 +244,11 @@ const loadDictionaries = async () => {
   try {
     const token = localStorage.getItem('token')
     const response = await fetch('/api/dictionaries', {
-      headers: { 'Authorization': `Bearer ${token}` }
+      headers: { 'Authorization': `Bearer ${token || ''}` }
     })
     if (response.ok) {
       const data = await response.json()
-      dictionaries.value = data.dictionaries || data || []
+      dictionaries.value = Array.isArray(data) ? data : (data.dictionaries || [])
     }
   } catch (err) {
     console.error('[EditForm] Failed to load dictionaries:', err)
@@ -240,7 +264,7 @@ const loadForm = async () => {
     const token = localStorage.getItem('token')
 
     const response = await fetch(`/api/forms/${formId}`, {
-      headers: { 'Authorization': `Bearer ${token}` }
+      headers: { 'Authorization': `Bearer ${token || ''}` }
     })
 
     if (!response.ok) {
@@ -254,29 +278,28 @@ const loadForm = async () => {
       return
     }
 
-    const rawForm = await response.json()
+    const data = await response.json()
 
-    formData.title = rawForm.Title || rawForm.title || ''
-    formData.description = rawForm.Description || rawForm.description || ''
-    formData.is_public = rawForm.IsPublic !== undefined ? rawForm.IsPublic : (rawForm.is_public !== undefined ? rawForm.is_public : false)
-    
-    const rawQuestions = rawForm.Questions || rawForm.questions || []
-    
-    // Строгая нормализация при получении данных
-    formData.questions = rawQuestions.map((q, idx) => {
-      if (!q) return null
-      return {
-        ID: q.ID || q.id,
-        Type: q.Type || q.type || 'text',
-        Title: q.Title || q.title || '',
-        DictionaryID: q.DictionaryID || q.dictionary_id || null,
-        IsBooking: q.IsBooking !== undefined ? q.IsBooking : (q.is_booking !== undefined ? q.is_booking : false),
-        required: q.is_required || q.IsRequired || q.Required || false,
-        options: q.Options || q.options || [],
-        rating_max: q.RatingMax || q.rating_max || 5,
-        OrderIndex: q.OrderIndex || q.order_index || idx
-      }
-    }).filter(q => q !== null)
+    // Честный маппинг в snake_case
+    formData.title = data.title || ''
+    formData.description = data.description || ''
+    formData.is_public = Boolean(data.is_public)
+
+    const rawQuestions = Array.isArray(data.questions) ? data.questions : []
+    formData.questions = rawQuestions
+      .sort((a: any, b: any) => (Number(a.order_index) || 0) - (Number(b.order_index) || 0))
+      .map((q: any, idx: number) => ({
+        id: q.id || '',
+        type: q.type || 'text',
+        title: q.title || '',
+        is_required: Boolean(q.is_required),
+        dictionary_id: q.dictionary_id ?? null,
+        is_booking: Boolean(q.is_booking),
+        depends_on: q.depends_on ?? null,
+        options: Array.isArray(q.options) ? q.options : [],
+        rating_max: Number(q.rating_max) || 5,
+        order_index: Number(q.order_index) || idx
+      }))
 
   } catch (err) {
     error.value = 'Ошибка сети. Попробуйте позже.'
@@ -287,28 +310,32 @@ const loadForm = async () => {
 
 const addQuestion = () => {
   formData.questions.push({
-    ID: crypto.randomUUID(),
-    Type: 'text',
-    Title: '',
-    DictionaryID: null,
-    IsBooking: false,
-    required: false,
+    id: '',
+    type: 'text',
+    title: '',
+    is_required: false,
+    dictionary_id: null,
+    is_booking: false,
+    depends_on: null,
     options: [],
     rating_max: 5,
-    OrderIndex: formData.questions.length
+    order_index: formData.questions.length
   })
 }
 
-const removeQuestion = (index) => {
+const removeQuestion = (index: number) => {
   formData.questions.splice(index, 1)
 }
 
-const addOption = (question) => {
+const addOption = (question: Question) => {
+  if (!Array.isArray(question.options)) question.options = []
   question.options.push('')
 }
 
-const removeOption = (question, optIndex) => {
-  question.options.splice(optIndex, 1)
+const removeOption = (question: Question, optIndex: number) => {
+  if (Array.isArray(question.options)) {
+    question.options.splice(optIndex, 1)
+  }
 }
 
 const submitForm = async () => {
@@ -323,16 +350,16 @@ const submitForm = async () => {
   }
 
   for (const q of formData.questions) {
-    if (!q?.Title?.trim()) {
+    if (!q?.title?.trim()) {
       result.value = { error: 'Все вопросы должны иметь текст' }
       return
     }
-    if (['radio', 'checkbox', 'select'].includes(q?.Type) && (!q.options || q.options.length === 0)) {
-      result.value = { error: `Вопрос "${q.Title}" должен иметь хотя бы один вариант ответа` }
+    if (['radio', 'checkbox', 'select'].includes(q?.type) && (!q.options || q.options.length === 0)) {
+      result.value = { error: `Вопрос "${q.title}" должен иметь хотя бы один вариант ответа` }
       return
     }
-    if (q?.Type === 'dictionary' && !q.DictionaryID) {
-      result.value = { error: `Вопрос "${q.Title}" должен иметь выбранный справочник` }
+    if (q?.type === 'dictionary' && !q.dictionary_id) {
+      result.value = { error: `Вопрос "${q.title}" должен иметь выбранный справочник` }
       return
     }
   }
@@ -344,32 +371,30 @@ const submitForm = async () => {
     const formId = String(route.params.id)
     const token = localStorage.getItem('token')
 
-    // Строгая сборка payload в snake_case перед отправкой
+    // Payload в строгом snake_case
     const payload = {
       title: formData.title,
       description: formData.description,
       is_public: formData.is_public,
-      questions: formData.questions.map((q, idx) => {
-        if (!q) return null
-        return {
-          id: q.ID,
-          type: q.Type,
-          title: q.Title,
-          order_index: q.OrderIndex || q.order_index || idx,
-          is_required: q.required,
-          dictionary_id: q.DictionaryID,
-          is_booking: q.IsBooking,
-          options: q.options,
-          rating_max: q.rating_max
-        }
-      }).filter(q => q !== null)
+      questions: formData.questions.map((q, idx) => ({
+        id: q.id || undefined,
+        type: q.type,
+        title: q.title,
+        order_index: idx,
+        is_required: q.is_required,
+        dictionary_id: q.type === 'dictionary' ? q.dictionary_id : null,
+        is_booking: q.type === 'dictionary' ? q.is_booking : false,
+        depends_on: q.depends_on || null,
+        options: q.options || [],
+        rating_max: q.rating_max || 5
+      }))
     }
 
     const response = await fetch(`/api/forms/${formId}`, {
       method: 'PUT',
       headers: {
         'Content-Type': 'application/json',
-        'Authorization': `Bearer ${token}`
+        'Authorization': `Bearer ${token || ''}`
       },
       body: JSON.stringify(payload)
     })
@@ -378,8 +403,7 @@ const submitForm = async () => {
       if (import.meta.env.DEV && response.status === 404) {
         result.value = {
           warning: 'Демо-режим',
-          message: 'Бэкенд недоступен (404)',
-          data: payload
+          message: 'Бэкенд недоступен (404)'
         }
         setTimeout(() => router.push(`/form/${formId}`), 1500)
         return
@@ -395,8 +419,7 @@ const submitForm = async () => {
     if (import.meta.env.DEV) {
       result.value = {
         warning: 'Network error',
-        message: 'Не удалось связаться с сервером',
-        details: err.message
+        message: 'Не удалось связаться с сервером'
       }
     } else {
       result.value = { error: 'Ошибка сети. Попробуйте позже.' }
@@ -467,7 +490,7 @@ input:focus, textarea:focus, select:focus { outline: none; border-color: var(--p
 .responses-link-input { flex: 1; padding: 0.4rem 0.6rem; font-size: 0.85rem; font-family: inherit; color: var(--text); background: var(--surface); border: 1px solid var(--border); border-radius: 6px; cursor: pointer; }
 .responses-link-input:focus { outline: none; border-color: var(--primary); }
 .btn-primary { display: inline-flex; align-items: center; gap: 0.5rem; padding: 0.85rem 2rem; background: var(--primary); color: #fff; font-size: 0.98rem; font-weight: 600; font-family: inherit; border: none; border-radius: var(--radius-sm); cursor: pointer; transition: all 0.2s; box-shadow: 0 4px 14px rgba(47, 79, 138, 0.25); min-width: 180px; justify-content: center; }
-.btn-primary:hover:not(:disabled) { background: var(--primary-hover); transform: translateY(-1px); box-shadow: 0 6px 18px rgba(47, 79, 138, 0.32); }
+.btn-primary:hover:not(:disabled) { background: var(--primary-hover, #243f72); transform: translateY(-1px); box-shadow: 0 6px 18px rgba(47, 79, 138, 0.32); }
 .btn-primary:disabled { opacity: 0.7; cursor: not-allowed; }
 @keyframes fadeUp { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
 @media (max-width: 720px) {
