@@ -154,8 +154,12 @@ func CreateDictionaryItem(db *gorm.DB) gin.HandlerFunc {
             Name:         input.Name,
             Code:         input.Code,
         }
-        if input.ParentID != nil {
-            pid := uuid.MustParse(*input.ParentID)
+        if input.ParentID != nil && *input.ParentID != "" {
+            pid, err := uuid.Parse(*input.ParentID)
+            if err != nil {
+                c.JSON(http.StatusBadRequest, gin.H{"error": "Неверный формат parent_id"})
+                return
+            }
             item.ParentID = &pid
         }
         if input.Metadata != nil {
@@ -228,8 +232,12 @@ func UpdateDictionaryItem(db *gorm.DB) gin.HandlerFunc {
         if input.Code != "" {
             item.Code = input.Code
         }
-        if input.ParentID != nil {
-            pid := uuid.MustParse(*input.ParentID)
+        if input.ParentID != nil && *input.ParentID != "" {
+            pid, err := uuid.Parse(*input.ParentID)
+            if err != nil {
+                c.JSON(http.StatusBadRequest, gin.H{"error": "Неверный формат parent_id"})
+                return
+            }
             item.ParentID = &pid
         } else {
             item.ParentID = nil
