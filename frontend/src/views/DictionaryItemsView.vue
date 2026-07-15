@@ -101,23 +101,25 @@
               <span class="hint">Необязательно. Используется для внутренней логики</span>
             </div>
 
-            <div v-if="allItems.length > 0" class="parent-section">
+            <div v-if="allDictionaries.length > 0" class="parent-section">
               <div class="parent-header">
                 <Icon name="link" />
                 <h4>Привязать к родительскому элементу</h4>
               </div>
               <p class="parent-description">
-                Выберите элемент из этого же справочника, который будет родителем для текущего.
-                Это позволит автоматически фильтровать варианты в формах.
+                Выберите элемент из любого справочника — это позволит строить каскадные формы:
+                выбранный элемент будет фильтровать варианты в следующем вопросе.
               </p>
 
               <div class="form-group">
                 <label>Родительский элемент</label>
                 <select v-model="formData.parent_id">
                   <option :value="null">— без родителя —</option>
-                  <option v-for="parentItem in allItems" :key="parentItem.id" :value="parentItem.id">
-                    {{ parentItem.name }}
-                  </option>
+                  <optgroup v-for="dict in allDictionaries" :key="dict.id" :label="dict.name">
+                    <option v-for="parentItem in getItemsForDictionary(dict.id)" :key="parentItem.id" :value="parentItem.id">
+                      {{ parentItem.name }}
+                    </option>
+                  </optgroup>
                 </select>
               </div>
             </div>
@@ -180,7 +182,9 @@ const route = useRoute()
 
 const dictionary = ref<Dictionary | null>(null)
 const items = ref<DictionaryItem[]>([])
-const allItems = ref<DictionaryItem[]>([]) // Все элементы для выбора родителя
+const allItems = ref<DictionaryItem[]>([]) // Все элементы из всех справочников (плоский список для getParentName)
+const allDictionaries = ref<Dictionary[]>([]) // Все справочники для группировки
+const dictionaryItemsMap = ref<Record<string, DictionaryItem[]>>({}) // dictId -> items[]
 const loading = ref(true)
 const error = ref<string | null>(null)
 const result = ref<any>(null)
@@ -232,19 +236,56 @@ const loadData = async () => {
     }
     dictionary.value = await dictResponse.json()
 
-    // Загрузка элементов
+    // Загрузка элементов текущего справочника
     const itemsResponse = await fetch(`/api/dictionaries/${dictId}/items`, { headers })
     if (itemsResponse.ok) {
       const data = await itemsResponse.json()
       items.value = Array.isArray(data) ? data : []
-      allItems.value = [...items.value] // Копия для выбора родителя
     }
+
+    // Загрузка ВСЕХ справочников и их элементов для кросс-привязки
+    await loadAllDictionariesAndItems(headers)
+
   } catch (err) {
     console.error('[DictionaryItems] Load error:', err)
     error.value = 'Ошибка сети'
   } finally {
     loading.value = false
   }
+}
+
+const loadAllDictionariesAndItems = async (headers: Record<string, string>) => {
+  try {
+    const dictsResp = await fetch('/api/dictionaries', { headers })
+    if (!dictsResp.ok) return
+
+    const dicts = await dictsResp.json()
+    allDictionaries.value = Array.isArray(dicts) ? dicts : (dicts.dictionaries || [])
+
+    // Загружаем элементы каждого справочника и группируем
+    dictionaryItemsMap.value = {}
+    allItems.value = []
+    for (const dict of allDictionaries.value) {
+      dictionaryItemsMap.value[dict.id] = []
+      try {
+        const resp = await fetch(`/api/dictionaries/${dict.id}/items`, { headers })
+        if (resp.ok) {
+          const data = await resp.json()
+          const dictItems = Array.isArray(data) ? data : (data.items || [])
+          dictionaryItemsMap.value[dict.id] = dictItems
+          allItems.value.push(...dictItems)
+        }
+      } catch (e) {
+        // пропускаем ошибки загрузки отдельных справочников
+      }
+    }
+  } catch (e) {
+    console.error('[DictionaryItems] Failed to load all dictionaries:', e)
+  }
+}
+
+const getItemsForDictionary = (dictId: string): DictionaryItem[] => {
+  return dictionaryItemsMap.value[dictId] || []
 }
 
 const getParentName = (parentId: string): string => {

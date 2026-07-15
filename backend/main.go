@@ -134,6 +134,7 @@ func main() {
     // Публичные маршруты — не требуют авторизации (проверка isPublic внутри хендлеров)
     r.GET("/api/forms/:id", handlers.GetForm(db))
     r.POST("/api/responses", handlers.SubmitResponse(db))
+    r.GET("/api/dictionaries/:id/items", handlers.ListDictionaryItems(db))
 
     log.Println("Server starting on :8080")
     r.Run(":8080")
