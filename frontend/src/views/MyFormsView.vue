@@ -60,10 +60,36 @@
             <Icon name="document" />
             Ответы
           </router-link>
-          <router-link :to="`/fill/${form.id}`" class="btn-secondary">
-            <Icon name="eye" />
-            Открыть
-          </router-link>
+          
+          <!-- Dropdown "Поделиться" -->
+          <div class="dropdown-container" @click.stop>
+            <button 
+              @click="toggleDropdown(form.id)" 
+              class="btn-share"
+              :class="{ active: openDropdownId === form.id }"
+            >
+              <Icon name="share" />
+              Поделиться
+            </button>
+            
+            <div v-if="openDropdownId === form.id" class="dropdown-menu">
+              <button @click="copyShareLink(form.id)" class="dropdown-item">
+                <Icon name="link" />
+                <span>
+                  <strong>Копировать ссылку</strong>
+                  <small>Для заполнения формы</small>
+                </span>
+              </button>
+              <router-link :to="`/preview/${form.id}`" class="dropdown-item" @click="closeDropdown">
+                <Icon name="eye" />
+                <span>
+                  <strong>Предпросмотр</strong>
+                  <small>Безопасное тестирование</small>
+                </span>
+              </router-link>
+            </div>
+          </div>
+
           <button @click="deleteForm(form.id)" class="btn-danger">
             <Icon name="trash" />
           </button>
@@ -71,12 +97,18 @@
       </div>
     </div>
 
+    <!-- Уведомление о копировании -->
+    <div v-if="showCopyNotification" class="copy-notification">
+      <Icon name="check" />
+      Ссылка скопирована в буфер обмена
+    </div>
+
     <FormResult v-if="result" :result="result" />
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { ref, onMounted, onUnmounted } from 'vue'
 import Icon from '../components/Icon.vue'
 import FormResult from '../components/FormResult.vue'
 
@@ -94,9 +126,17 @@ const forms = ref<Form[]>([])
 const loading = ref(true)
 const error = ref<string | null>(null)
 const result = ref<any>(null)
+const openDropdownId = ref<string | null>(null)
+const showCopyNotification = ref(false)
+const hostOrigin = typeof window !== 'undefined' ? window.location.origin : ''
 
 onMounted(async () => {
   await loadForms()
+  document.addEventListener('click', closeDropdownOnOutsideClick)
+})
+
+onUnmounted(() => {
+  document.removeEventListener('click', closeDropdownOnOutsideClick)
 })
 
 const loadForms = async () => {
@@ -165,6 +205,53 @@ const formatDate = (dateStr: string): string => {
     return dateStr
   }
 }
+
+const toggleDropdown = (formId: string) => {
+  openDropdownId.value = openDropdownId.value === formId ? null : formId
+}
+
+const closeDropdown = () => {
+  openDropdownId.value = null
+}
+
+const closeDropdownOnOutsideClick = (event: MouseEvent) => {
+  const target = event.target as HTMLElement
+  if (!target.closest('.dropdown-container')) {
+    closeDropdown()
+  }
+}
+
+const copyShareLink = async (formId: string) => {
+  const shareUrl = `${hostOrigin}/fill/${formId}`
+  
+  try {
+    await navigator.clipboard.writeText(shareUrl)
+    showCopyNotification.value = true
+    setTimeout(() => {
+      showCopyNotification.value = false
+    }, 2000)
+    closeDropdown()
+  } catch (err) {
+    console.error('Failed to copy:', err)
+    const textarea = document.createElement('textarea')
+    textarea.value = shareUrl
+    textarea.style.position = 'fixed'
+    textarea.style.opacity = '0'
+    document.body.appendChild(textarea)
+    textarea.select()
+    try {
+      document.execCommand('copy')
+      showCopyNotification.value = true
+      setTimeout(() => {
+        showCopyNotification.value = false
+      }, 2000)
+    } catch (fallbackErr) {
+      result.value = { error: 'Не удалось скопировать ссылку' }
+    }
+    document.body.removeChild(textarea)
+    closeDropdown()
+  }
+}
 </script>
 
 <style scoped>
@@ -192,18 +279,37 @@ const formatDate = (dateStr: string): string => {
 .meta-item { display: inline-flex; align-items: center; gap: 0.35rem; font-size: 0.85rem; color: var(--text-muted); }
 .meta-item svg { width: 14px; height: 14px; }
 .form-actions { display: flex; gap: 0.5rem; flex-wrap: wrap; }
-.btn-primary, .btn-secondary, .btn-danger { display: inline-flex; align-items: center; gap: 0.4rem; padding: 0.55rem 0.9rem; font-size: 0.88rem; font-weight: 600; border-radius: var(--radius-sm); text-decoration: none; cursor: pointer; transition: all 0.2s; border: 1.5px solid transparent; font-family: inherit; }
+.btn-primary, .btn-secondary, .btn-danger, .btn-share { display: inline-flex; align-items: center; gap: 0.4rem; padding: 0.55rem 0.9rem; font-size: 0.88rem; font-weight: 600; border-radius: var(--radius-sm); text-decoration: none; cursor: pointer; transition: all 0.2s; border: 1.5px solid transparent; font-family: inherit; }
 .btn-primary { background: var(--primary); color: #fff; }
 .btn-primary:hover { background: var(--primary-hover, #243f72); }
 .btn-secondary { background: var(--surface); color: var(--text); border-color: var(--border); }
 .btn-secondary:hover { background: var(--bg); border-color: var(--text-muted); }
 .btn-danger { background: var(--surface); color: #c53030; border-color: var(--border); }
 .btn-danger:hover { background: #fdecec; border-color: #c53030; }
-.btn-primary svg, .btn-secondary svg, .btn-danger svg { width: 14px; height: 14px; }
+.btn-share { background: var(--primary-soft); color: var(--primary); border-color: transparent; }
+.btn-share:hover { background: var(--primary); color: #fff; }
+.btn-share.active { background: var(--primary); color: #fff; }
+.btn-primary svg, .btn-secondary svg, .btn-danger svg, .btn-share svg { width: 14px; height: 14px; }
+.dropdown-container { position: relative; }
+.dropdown-menu { position: absolute; bottom: 100%; left: 0; margin-bottom: 0.5rem; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-sm); box-shadow: var(--shadow-lg); min-width: 240px; z-index: 10; animation: dropdownFadeIn 0.2s ease; }
+.dropdown-item { display: flex; align-items: flex-start; gap: 0.75rem; padding: 0.85rem 1rem; width: 100%; background: none; border: none; text-align: left; cursor: pointer; transition: all 0.15s; text-decoration: none; color: var(--text); font-family: inherit; }
+.dropdown-item:hover { background: var(--bg); }
+.dropdown-item:first-child { border-radius: var(--radius-sm) var(--radius-sm) 0 0; }
+.dropdown-item:last-child { border-radius: 0 0 var(--radius-sm) var(--radius-sm); }
+.dropdown-item svg { width: 18px; height: 18px; color: var(--primary); flex-shrink: 0; margin-top: 0.15rem; }
+.dropdown-item span { display: flex; flex-direction: column; gap: 0.15rem; }
+.dropdown-item strong { font-size: 0.9rem; font-weight: 600; color: var(--text); }
+.dropdown-item small { font-size: 0.78rem; color: var(--text-muted); }
+@keyframes dropdownFadeIn { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: translateY(0); } }
+.copy-notification { position: fixed; bottom: 2rem; right: 2rem; background: var(--primary); color: #fff; padding: 1rem 1.5rem; border-radius: var(--radius-sm); box-shadow: var(--shadow-lg); display: flex; align-items: center; gap: 0.5rem; font-weight: 600; animation: slideUp 0.3s ease; z-index: 100; }
+.copy-notification svg { width: 20px; height: 20px; }
+@keyframes slideUp { from { opacity: 0; transform: translateY(20px); } to { opacity: 1; transform: translateY(0); } }
 @keyframes fadeUp { from { opacity: 0; transform: translateY(12px); } to { opacity: 1; transform: translateY(0); } }
 @media (max-width: 720px) {
   .forms-grid { grid-template-columns: 1fr; }
   .form-actions { flex-direction: column; }
-  .btn-primary, .btn-secondary, .btn-danger { width: 100%; justify-content: center; }
+  .btn-primary, .btn-secondary, .btn-danger, .btn-share { width: 100%; justify-content: center; }
+  .dropdown-menu { left: 0; right: 0; min-width: auto; }
+  .copy-notification { left: 1rem; right: 1rem; bottom: 1rem; }
 }
 </style>
