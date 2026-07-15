@@ -248,7 +248,7 @@ const loadData = async () => {
   try {
     const dictId = String(route.params.id)
     const token = localStorage.getItem('token')
-    const headers = { 'Authorization': `Bearer ${token || ''}` }
+    const headers: Record<string, string> = { 'Authorization': `Bearer ${token || ''}` }
 
     const dictResponse = await fetch(`/api/dictionaries/${dictId}`, { headers })
     if (!dictResponse.ok) {
@@ -272,7 +272,7 @@ const loadData = async () => {
   }
 }
 
-const loadAllDictionariesAndItems = async (headers: any) => {
+const loadAllDictionariesAndItems = async (headers: Record<string, string>) => {
   try {
     const dictsResp = await fetch('/api/dictionaries', { headers })
     if (!dictsResp.ok) return
@@ -286,10 +286,13 @@ const loadAllDictionariesAndItems = async (headers: any) => {
         const resp = await fetch(`/api/dictionaries/${dict.id}/items`, { headers })
         if (resp.ok) {
           const data = await resp.json()
+          // ГАРАНТИРОВАННО МАССИВ: защита от undefined
           dictionaryItemsMap.value[dict.id] = Array.isArray(data) ? data : (data.items || [])
+        } else {
+          dictionaryItemsMap.value[dict.id] = []
         }
       } catch (e) {
-        // Игнорируем ошибки отдельных справочников, чтобы не ломать весь UI
+        dictionaryItemsMap.value[dict.id] = []
       }
     }
   } catch (e) {
@@ -304,6 +307,7 @@ const availableParentDictionaries = computed(() => {
 
 const onParentDictionaryChange = () => {
   const dictId = selectedParentDictionaryId.value
+  // БЕЗОПАСНЫЙ ДОСТУП: фоллбек на пустой массив
   parentDictionaryItems.value = dictId ? (dictionaryItemsMap.value[dictId] || []) : []
 }
 
@@ -313,7 +317,6 @@ const clearAllLinks = () => {
   parentDictionaryItems.value = []
 }
 
-// Умный поиск имен родителей (проверяем и parent_id, и metadata.linked_ids)
 const getParentNames = (itemId: string): string[] => {
   const names: string[] = []
   const currentItem = items.value.find(i => i.id === itemId)
@@ -326,7 +329,9 @@ const getParentNames = (itemId: string): string[] => {
   }
 
   for (const dictId in dictionaryItemsMap.value) {
-    for (const pItem of dictionaryItemsMap.value[dictId]) {
+    // БЕЗОПАСНЫЙ ДОСТУП: фоллбек на пустой массив
+    const dictItems = dictionaryItemsMap.value[dictId] || []
+    for (const pItem of dictItems) {
       if (idsToCheck.has(pItem.id)) {
         names.push(pItem.name)
       }
@@ -360,20 +365,20 @@ const openEditModal = (item: DictionaryItem) => {
   formData.name = item.name || ''
   formData.code = item.code || ''
   
-  // ЧИТАЕМ СТАРЫЕ СВЯЗИ: сначала из linked_ids, если нет - из parent_id
   if (item.metadata?.linked_ids && Array.isArray(item.metadata.linked_ids)) {
     formData.linked_ids = [...item.metadata.linked_ids]
   } else if (item.parent_id) {
     formData.linked_ids = [item.parent_id]
   }
 
-  // Предзаполняем селект справочника, если есть связи
   if (formData.linked_ids.length > 0) {
     const firstLinkId = formData.linked_ids[0]
     for (const dictId in dictionaryItemsMap.value) {
-      if (dictionaryItemsMap.value[dictId].some(i => i.id === firstLinkId)) {
+      // БЕЗОПАСНЫЙ ДОСТУП: фоллбек на пустой массив перед вызовом .some()
+      const dictItems = dictionaryItemsMap.value[dictId] || []
+      if (dictItems.some(i => i.id === firstLinkId)) {
         selectedParentDictionaryId.value = dictId
-        parentDictionaryItems.value = dictionaryItemsMap.value[dictId]
+        parentDictionaryItems.value = dictItems
         break
       }
     }
@@ -418,15 +423,11 @@ const saveItem = async () => {
       parsedMetadata = JSON.parse(formData.metadataRaw)
     }
 
-    // ГИБРИДНОЕ СОХРАНЕНИЕ:
-    // 1. linked_ids сохраняем в metadata для полной истории множественных связей
-    // 2. parent_id дублируем первым элементом из linked_ids для совместимости со строгими каскадами
     const finalMetadata = {
       ...parsedMetadata,
       linked_ids: formData.linked_ids.length > 0 ? formData.linked_ids : undefined
     }
     
-    // Очищаем metadata от пустых ключей
     Object.keys(finalMetadata).forEach(key => {
       if (finalMetadata[key] === undefined) delete finalMetadata[key]
     })
