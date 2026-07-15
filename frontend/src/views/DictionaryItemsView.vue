@@ -107,20 +107,42 @@
                 <h4>Привязать к родительскому элементу</h4>
               </div>
               <p class="parent-description">
-                Выберите элемент из любого справочника — это позволит строить каскадные формы:
-                выбранный элемент будет фильтровать варианты в следующем вопросе.
+                Выберите элемент из другого справочника — он станет родителем для текущего.
+                Это позволяет строить каскадные формы: Корпус → Класс → Учитель → Время.
               </p>
 
+              <!-- Шаг 1: Выбор справочника -->
               <div class="form-group">
-                <label>Родительский элемент</label>
-                <select v-model="formData.parent_id">
-                  <option :value="null">— без родителя —</option>
-                  <optgroup v-for="dict in allDictionaries" :key="dict.id" :label="dict.name">
-                    <option v-for="parentItem in getItemsForDictionary(dict.id)" :key="parentItem.id" :value="parentItem.id">
-                      {{ parentItem.name }}
-                    </option>
-                  </optgroup>
+                <label>Справочник-родитель</label>
+                <select v-model="selectedParentDictionaryId" @change="onParentDictionaryChange">
+                  <option :value="null">— выберите справочник —</option>
+                  <option v-for="dict in availableParentDictionaries" :key="dict.id" :value="dict.id">
+                    {{ dict.name }}
+                  </option>
                 </select>
+                <span class="hint">Родительский элемент будет взят из выбранного справочника</span>
+              </div>
+
+              <!-- Шаг 2: Выбор элемента (появляется после выбора справочника) -->
+              <div v-if="selectedParentDictionaryId" class="parent-items-section">
+                <label>Родительский элемент</label>
+                <div class="parent-items-list">
+                  <label v-for="item in parentDictionaryItems" :key="item.id" class="parent-item-checkbox">
+                    <input
+                      type="radio"
+                      :value="item.id"
+                      v-model="formData.parent_id"
+                      :checked="formData.parent_id === item.id"
+                    />
+                    <span>{{ item.name }}</span>
+                  </label>
+                  <div v-if="parentDictionaryItems.length === 0" class="empty-parent-hint">
+                    В этом справочнике пока нет элементов
+                  </div>
+                </div>
+                <span class="hint">
+                  Родитель может быть связан с множеством дочерних элементов (например, "Корпус 5" → "6А", "7А", "8Б")
+                </span>
               </div>
             </div>
 
@@ -154,7 +176,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, onMounted, watch } from 'vue'
+import { ref, reactive, onMounted, watch, computed } from 'vue'
 import { useRoute } from 'vue-router'
 import Icon from '../components/Icon.vue'
 import FormResult from '../components/FormResult.vue'
@@ -183,7 +205,7 @@ const route = useRoute()
 const dictionary = ref<Dictionary | null>(null)
 const items = ref<DictionaryItem[]>([])
 const allItems = ref<DictionaryItem[]>([]) // Все элементы из всех справочников (плоский список для getParentName)
-const allDictionaries = ref<Dictionary[]>([]) // Все справочники для группировки
+const allDictionaries = ref<Dictionary[]>([]) // Все справочники
 const dictionaryItemsMap = ref<Record<string, DictionaryItem[]>>({}) // dictId -> items[]
 const loading = ref(true)
 const error = ref<string | null>(null)
@@ -194,6 +216,10 @@ const isEditing = ref(false)
 const editingId = ref<string | null>(null)
 const saving = ref(false)
 const metadataError = ref('')
+
+// Выбор родителя
+const selectedParentDictionaryId = ref<string | null>(null)
+const parentDictionaryItems = ref<DictionaryItem[]>([])
 
 const formData = reactive({
   name: '',
@@ -288,6 +314,27 @@ const getItemsForDictionary = (dictId: string): DictionaryItem[] => {
   return dictionaryItemsMap.value[dictId] || []
 }
 
+// Доступные справочники для выбора (все кроме текущего)
+const availableParentDictionaries = computed(() => {
+  if (!dictionary.value) return allDictionaries.value
+  return allDictionaries.value.filter(d => d.id !== dictionary.value!.id)
+})
+
+// При изменении выбранного справочника — загрузить его элементы
+const onParentDictionaryChange = () => {
+  const dictId = selectedParentDictionaryId.value
+  if (!dictId) {
+    parentDictionaryItems.value = []
+    formData.parent_id = null
+    return
+  }
+  parentDictionaryItems.value = dictionaryItemsMap.value[dictId] || []
+  // Сбросить parent_id если его элемент больше не в списке
+  if (formData.parent_id && !parentDictionaryItems.value.some(i => i.id === formData.parent_id)) {
+    formData.parent_id = null
+  }
+}
+
 const getParentName = (parentId: string): string => {
   const parent = allItems.value.find(i => i.id === parentId)
   return parent?.name || 'Родитель не найден'
@@ -302,6 +349,8 @@ const resetForm = () => {
   showAdvanced.value = false
   isEditing.value = false
   editingId.value = null
+  selectedParentDictionaryId.value = null
+  parentDictionaryItems.value = []
 }
 
 const openCreateModal = () => {
@@ -316,6 +365,16 @@ const openEditModal = (item: DictionaryItem) => {
   formData.name = item.name || ''
   formData.code = item.code || ''
   formData.parent_id = item.parent_id ?? null
+
+  // Если есть родитель — найти его справочник и элементы
+  if (item.parent_id) {
+    const parentItem = allItems.value.find(i => i.id === item.parent_id)
+    if (parentItem) {
+      selectedParentDictionaryId.value = parentItem.dictionary_id
+      // Загрузить элементы этого справочника
+      parentDictionaryItems.value = dictionaryItemsMap.value[parentItem.dictionary_id] || []
+    }
+  }
 
   if (item.metadata && typeof item.metadata === 'object') {
     formData.metadata = JSON.stringify(item.metadata, null, 2)
@@ -497,6 +556,14 @@ input:focus, textarea:focus, select:focus { outline: none; border-color: var(--p
 .hint { font-size: 0.8rem; color: var(--text-muted); font-weight: 400; }
 .error-hint { font-size: 0.8rem; color: #c53030; font-weight: 500; }
 .modal-actions { display: flex; gap: 0.75rem; justify-content: flex-end; margin-top: 0.5rem; }
+
+.parent-items-section { margin-top: 1rem; padding: 1rem; background: var(--bg); border-radius: var(--radius-sm); border: 1px solid var(--border); }
+.parent-items-section label { font-size: 0.88rem; font-weight: 600; color: var(--text); display: block; margin-bottom: 0.5rem; }
+.parent-items-list { display: flex; flex-direction: column; gap: 0.35rem; max-height: 200px; overflow-y: auto; padding: 0.5rem; }
+.parent-item-checkbox { display: flex; align-items: center; gap: 0.5rem; cursor: pointer; font-size: 0.9rem; padding: 0.35rem 0.5rem; border-radius: 4px; transition: background 0.15s; }
+.parent-item-checkbox:hover { background: var(--primary-soft); }
+.parent-item-checkbox input { width: 16px; height: 16px; accent-color: var(--primary); cursor: pointer; }
+.empty-parent-hint { padding: 0.75rem; color: var(--text-muted); font-size: 0.88rem; text-align: center; }
 @media (max-width: 720px) {
   .list-header, .item-card { grid-template-columns: 1fr; gap: 0.5rem; }
   .col-actions { justify-content: flex-start; }
