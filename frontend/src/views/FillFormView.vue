@@ -347,12 +347,47 @@ const loadDictionaryItems = async (dictionaryId: string) => {
 }
 
 // ==========================================
+// АВТООПРЕДЕЛЕНИЕ РОДИТЕЛЬСКОГО ВОПРОСА
+// ==========================================
+
+// Находит родительский вопрос автоматически на основе parent_id элементов справочника
+// Работает когда question.depends_on == null (конструктор формы не имеет поля для его настройки)
+const findParentQuestion = (question: Question): Question | null => {
+  if (!question || question.type !== 'dictionary' || !question.dictionary_id) return null
+  
+  const items = dictionaryItemsCache[question.dictionary_id] || []
+  if (items.length === 0) return null
+  
+  // Берём первый элемент, у которого есть parent_id
+  const sampleItem = items.find((i: DictionaryItem) => i.parent_id)
+  if (!sampleItem || !sampleItem.parent_id) return null
+  
+  const parentId = sampleItem.parent_id
+  // Ищем вопрос, чей справочник содержит элемент с этим ID
+  for (const q of form.value.questions) {
+    if (q.id === question.id) continue
+    if (q.type !== 'dictionary' || !q.dictionary_id) continue
+    const parentDictItems = dictionaryItemsCache[q.dictionary_id] || []
+    if (parentDictItems.some((i: DictionaryItem) => i.id === parentId)) {
+      return q
+    }
+  }
+  return null
+}
+
+// ==========================================
 // ЛОГИКА ВИДИМОСТИ И БЛОКИРОВКИ
 // ==========================================
 
 const isQuestionVisible = (question: Question): boolean => {
   if (!question) return false
-  if (!question.depends_on) return true
+  if (!question.depends_on) {
+    // Если depends_on пустой — ищем родителя автоматически по parent_id
+    const parentQuestion = findParentQuestion(question)
+    if (!parentQuestion) return true
+    const parentAnswer = answers[parentQuestion.id]
+    return !!parentAnswer && String(parentAnswer).trim() !== ''
+  }
 
   const parentAnswer = answers[question.depends_on]
   return !!parentAnswer && String(parentAnswer).trim() !== ''
@@ -362,6 +397,10 @@ const isSelectDisabled = (question: Question): boolean => {
   if (!question || question.type !== 'dictionary') return false
 
   if (question.depends_on && !answers[question.depends_on]) return true
+
+  // Проверяем авто-родителя
+  const parentQuestion = findParentQuestion(question)
+  if (parentQuestion && !answers[parentQuestion.id]) return true
 
   if (question.is_booking) {
     const dateQuestion = form.value?.questions.find(q => q.type === 'date')
@@ -383,6 +422,15 @@ const getLockReason = (question: Question): string => {
     const parentQuestion = form.value?.questions.find(q => q.id === question.depends_on)
     if (parentQuestion && !answers[parentQuestion.id]) {
       return `Сначала выберите: "${parentQuestion.title}"`
+    }
+  }
+
+  // Проверяем авто-родителя
+  const parentQuestion = findParentQuestion(question)
+  if (parentQuestion) {
+    const parentQ = form.value?.questions.find(q => q.id === parentQuestion.id)
+    if (parentQ && !answers[parentQuestion.id]) {
+      return `Сначала выберите: "${parentQ.title}"`
     }
   }
 
@@ -409,9 +457,20 @@ const getFilteredOptions = (question: Question): any[] => {
     return availableSlots[question.id] || []
   }
 
-  if (!question.depends_on) return allItems
+  // Если depends_on задан явно — используем его
+  if (question.depends_on) {
+    const parentAnswer = answers[question.depends_on]
+    if (!parentAnswer || String(parentAnswer).trim() === '') return []
+    return allItems.filter((item: DictionaryItem) => {
+      return String(item.parent_id) === String(parentAnswer)
+    })
+  }
 
-  const parentAnswer = answers[question.depends_on]
+  // Иначе ищем родителя автоматически по parent_id элементов
+  const parentQuestion = findParentQuestion(question)
+  if (!parentQuestion) return allItems
+
+  const parentAnswer = answers[parentQuestion.id]
   if (!parentAnswer || String(parentAnswer).trim() === '') return []
 
   return allItems.filter((item: DictionaryItem) => {
