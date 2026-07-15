@@ -51,7 +51,7 @@
         <div class="list-header">
           <div class="col-name">Название</div>
           <div class="col-code">Код</div>
-          <div class="col-parent">Родитель</div>
+          <div class="col-parent">Родительские связи</div>
           <div class="col-actions"></div>
         </div>
         <div v-for="item in items" :key="item.id" class="item-card">
@@ -59,17 +59,17 @@
             <div class="item-label">{{ item.name }}</div>
           </div>
           <div class="col-code">
-            <div v-if="item.code" class="item-code">
-              <code>{{ item.code }}</code>
-            </div>
+            <div v-if="item.code" class="item-code-badge">{{ item.code }}</div>
             <div v-else class="item-empty">—</div>
           </div>
           <div class="col-parent">
-            <div v-if="item.parent_id" class="item-parent">
-              <Icon name="link" />
-              <span>{{ getParentName(item.parent_id) }}</span>
+            <div v-if="getParentNames(item.id).length > 0" class="parent-tags">
+              <span v-for="pName in getParentNames(item.id)" :key="pName" class="parent-tag">
+                <Icon name="link" />
+                {{ pName }}
+              </span>
             </div>
-            <div v-else class="item-empty">—</div>
+            <div v-else class="item-empty">Нет связей</div>
           </div>
           <div class="col-actions">
             <button @click="openEditModal(item)" class="btn-edit-small" title="Редактировать">
@@ -98,58 +98,54 @@
             <div class="form-group">
               <label>Код</label>
               <input type="text" v-model="formData.code" placeholder="Например: 9A, ivanova, 14:00" />
-              <span class="hint">Необязательно. Используется для внутренней логики</span>
+              <span class="hint">Необязательно. Для внутренней логики</span>
             </div>
 
-            <div v-if="allDictionaries.length > 0" class="parent-section">
+            <div v-if="availableParentDictionaries.length > 0" class="parent-section">
               <div class="parent-header">
                 <Icon name="link" />
-                <h4>Привязать к родительскому элементу</h4>
+                <h4>Привязка к другим справочникам</h4>
               </div>
               <p class="parent-description">
-                Выберите элемент из другого справочника — он станет родителем для текущего.
-                Это позволяет строить каскадные формы: Корпус → Класс → Учитель → Время.
+                Выберите элементы из других справочников, чтобы построить каскад (например, привязать "Класс" к "Корпусу").
+                Можно выбрать несколько вариантов.
               </p>
 
-              <!-- Шаг 1: Выбор справочника -->
               <div class="form-group">
                 <label>Справочник-родитель</label>
-                <select v-model="selectedParentDictionaryId" @change="onParentDictionaryChange">
+                <select v-model="selectedParentDictionaryId" @change="onParentDictionaryChange" class="form-select">
                   <option :value="null">— выберите справочник —</option>
                   <option v-for="dict in availableParentDictionaries" :key="dict.id" :value="dict.id">
                     {{ dict.name }}
                   </option>
                 </select>
-                <span class="hint">Родительский элемент будет взят из выбранного справочника</span>
               </div>
 
-              <!-- Шаг 2: Выбор элемента (появляется после выбора справочника) -->
               <div v-if="selectedParentDictionaryId" class="parent-items-section">
-                <label>Родительский элемент</label>
-                <div class="parent-items-list">
-                  <label class="parent-item-checkbox">
-                    <input
-                      type="radio"
-                      value="__none__"
-                      v-model="formData.parent_id"
-                    />
-                    <span>Без родителя</span>
-                  </label>
-                  <label v-for="item in parentDictionaryItems" :key="item.id" class="parent-item-checkbox">
-                    <input
-                      type="radio"
-                      :value="item.id"
-                      v-model="formData.parent_id"
-                    />
-                    <span>{{ item.name }}</span>
-                  </label>
-                  <div v-if="parentDictionaryItems.length === 0" class="empty-parent-hint">
-                    В этом справочнике пока нет элементов
-                  </div>
+                <div class="parent-items-header">
+                  <label class="section-label">Доступные элементы для привязки:</label>
+                  <button type="button" class="btn-clear-links" @click="clearAllLinks">
+                    <Icon name="close" />
+                    Сбросить все связи
+                  </button>
                 </div>
-                <span class="hint">
-                  Родитель может быть связан с множеством дочерних элементов (например, "Корпус 5" → "6А", "7А", "8Б")
-                </span>
+                
+                <div v-if="parentDictionaryItems.length === 0" class="empty-parent-hint">
+                  В этом справочнике пока нет элементов
+                </div>
+
+                <div v-else class="parent-items-list">
+                  <label v-for="pItem in parentDictionaryItems" :key="pItem.id" class="parent-item-option">
+                    <input
+                      type="checkbox"
+                      :value="pItem.id"
+                      v-model="formData.linked_ids"
+                      class="custom-checkbox"
+                    />
+                    <span class="item-name">{{ pItem.name }}</span>
+                    <span v-if="pItem.code" class="item-code-badge-small">{{ pItem.code }}</span>
+                  </label>
+                </div>
               </div>
             </div>
 
@@ -161,8 +157,7 @@
               <div v-if="showAdvanced" class="advanced-content">
                 <div class="form-group">
                   <label>Дополнительные свойства (JSON)</label>
-                  <textarea v-model="formData.metadata" placeholder='Например: {"duration": 45}' rows="3"></textarea>
-                  <span class="hint">Обычно оставляйте пустым. Используется для продвинутых сценариев.</span>
+                  <textarea v-model="formData.metadataRaw" placeholder='Например: {"duration": 45}' rows="3" class="form-textarea"></textarea>
                   <span v-if="metadataError" class="error-hint">{{ metadataError }}</span>
                 </div>
               </div>
@@ -192,8 +187,6 @@ interface Dictionary {
   id: string
   name: string
   description: string
-  created_at: string
-  updated_at: string
 }
 
 interface DictionaryItem {
@@ -203,17 +196,14 @@ interface DictionaryItem {
   name: string
   code: string
   metadata: any
-  created_at: string
-  updated_at: string
 }
 
 const route = useRoute()
 
 const dictionary = ref<Dictionary | null>(null)
 const items = ref<DictionaryItem[]>([])
-const allItems = ref<DictionaryItem[]>([]) // Все элементы из всех справочников (плоский список для getParentName)
-const allDictionaries = ref<Dictionary[]>([]) // Все справочники
-const dictionaryItemsMap = ref<Record<string, DictionaryItem[]>>({}) // dictId -> items[]
+const allDictionaries = ref<Dictionary[]>([])
+const dictionaryItemsMap = ref<Record<string, DictionaryItem[]>>({})
 const loading = ref(true)
 const error = ref<string | null>(null)
 const result = ref<any>(null)
@@ -224,22 +214,21 @@ const editingId = ref<string | null>(null)
 const saving = ref(false)
 const metadataError = ref('')
 
-// Выбор родителя
 const selectedParentDictionaryId = ref<string | null>(null)
 const parentDictionaryItems = ref<DictionaryItem[]>([])
 
 const formData = reactive({
   name: '',
   code: '',
-  parent_id: null as string | null,
-  metadata: ''
+  linked_ids: [] as string[],
+  metadataRaw: ''
 })
 
 onMounted(async () => {
   await loadData()
 })
 
-watch(() => formData.metadata, (value) => {
+watch(() => formData.metadataRaw, (value) => {
   if (!value?.trim()) {
     metadataError.value = ''
     return
@@ -248,7 +237,7 @@ watch(() => formData.metadata, (value) => {
     JSON.parse(value)
     metadataError.value = ''
   } catch (e) {
-    metadataError.value = 'Неверный формат JSON. Пример: {"ключ": "значение"}'
+    metadataError.value = 'Неверный формат JSON'
   }
 })
 
@@ -259,9 +248,8 @@ const loadData = async () => {
   try {
     const dictId = String(route.params.id)
     const token = localStorage.getItem('token')
-    const headers: Record<string, string> = { 'Authorization': `Bearer ${token || ''}` }
+    const headers = { 'Authorization': `Bearer ${token || ''}` }
 
-    // Загрузка справочника
     const dictResponse = await fetch(`/api/dictionaries/${dictId}`, { headers })
     if (!dictResponse.ok) {
       error.value = dictResponse.status === 404 ? 'Справочник не найден' : 'Ошибка загрузки'
@@ -269,16 +257,13 @@ const loadData = async () => {
     }
     dictionary.value = await dictResponse.json()
 
-    // Загрузка элементов текущего справочника
     const itemsResponse = await fetch(`/api/dictionaries/${dictId}/items`, { headers })
     if (itemsResponse.ok) {
       const data = await itemsResponse.json()
       items.value = Array.isArray(data) ? data : []
     }
 
-    // Загрузка ВСЕХ справочников и их элементов для кросс-привязки
     await loadAllDictionariesAndItems(headers)
-
   } catch (err) {
     console.error('[DictionaryItems] Load error:', err)
     error.value = 'Ошибка сети'
@@ -287,7 +272,7 @@ const loadData = async () => {
   }
 }
 
-const loadAllDictionariesAndItems = async (headers: Record<string, string>) => {
+const loadAllDictionariesAndItems = async (headers: any) => {
   try {
     const dictsResp = await fetch('/api/dictionaries', { headers })
     if (!dictsResp.ok) return
@@ -295,21 +280,16 @@ const loadAllDictionariesAndItems = async (headers: Record<string, string>) => {
     const dicts = await dictsResp.json()
     allDictionaries.value = Array.isArray(dicts) ? dicts : (dicts.dictionaries || [])
 
-    // Загружаем элементы каждого справочника и группируем
     dictionaryItemsMap.value = {}
-    allItems.value = []
     for (const dict of allDictionaries.value) {
-      dictionaryItemsMap.value[dict.id] = []
       try {
         const resp = await fetch(`/api/dictionaries/${dict.id}/items`, { headers })
         if (resp.ok) {
           const data = await resp.json()
-          const dictItems = Array.isArray(data) ? data : (data.items || [])
-          dictionaryItemsMap.value[dict.id] = dictItems
-          allItems.value.push(...dictItems)
+          dictionaryItemsMap.value[dict.id] = Array.isArray(data) ? data : (data.items || [])
         }
       } catch (e) {
-        // пропускаем ошибки загрузки отдельных справочников
+        // Игнорируем ошибки отдельных справочников, чтобы не ломать весь UI
       }
     }
   } catch (e) {
@@ -317,41 +297,49 @@ const loadAllDictionariesAndItems = async (headers: Record<string, string>) => {
   }
 }
 
-const getItemsForDictionary = (dictId: string): DictionaryItem[] => {
-  return dictionaryItemsMap.value[dictId] || []
-}
-
-// Доступные справочники для выбора (все кроме текущего)
 const availableParentDictionaries = computed(() => {
   if (!dictionary.value) return allDictionaries.value
   return allDictionaries.value.filter(d => d.id !== dictionary.value!.id)
 })
 
-// При изменении выбранного справочника — загрузить его элементы
 const onParentDictionaryChange = () => {
   const dictId = selectedParentDictionaryId.value
-  if (!dictId) {
-    parentDictionaryItems.value = []
-    formData.parent_id = null
-    return
-  }
-  parentDictionaryItems.value = dictionaryItemsMap.value[dictId] || []
-  // Сбросить parent_id если его элемент больше не в списке
-  if (formData.parent_id && !parentDictionaryItems.value.some(i => i.id === formData.parent_id)) {
-    formData.parent_id = null
-  }
+  parentDictionaryItems.value = dictId ? (dictionaryItemsMap.value[dictId] || []) : []
 }
 
-const getParentName = (parentId: string): string => {
-  const parent = allItems.value.find(i => i.id === parentId)
-  return parent?.name || 'Родитель не найден'
+const clearAllLinks = () => {
+  formData.linked_ids = []
+  selectedParentDictionaryId.value = null
+  parentDictionaryItems.value = []
+}
+
+// Умный поиск имен родителей (проверяем и parent_id, и metadata.linked_ids)
+const getParentNames = (itemId: string): string[] => {
+  const names: string[] = []
+  const currentItem = items.value.find(i => i.id === itemId)
+  if (!currentItem) return names
+
+  const idsToCheck = new Set<string>()
+  if (currentItem.parent_id) idsToCheck.add(currentItem.parent_id)
+  if (currentItem.metadata?.linked_ids && Array.isArray(currentItem.metadata.linked_ids)) {
+    currentItem.metadata.linked_ids.forEach((id: string) => idsToCheck.add(id))
+  }
+
+  for (const dictId in dictionaryItemsMap.value) {
+    for (const pItem of dictionaryItemsMap.value[dictId]) {
+      if (idsToCheck.has(pItem.id)) {
+        names.push(pItem.name)
+      }
+    }
+  }
+  return names
 }
 
 const resetForm = () => {
   formData.name = ''
   formData.code = ''
-  formData.parent_id = null
-  formData.metadata = ''
+  formData.linked_ids = []
+  formData.metadataRaw = ''
   metadataError.value = ''
   showAdvanced.value = false
   isEditing.value = false
@@ -371,21 +359,32 @@ const openEditModal = (item: DictionaryItem) => {
   editingId.value = item.id
   formData.name = item.name || ''
   formData.code = item.code || ''
-  formData.parent_id = item.parent_id ?? null
+  
+  // ЧИТАЕМ СТАРЫЕ СВЯЗИ: сначала из linked_ids, если нет - из parent_id
+  if (item.metadata?.linked_ids && Array.isArray(item.metadata.linked_ids)) {
+    formData.linked_ids = [...item.metadata.linked_ids]
+  } else if (item.parent_id) {
+    formData.linked_ids = [item.parent_id]
+  }
 
-  // Если есть родитель — найти его справочник и элементы
-  if (item.parent_id) {
-    const parentItem = allItems.value.find(i => i.id === item.parent_id)
-    if (parentItem) {
-      selectedParentDictionaryId.value = parentItem.dictionary_id
-      // Загрузить элементы этого справочника
-      parentDictionaryItems.value = dictionaryItemsMap.value[parentItem.dictionary_id] || []
+  // Предзаполняем селект справочника, если есть связи
+  if (formData.linked_ids.length > 0) {
+    const firstLinkId = formData.linked_ids[0]
+    for (const dictId in dictionaryItemsMap.value) {
+      if (dictionaryItemsMap.value[dictId].some(i => i.id === firstLinkId)) {
+        selectedParentDictionaryId.value = dictId
+        parentDictionaryItems.value = dictionaryItemsMap.value[dictId]
+        break
+      }
     }
   }
 
   if (item.metadata && typeof item.metadata === 'object') {
-    formData.metadata = JSON.stringify(item.metadata, null, 2)
-    showAdvanced.value = true
+    const { linked_ids, ...rest } = item.metadata
+    if (Object.keys(rest).length > 0) {
+      formData.metadataRaw = JSON.stringify(rest, null, 2)
+      showAdvanced.value = true
+    }
   }
 
   showModal.value = true
@@ -402,8 +401,8 @@ const saveItem = async () => {
     return
   }
 
-  if (formData.metadata && metadataError.value) {
-    result.value = { error: 'Исправьте ошибку в дополнительных свойствах' }
+  if (formData.metadataRaw && metadataError.value) {
+    result.value = { error: 'Исправьте ошибку в JSON' }
     return
   }
 
@@ -414,20 +413,29 @@ const saveItem = async () => {
     const dictId = String(route.params.id)
     const token = localStorage.getItem('token')
 
-    let metadata: any = null
-    if (formData.metadata?.trim()) {
-      try {
-        metadata = JSON.parse(formData.metadata)
-      } catch (e) {
-        // уже проверено в watch
-      }
+    let parsedMetadata: any = {}
+    if (formData.metadataRaw?.trim()) {
+      parsedMetadata = JSON.parse(formData.metadataRaw)
     }
+
+    // ГИБРИДНОЕ СОХРАНЕНИЕ:
+    // 1. linked_ids сохраняем в metadata для полной истории множественных связей
+    // 2. parent_id дублируем первым элементом из linked_ids для совместимости со строгими каскадами
+    const finalMetadata = {
+      ...parsedMetadata,
+      linked_ids: formData.linked_ids.length > 0 ? formData.linked_ids : undefined
+    }
+    
+    // Очищаем metadata от пустых ключей
+    Object.keys(finalMetadata).forEach(key => {
+      if (finalMetadata[key] === undefined) delete finalMetadata[key]
+    })
 
     const payload = {
       name: formData.name,
       code: formData.code || undefined,
-      parent_id: formData.parent_id === '__none__' ? null : formData.parent_id,
-      metadata: metadata || undefined
+      parent_id: formData.linked_ids.length > 0 ? formData.linked_ids[0] : null,
+      metadata: Object.keys(finalMetadata).length > 0 ? finalMetadata : undefined
     }
 
     const url = isEditing.value && editingId.value
@@ -446,14 +454,11 @@ const saveItem = async () => {
 
     if (!response.ok) {
       const errorData = await response.json()
-      result.value = { error: errorData.error || (isEditing.value ? 'Не удалось сохранить' : 'Не удалось добавить') }
+      result.value = { error: errorData.error || 'Ошибка сохранения' }
       return
     }
 
-    result.value = {
-      success: true,
-      message: isEditing.value ? 'Элемент обновлён' : 'Элемент добавлен'
-    }
+    result.value = { success: true, message: isEditing.value ? 'Элемент обновлён' : 'Элемент добавлен' }
     closeModal()
     await loadData()
   } catch (err) {
@@ -465,8 +470,7 @@ const saveItem = async () => {
 }
 
 const deleteItem = async (itemId: string) => {
-  if (!itemId) return
-  if (!confirm('Удалить элемент?')) return
+  if (!confirm('Удалить элемент? Это действие необратимо.')) return
 
   try {
     const dictId = String(route.params.id)
@@ -479,7 +483,7 @@ const deleteItem = async (itemId: string) => {
 
     if (!response.ok) {
       const errorData = await response.json()
-      result.value = { error: errorData.error || 'Не удалось удалить элемент' }
+      result.value = { error: errorData.error || 'Не удалось удалить' }
       return
     }
 
@@ -492,7 +496,7 @@ const deleteItem = async (itemId: string) => {
 </script>
 
 <style scoped>
-.items-page { width: 100%; max-width: 1000px; margin: 0 auto; animation: fadeUp 0.5s ease both; }
+.items-page { width: 100%; max-width: 1000px; margin: 0 auto; animation: fadeUp 0.5s ease both; font-family: inherit; }
 @keyframes fadeUp { from { opacity: 0; transform: translateY(12px); } to { opacity: 1; transform: translateY(0); } }
 .loading-state, .error-state { text-align: center; padding: 4rem 2rem; }
 .spinner, .spinner-small { width: 40px; height: 40px; border: 3px solid var(--border); border-top-color: var(--primary); border-radius: 50%; animation: spin 0.7s linear infinite; margin: 0 auto 1rem; }
@@ -502,75 +506,79 @@ const deleteItem = async (itemId: string) => {
 .error-icon svg { width: 32px; height: 32px; }
 .error-state h2 { font-size: 1.5rem; font-weight: 700; color: var(--text); margin-bottom: 0.5rem; }
 .error-state p { color: var(--text-muted); margin-bottom: 1.5rem; }
-.btn-secondary { display: inline-flex; align-items: center; gap: 0.5rem; padding: 0.75rem 1.5rem; background: var(--surface); color: var(--text); border: 1.5px solid var(--border); border-radius: var(--radius-sm); font-size: 0.95rem; font-weight: 600; text-decoration: none; cursor: pointer; transition: all 0.2s; }
+.btn-secondary { display: inline-flex; align-items: center; gap: 0.5rem; padding: 0.75rem 1.5rem; background: var(--surface); color: var(--text); border: 1.5px solid var(--border); border-radius: var(--radius-sm); font-size: 0.95rem; font-weight: 600; text-decoration: none; cursor: pointer; transition: all 0.2s; font-family: inherit; }
 .btn-secondary:hover { background: var(--bg); border-color: #cfd6e3; }
 .items-container { animation: fadeUp 0.5s ease both; }
 .page-header { margin-bottom: 2rem; }
 .header-top { display: flex; justify-content: space-between; align-items: flex-start; gap: 1rem; flex-wrap: wrap; }
-.back-link { display: inline-flex; align-items: center; gap: 0.35rem; color: var(--text-muted); text-decoration: none; font-size: 0.88rem; font-weight: 500; margin-bottom: 0.75rem; transition: color 0.2s; }
+.back-link { display: inline-flex; align-items: center; gap: 0.35rem; color: var(--text-muted); text-decoration: none; font-size: 0.88rem; font-weight: 500; margin-bottom: 0.75rem; transition: color 0.2s; font-family: inherit; }
 .back-link:hover { color: var(--primary); }
 .back-link svg { width: 14px; height: 14px; }
-.page-title { font-size: 2rem; font-weight: 700; color: var(--text); letter-spacing: -0.02em; margin-bottom: 0.5rem; }
-.page-subtitle { color: var(--text-muted); font-size: 1rem; }
-.btn-primary { display: inline-flex; align-items: center; gap: 0.4rem; padding: 0.6rem 1rem; background: var(--primary); color: #fff; border: none; border-radius: var(--radius-sm); font-size: 0.9rem; font-weight: 600; cursor: pointer; transition: all 0.2s; }
+.page-title { font-size: 2rem; font-weight: 700; color: var(--text); letter-spacing: -0.02em; margin-bottom: 0.5rem; font-family: inherit; }
+.page-subtitle { color: var(--text-muted); font-size: 1rem; font-family: inherit; }
+.btn-primary { display: inline-flex; align-items: center; gap: 0.4rem; padding: 0.6rem 1rem; background: var(--primary); color: #fff; border: none; border-radius: var(--radius-sm); font-size: 0.9rem; font-weight: 600; cursor: pointer; transition: all 0.2s; font-family: inherit; }
 .btn-primary:hover:not(:disabled) { background: var(--primary-hover, #243f72); }
 .btn-primary:disabled { opacity: 0.7; cursor: not-allowed; }
 .btn-primary svg { width: 16px; height: 16px; }
 .empty-state { text-align: center; padding: 3rem 2rem; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); }
 .empty-icon { width: 64px; height: 64px; background: var(--primary-soft); color: var(--primary); border-radius: 16px; display: flex; align-items: center; justify-content: center; margin: 0 auto 1.5rem; }
 .empty-icon svg { width: 32px; height: 32px; }
-.empty-state h3 { font-size: 1.25rem; font-weight: 700; color: var(--text); margin-bottom: 0.5rem; }
-.empty-state p { color: var(--text-muted); margin-bottom: 1.5rem; }
+.empty-state h3 { font-size: 1.25rem; font-weight: 700; color: var(--text); margin-bottom: 0.5rem; font-family: inherit; }
+.empty-state p { color: var(--text-muted); margin-bottom: 1.5rem; font-family: inherit; }
 .items-list { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; }
-.list-header { display: grid; grid-template-columns: 2fr 1fr 2fr 90px; gap: 1rem; padding: 1rem 1.5rem; background: var(--bg); border-bottom: 1px solid var(--border); font-size: 0.85rem; font-weight: 600; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.05em; }
-.item-card { display: grid; grid-template-columns: 2fr 1fr 2fr 90px; gap: 1rem; padding: 1.25rem 1.5rem; border-bottom: 1px solid var(--border); transition: all 0.2s; animation: fadeUp 0.3s ease both; }
+.list-header { display: grid; grid-template-columns: 2fr 1fr 2.5fr 90px; gap: 1rem; padding: 1rem 1.5rem; background: var(--bg); border-bottom: 1px solid var(--border); font-size: 0.85rem; font-weight: 600; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.05em; font-family: inherit; }
+.item-card { display: grid; grid-template-columns: 2fr 1fr 2.5fr 90px; gap: 1rem; padding: 1.25rem 1.5rem; border-bottom: 1px solid var(--border); transition: all 0.2s; animation: fadeUp 0.3s ease both; font-family: inherit; }
 .item-card:last-child { border-bottom: none; }
 .item-card:hover { background: var(--bg); }
 .col-name, .col-code, .col-parent { display: flex; align-items: center; }
 .col-actions { display: flex; align-items: center; justify-content: center; gap: 0.35rem; }
-.item-label { font-size: 1rem; font-weight: 600; color: var(--text); }
-.item-code code { background: var(--bg); padding: 0.2rem 0.5rem; border-radius: 4px; font-size: 0.85rem; color: var(--primary); font-family: 'SF Mono', Menlo, monospace; }
-.item-empty { color: var(--text-muted); font-size: 0.9rem; }
-.item-parent { display: flex; align-items: center; gap: 0.4rem; font-size: 0.88rem; color: var(--text); flex-wrap: wrap; }
-.item-parent svg { width: 14px; height: 14px; color: var(--primary); flex-shrink: 0; }
+.item-label { font-size: 1rem; font-weight: 600; color: var(--text); font-family: inherit; }
+.item-code-badge, .item-code-badge-small { background: var(--bg); padding: 0.2rem 0.5rem; border-radius: 4px; font-size: 0.8rem; color: var(--primary); font-family: 'SF Mono', Menlo, monospace; border: 1px solid var(--border); }
+.item-code-badge-small { font-size: 0.75rem; padding: 0.1rem 0.4rem; margin-left: 0.5rem; }
+.item-empty { color: var(--text-muted); font-size: 0.9rem; font-family: inherit; }
+.parent-tags { display: flex; flex-wrap: wrap; gap: 0.4rem; }
+.parent-tag { display: inline-flex; align-items: center; gap: 0.3rem; font-size: 0.85rem; color: var(--text); background: var(--primary-soft); color: var(--primary); padding: 0.25rem 0.6rem; border-radius: 6px; font-weight: 500; font-family: inherit; }
+.parent-tag svg { width: 12px; height: 12px; }
 .btn-edit-small, .btn-danger-small { width: 36px; height: 36px; border: 1.5px solid var(--border); background: var(--surface); cursor: pointer; border-radius: var(--radius-sm); display: flex; align-items: center; justify-content: center; transition: all 0.2s; flex-shrink: 0; }
 .btn-edit-small { color: var(--primary); }
 .btn-edit-small:hover { background: var(--primary-soft); border-color: var(--primary); }
 .btn-danger-small { color: #c53030; }
 .btn-danger-small:hover { background: #fdecec; border-color: #c53030; }
 .btn-edit-small svg, .btn-danger-small svg { width: 16px; height: 16px; }
-.parent-section { padding: 1.25rem; background: color-mix(in srgb, var(--primary-soft) 40%, var(--surface)); border: 1px dashed var(--primary-soft); border-radius: var(--radius-sm); margin-bottom: 1rem; }
+.parent-section { padding: 1.25rem; background: color-mix(in srgb, var(--primary-soft) 30%, var(--surface)); border: 1px dashed var(--primary-soft); border-radius: var(--radius-sm); margin-bottom: 1rem; }
 .parent-header { display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.5rem; }
 .parent-header svg { width: 18px; height: 18px; color: var(--primary); }
-.parent-header h4 { font-size: 0.95rem; font-weight: 700; color: var(--text); margin: 0; }
-.parent-description { font-size: 0.85rem; color: var(--text-muted); line-height: 1.5; margin-bottom: 1rem; }
+.parent-header h4 { font-size: 0.95rem; font-weight: 700; color: var(--text); margin: 0; font-family: inherit; }
+.parent-description { font-size: 0.85rem; color: var(--text-muted); line-height: 1.5; margin-bottom: 1rem; font-family: inherit; }
+.form-group { display: flex; flex-direction: column; gap: 0.4rem; margin-bottom: 1rem; }
+.form-group label, .section-label { font-size: 0.88rem; font-weight: 600; color: var(--text); font-family: inherit; }
+.form-select, input[type="text"], .form-textarea { width: 100%; padding: 0.75rem 0.95rem; font-size: 0.95rem; font-family: inherit; color: var(--text); background: var(--surface); border: 1.5px solid var(--border); border-radius: var(--radius-sm); transition: border-color 0.2s; }
+.form-select:focus, input[type="text"]:focus, .form-textarea:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 0 4px rgba(47, 79, 138, 0.1); }
+.hint { font-size: 0.8rem; color: var(--text-muted); font-weight: 400; font-family: inherit; }
+.error-hint { font-size: 0.8rem; color: #c53030; font-weight: 500; font-family: inherit; }
+.parent-items-section { margin-top: 0.75rem; padding: 1rem; background: var(--surface); border-radius: var(--radius-sm); border: 1px solid var(--border); }
+.parent-items-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem; }
+.btn-clear-links { display: inline-flex; align-items: center; gap: 0.3rem; padding: 0.35rem 0.65rem; background: transparent; color: var(--text-muted); border: 1px dashed var(--border); border-radius: var(--radius-sm); font-size: 0.8rem; font-weight: 500; cursor: pointer; transition: all 0.15s; font-family: inherit; }
+.btn-clear-links:hover { color: #c53030; border-color: #c53030; background: #fdecec; }
+.btn-clear-links svg { width: 12px; height: 12px; }
+.parent-items-list { display: flex; flex-direction: column; gap: 0.25rem; max-height: 220px; overflow-y: auto; padding: 0.25rem; margin-top: 0.5rem; }
+.parent-item-option { display: flex; align-items: center; gap: 0.6rem; cursor: pointer; padding: 0.5rem 0.75rem; border-radius: 6px; transition: background 0.15s; font-family: inherit; }
+.parent-item-option:hover { background: var(--bg); }
+.custom-checkbox { width: 16px; height: 16px; accent-color: var(--primary); cursor: pointer; flex-shrink: 0; }
+.item-name { font-size: 0.92rem; color: var(--text); font-weight: 500; font-family: inherit; flex: 1; }
+.empty-parent-hint { padding: 1rem; color: var(--text-muted); font-size: 0.88rem; text-align: center; font-family: inherit; }
 .advanced-section { border-top: 1px solid var(--border); padding-top: 0.75rem; margin-top: 0.25rem; }
-.advanced-toggle { display: inline-flex; align-items: center; gap: 0.4rem; padding: 0.5rem 0.75rem; background: transparent; color: var(--text-muted); border: 1px dashed var(--border); border-radius: var(--radius-sm); font-size: 0.85rem; font-weight: 500; cursor: pointer; transition: all 0.2s; font-family: inherit; }
+.advanced-toggle { display: inline-flex; align-items: center; gap: 0.4rem; padding: 0.5rem 0.75rem; background: transparent; color: var(--text-muted); border: 1px dashed var(--border); border-radius: var(--radius-sm); font-size: 0.85rem; font-weight: 500; cursor: pointer; transition: all 0.2s; font-family: inherit; width: 100%; justify-content: center; }
 .advanced-toggle:hover { color: var(--primary); border-color: var(--primary-soft); background: var(--primary-soft); }
 .advanced-toggle svg { width: 14px; height: 14px; }
 .advanced-content { margin-top: 1rem; padding: 1rem; background: var(--bg); border-radius: var(--radius-sm); border: 1px solid var(--border); }
-.modal-overlay { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0, 0, 0, 0.5); display: flex; align-items: center; justify-content: center; z-index: 100; animation: fadeIn 0.2s ease; }
+.modal-overlay { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0, 0, 0, 0.5); display: flex; align-items: center; justify-content: center; z-index: 100; animation: fadeIn 0.2s ease; backdrop-filter: blur(2px); }
 @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
-.modal-content { background: var(--surface); padding: 2rem; border-radius: var(--radius); max-width: 540px; width: 90%; max-height: 90vh; overflow-y: auto; box-shadow: var(--shadow-lg); }
-.modal-content h3 { font-size: 1.35rem; font-weight: 700; color: var(--text); margin-bottom: 1.5rem; }
-.modal-form { display: flex; flex-direction: column; gap: 1rem; }
-.form-group { display: flex; flex-direction: column; gap: 0.4rem; }
-.form-group label { font-size: 0.88rem; font-weight: 600; color: var(--text); }
+.modal-content { background: var(--surface); padding: 2rem; border-radius: var(--radius); max-width: 540px; width: 90%; max-height: 90vh; overflow-y: auto; box-shadow: var(--shadow-lg); font-family: inherit; }
+.modal-content h3 { font-size: 1.35rem; font-weight: 700; color: var(--text); margin-bottom: 1.5rem; font-family: inherit; }
+.modal-form { display: flex; flex-direction: column; gap: 0.5rem; }
 .required { color: #c53030; }
-input[type="text"], textarea, select { width: 100%; padding: 0.75rem 0.95rem; font-size: 0.95rem; font-family: inherit; color: var(--text); background: var(--bg); border: 1.5px solid var(--border); border-radius: var(--radius-sm); transition: border-color 0.2s; resize: vertical; }
-input::placeholder, textarea::placeholder { color: #a6afbf; }
-input:focus, textarea:focus, select:focus { outline: none; border-color: var(--primary); background: var(--surface); box-shadow: 0 0 0 4px rgba(47, 79, 138, 0.1); }
-.hint { font-size: 0.8rem; color: var(--text-muted); font-weight: 400; }
-.error-hint { font-size: 0.8rem; color: #c53030; font-weight: 500; }
-.modal-actions { display: flex; gap: 0.75rem; justify-content: flex-end; margin-top: 0.5rem; }
-
-.parent-items-section { margin-top: 1rem; padding: 1rem; background: var(--bg); border-radius: var(--radius-sm); border: 1px solid var(--border); }
-.parent-items-section label { font-size: 0.88rem; font-weight: 600; color: var(--text); display: block; margin-bottom: 0.5rem; }
-.parent-items-list { display: flex; flex-direction: column; gap: 0.35rem; max-height: 200px; overflow-y: auto; padding: 0.5rem; }
-.parent-item-checkbox { display: flex; align-items: center; gap: 0.5rem; cursor: pointer; font-size: 0.9rem; padding: 0.35rem 0.5rem; border-radius: 4px; transition: background 0.15s; }
-.parent-item-checkbox:hover { background: var(--primary-soft); }
-.parent-item-checkbox input { width: 16px; height: 16px; accent-color: var(--primary); cursor: pointer; }
-.empty-parent-hint { padding: 0.75rem; color: var(--text-muted); font-size: 0.88rem; text-align: center; }
+.modal-actions { display: flex; gap: 0.75rem; justify-content: flex-end; margin-top: 1rem; }
 @media (max-width: 720px) {
   .list-header, .item-card { grid-template-columns: 1fr; gap: 0.5rem; }
   .col-actions { justify-content: flex-start; }
