@@ -354,6 +354,7 @@ const loadDictionaryItems = async (dictionaryId: string) => {
 // Работает когда question.depends_on == null (конструктор формы не имеет поля для его настройки)
 const findParentQuestion = (question: Question): Question | null => {
   if (!question || question.type !== 'dictionary' || !question.dictionary_id) return null
+  if (!form.value) return null
   
   const items = dictionaryItemsCache[question.dictionary_id] || []
   if (items.length === 0) return null
