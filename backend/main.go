@@ -121,8 +121,7 @@ func main() {
         auth.PUT("/dictionaries/:id", handlers.UpdateDictionary(db))
         auth.DELETE("/dictionaries/:id", handlers.DeleteDictionary(db))
 
-        // Элементы справочников (только авторизованным)
-        auth.GET("/dictionaries/:id/items", handlers.ListDictionaryItems(db))
+        // Элементы справочников (создание, обновление, удаление — только авторизованным)
         auth.POST("/dictionaries/:id/items", handlers.CreateDictionaryItem(db))
         auth.PUT("/dictionaries/:id/items/:itemId", handlers.UpdateDictionaryItem(db))
         auth.DELETE("/dictionaries/:id/items/:itemId", handlers.DeleteDictionaryItem(db))
