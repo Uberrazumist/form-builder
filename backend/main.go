@@ -125,9 +125,6 @@ func main() {
         auth.POST("/dictionaries/:id/items", handlers.CreateDictionaryItem(db))
         auth.PUT("/dictionaries/:id/items/:itemId", handlers.UpdateDictionaryItem(db))
         auth.DELETE("/dictionaries/:id/items/:itemId", handlers.DeleteDictionaryItem(db))
-
-        // Бронирование (только авторизованным)
-        auth.GET("/bookings/available", handlers.GetAvailableSlots(db))
     }
 
     // Публичные маршруты — не требуют авторизации (проверка isPublic внутри хендлеров)
