@@ -307,8 +307,9 @@ const availableParentDictionaries = computed(() => {
 
 const onParentDictionaryChange = () => {
   const dictId = selectedParentDictionaryId.value
-  // БЕЗОПАСНЫЙ ДОСТУП: фоллбек на пустой массив
   parentDictionaryItems.value = dictId ? (dictionaryItemsMap.value[dictId] || []) : []
+  // Сбрасываем linked_ids при смене справочника, чтобы не было "висячих" ID из другого справочника
+  formData.linked_ids.splice(0)
 }
 
 const clearAllLinks = () => {
@@ -343,7 +344,7 @@ const getParentNames = (itemId: string): string[] => {
 const resetForm = () => {
   formData.name = ''
   formData.code = ''
-  formData.linked_ids = []
+  formData.linked_ids.splice(0)
   formData.metadataRaw = ''
   metadataError.value = ''
   showAdvanced.value = false
@@ -366,9 +367,9 @@ const openEditModal = (item: DictionaryItem) => {
   formData.code = item.code || ''
   
   if (item.metadata?.linked_ids && Array.isArray(item.metadata.linked_ids)) {
-    formData.linked_ids = [...item.metadata.linked_ids]
+    formData.linked_ids.push(...item.metadata.linked_ids)
   } else if (item.parent_id) {
-    formData.linked_ids = [item.parent_id]
+    formData.linked_ids.push(item.parent_id)
   }
 
   if (formData.linked_ids.length > 0) {

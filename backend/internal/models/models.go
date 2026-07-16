@@ -91,15 +91,16 @@ type DictionaryItem struct {
     UpdatedAt    time.Time      `json:"updated_at"`
 }
 
-// Booking – бронирование
+// Booking – бронирование (новая структура с уникальным индексом)
 type Booking struct {
-    ID        uuid.UUID `gorm:"type:uuid;primaryKey;default:gen_random_uuid()" json:"id"`
-    FormID    uuid.UUID `gorm:"type:uuid;not null;index" json:"form_id"`
-    UserID    uuid.UUID `gorm:"type:uuid;not null" json:"user_id"`
-    TeacherID uuid.UUID `gorm:"type:uuid;not null;index" json:"teacher_id"`
-    SlotID    uuid.UUID `gorm:"type:uuid;not null;index" json:"slot_id"`
-    Date      time.Time `gorm:"type:date;not null;index" json:"date"`
-    CreatedAt time.Time `json:"created_at"`
+    ID         uuid.UUID `gorm:"type:uuid;primaryKey;default:gen_random_uuid()" json:"id"`
+    FormID     uuid.UUID `gorm:"type:uuid;not null;index" json:"form_id"`
+    UserID     uuid.UUID `gorm:"type:uuid;not null" json:"user_id"`
+    ResourceID uuid.UUID `gorm:"type:uuid;not null;uniqueIndex:idx_booking_resource_time" json:"resource_id"`
+    Date       time.Time `gorm:"type:date;not null;uniqueIndex:idx_booking_resource_time" json:"date"`
+    StartTime  time.Time `gorm:"not null;uniqueIndex:idx_booking_resource_time" json:"start_time"`
+    EndTime    time.Time `gorm:"not null" json:"end_time"`
+    CreatedAt  time.Time `json:"created_at"`
 }
 
 // Class – класс (для обратной совместимости)
@@ -135,4 +136,15 @@ type FormPermission struct {
     UserID     uuid.UUID `gorm:"type:uuid;not null;index" json:"user_id"`
     Permission string    `gorm:"not null" json:"permission"` // "view", "edit"
     CreatedAt  time.Time `json:"created_at"`
+}
+
+// ScheduleRule – правило расписания для генерации слотов на лету
+type ScheduleRule struct {
+    ID         uuid.UUID      `gorm:"type:uuid;primaryKey;default:gen_random_uuid()" json:"id"`
+    ResourceID uuid.UUID      `gorm:"type:uuid;not null;index" json:"resource_id"` // ID элемента справочника (учитель, кабинет)
+    Name       string         `gorm:"not null" json:"name"`                         // "Расписание Иванова"
+    Recurring  datatypes.JSON `gorm:"type:jsonb;not null" json:"recurring"`         // Правила генерации слотов
+    IsDeleted  bool           `gorm:"default:false" json:"is_deleted"`              // Мягкое удаление
+    CreatedAt  time.Time      `json:"created_at"`
+    UpdatedAt  time.Time      `json:"updated_at"`
 }

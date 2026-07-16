@@ -42,7 +42,7 @@ func CreateForm(db *gorm.DB) gin.HandlerFunc {
                 Description  string                 `json:"description"`
                 OrderIndex   int                    `json:"order_index"`
                 IsRequired   bool                   `json:"is_required"`
-                Options      map[string]interface{} `json:"options"`
+                Options      []interface{}          `json:"options"`
                 Validation   map[string]interface{} `json:"validation"`
                 DependsOn    *string                `json:"depends_on"`
                 DictionaryID *string                `json:"dictionary_id"`
@@ -264,7 +264,7 @@ func UpdateForm(db *gorm.DB) gin.HandlerFunc {
                 Description  string                 `json:"description"`
                 OrderIndex   int                    `json:"order_index"`
                 IsRequired   bool                   `json:"is_required"`
-                Options      map[string]interface{} `json:"options"`
+                Options      []interface{}          `json:"options"`
                 Validation   map[string]interface{} `json:"validation"`
                 DependsOn    *string                `json:"depends_on"`
                 DictionaryID *string                `json:"dictionary_id"`
@@ -444,7 +444,7 @@ func SubmitResponse(db *gorm.DB) gin.HandlerFunc {
             }
         }
 
-        // Поиск вопросов для бронирования
+        // Поиск вопросов для бронирования (старый стиль: dictionary + is_booking)
         var bookingQuestion *models.Question
         var dateQuestion *models.Question
 
@@ -455,6 +455,15 @@ func SubmitResponse(db *gorm.DB) gin.HandlerFunc {
             }
             if q.Type == "date" {
                 dateQuestion = q
+            }
+        }
+
+        // Поиск вопросов типа "schedule" (новый стиль)
+        var scheduleQuestions []models.Question
+        for i := range form.Questions {
+            q := &form.Questions[i]
+            if q.Type == "schedule" {
+                scheduleQuestions = append(scheduleQuestions, *q)
             }
         }
 
@@ -545,6 +554,173 @@ func SubmitResponse(db *gorm.DB) gin.HandlerFunc {
                 userIDPtr = &parsed
             }
             answersJSON, err := json.Marshal(input.Answers)
+            if err != nil {
+                tx.Rollback()
+                c.JSON(http.StatusBadRequest, gin.H{"error": "Ошибка сериализации ответов"})
+                return
+            }
+            response := models.Response{
+                FormID:  form.ID,
+                UserID:  userIDPtr,
+                Answers: datatypes.JSON(answersJSON),
+            }
+            if err := tx.Create(&response).Error; err != nil {
+                tx.Rollback()
+                c.JSON(http.StatusInternalServerError, gin.H{"error": "Ошибка сохранения ответа"})
+                return
+            }
+
+            tx.Commit()
+            c.JSON(http.StatusCreated, gin.H{"message": "Ответ сохранён и бронирование выполнено"})
+            return
+        }
+
+        // Обработка вопросов типа "schedule" (новый стиль бронирования)
+        if len(scheduleQuestions) > 0 {
+            tx := db.Begin()
+
+            for _, sq := range scheduleQuestions {
+                answerRaw, has := input.Answers[sq.ID.String()]
+                if !has || answerRaw == nil {
+                    // Проверяем обязательность
+                    if sq.IsRequired {
+                        tx.Rollback()
+                        c.JSON(http.StatusBadRequest, gin.H{"error": fmt.Sprintf("Вопрос '%s' обязателен", sq.Title)})
+                        return
+                    }
+                    continue
+                }
+
+                // answerRaw — map: {"date": "2026-07-20", "start_time": "09:00:00Z", "end_time": "09:45:00Z"}
+                answerMap, ok := answerRaw.(map[string]interface{})
+                if !ok {
+                    tx.Rollback()
+                    c.JSON(http.StatusBadRequest, gin.H{"error": fmt.Sprintf("Неверный формат ответа на вопрос '%s'", sq.Title)})
+                    return
+                }
+
+                dateStr, ok := answerMap["date"].(string)
+                if !ok || dateStr == "" {
+                    tx.Rollback()
+                    c.JSON(http.StatusBadRequest, gin.H{"error": fmt.Sprintf("Не указана дата в вопросе '%s'", sq.Title)})
+                    return
+                }
+
+                startTimeStr, ok := answerMap["start_time"].(string)
+                endTimeStr, ok2 := answerMap["end_time"].(string)
+                if !ok || !ok2 || startTimeStr == "" || endTimeStr == "" {
+                    tx.Rollback()
+                    c.JSON(http.StatusBadRequest, gin.H{"error": fmt.Sprintf("Не указаны время в вопросе '%s'", sq.Title)})
+                    return
+                }
+
+                date, err := time.Parse("2006-01-02", dateStr)
+                if err != nil {
+                    tx.Rollback()
+                    c.JSON(http.StatusBadRequest, gin.H{"error": fmt.Sprintf("Неверный формат даты в вопросе '%s'", sq.Title)})
+                    return
+                }
+
+                startTime, err := time.Parse(time.RFC3339, startTimeStr)
+                if err != nil {
+                    // Пробуем формат "15:04"
+                    t, parseErr := time.Parse("15:04", startTimeStr)
+                    if parseErr != nil {
+                        tx.Rollback()
+                        c.JSON(http.StatusBadRequest, gin.H{"error": fmt.Sprintf("Неверный формат start_time в вопросе '%s'", sq.Title)})
+                        return
+                    }
+                    startTime = time.Date(date.Year(), date.Month(), date.Day(), t.Hour(), t.Minute(), 0, 0, time.UTC)
+                }
+
+                endTime, err := time.Parse(time.RFC3339, endTimeStr)
+                if err != nil {
+                    // Пробуем формат "15:04"
+                    t, parseErr := time.Parse("15:04", endTimeStr)
+                    if parseErr != nil {
+                        tx.Rollback()
+                        c.JSON(http.StatusBadRequest, gin.H{"error": fmt.Sprintf("Неверный формат end_time в вопросе '%s'", sq.Title)})
+                        return
+                    }
+                    endTime = time.Date(date.Year(), date.Month(), date.Day(), t.Hour(), t.Minute(), 0, 0, time.UTC)
+                }
+
+                // resource_id берём из depends_on (родительский вопрос графа — учитель/кабинет)
+                var resourceID uuid.UUID
+                if sq.DependsOn != nil {
+                    resourceID = *sq.DependsOn
+                } else {
+                    tx.Rollback()
+                    c.JSON(http.StatusBadRequest, gin.H{"error": fmt.Sprintf("Вопрос '%s' не привязан к ресурсу", sq.Title)})
+                    return
+                }
+
+                // Атомарная проверка + создание бронирования
+                var existingBooking models.Booking
+                err = tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+                    Where("resource_id = ? AND date = ? AND start_time = ?", resourceID, date, startTime).
+                    First(&existingBooking).Error
+
+                if err == nil {
+                    tx.Rollback()
+                    c.JSON(http.StatusConflict, gin.H{"error": "Выбранное время уже занято, пожалуйста, выберите другой слот"})
+                    return
+                } else if !errors.Is(err, gorm.ErrRecordNotFound) {
+                    tx.Rollback()
+                    c.JSON(http.StatusInternalServerError, gin.H{"error": "Ошибка проверки бронирования"})
+                    return
+                }
+
+                var userID uuid.UUID
+                if userIDStr != "" {
+                    parsed, err := uuid.Parse(userIDStr)
+                    if err != nil {
+                        tx.Rollback()
+                        c.JSON(http.StatusBadRequest, gin.H{"error": "Неверный ID пользователя"})
+                        return
+                    }
+                    userID = parsed
+                } else {
+                    userID = uuid.Nil
+                }
+
+                booking := models.Booking{
+                    FormID:     form.ID,
+                    UserID:     userID,
+                    ResourceID: resourceID,
+                    Date:       date,
+                    StartTime:  startTime,
+                    EndTime:    endTime,
+                }
+                if err := tx.Create(&booking).Error; err != nil {
+                    tx.Rollback()
+                    // Проверяем unique violation
+                    if err.Error() != "" {
+                        c.JSON(http.StatusConflict, gin.H{"error": "Выбранное время уже занято, пожалуйста, выберите другой слот"})
+                        return
+                    }
+                    c.JSON(http.StatusInternalServerError, gin.H{"error": "Ошибка создания бронирования"})
+                    return
+                }
+            }
+
+            // Сохраняем ответ на форму (без schedule-вопросов, они уже в Booking)
+            var userIDPtr *uuid.UUID
+            if userIDStr != "" {
+                parsed, _ := uuid.Parse(userIDStr)
+                userIDPtr = &parsed
+            }
+
+            // Удаляем schedule-ответы из answers, чтобы не дублировать
+            filteredAnswers := make(map[string]interface{})
+            for k, v := range input.Answers {
+                filteredAnswers[k] = v
+            }
+            for _, sq := range scheduleQuestions {
+                delete(filteredAnswers, sq.ID.String())
+            }
+
+            answersJSON, err := json.Marshal(filteredAnswers)
             if err != nil {
                 tx.Rollback()
                 c.JSON(http.StatusBadRequest, gin.H{"error": "Ошибка сериализации ответов"})

@@ -51,10 +51,11 @@ func main() {
         &models.Dictionary{},
         &models.DictionaryItem{},
         &models.Booking{},
-        &models.Teacher{},
         &models.Class{},
+        &models.Teacher{},
         &models.TimeSlot{},
         &models.FormPermission{},
+        &models.ScheduleRule{},
     ); err != nil {
         log.Fatal("Migration failed:", err)
     }
@@ -125,13 +126,21 @@ func main() {
         auth.POST("/dictionaries/:id/items", handlers.CreateDictionaryItem(db))
         auth.PUT("/dictionaries/:id/items/:itemId", handlers.UpdateDictionaryItem(db))
         auth.DELETE("/dictionaries/:id/items/:itemId", handlers.DeleteDictionaryItem(db))
+
+        // Расписание (CRUD — только авторизованным)
+        auth.GET("/schedules", handlers.ListScheduleRules(db))
+        auth.POST("/schedules", handlers.CreateScheduleRule(db))
+        auth.GET("/schedules/:id", handlers.GetScheduleRule(db))
+        auth.PUT("/schedules/:id", handlers.UpdateScheduleRule(db))
+        auth.DELETE("/schedules/:id", handlers.DeleteScheduleRule(db))
+        auth.POST("/bookings/:id/cancel", handlers.CancelBooking(db))
     }
 
     // Публичные маршруты — не требуют авторизации (проверка isPublic внутри хендлеров)
     r.GET("/api/forms/:id", handlers.GetForm(db))
     r.POST("/api/responses", handlers.SubmitResponse(db))
     r.GET("/api/dictionaries/:id/items", handlers.ListDictionaryItems(db))
-    r.GET("/api/bookings/available", handlers.GetAvailableSlots(db))
+    r.GET("/api/schedules/available", handlers.GetAvailableSlots(db))
 
     log.Println("Server starting on :8080")
     r.Run(":8080")
