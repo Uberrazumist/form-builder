@@ -208,14 +208,14 @@ const generatePreview = () => {
 
   if (!todayConfig || !todayConfig.is_working) return
 
-  // TS не делает narrowing после if (!todayConfig), поэтому используем ! 
-  const tc = todayConfig!
+  // Приведение типа — find() возвращает DayConfig | undefined
+  const tc: DayConfig = todayConfig as DayConfig
   const startTimeParts = tc.start_time.split(':')
   const endTimeParts = tc.end_time.split(':')
-  const startH = parseInt(startTimeParts[0], 10)
-  const startM = parseInt(startTimeParts[1], 10)
-  const endH = parseInt(endTimeParts[0], 10)
-  const endM = parseInt(endTimeParts[1], 10)
+  const startH = parseInt(startTimeParts[0] || '0', 10)
+  const startM = parseInt(startTimeParts[1] || '0', 10)
+  const endH = parseInt(endTimeParts[0] || '0', 10)
+  const endM = parseInt(endTimeParts[1] || '0', 10)
 
   const current = new Date()
   current.setHours(startH, startM, 0, 0)
