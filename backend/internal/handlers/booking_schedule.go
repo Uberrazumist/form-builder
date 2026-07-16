@@ -224,7 +224,7 @@ func GetAvailableSlots(db *gorm.DB) gin.HandlerFunc {
             return
         }
 
-        // 2. Парсим recurring
+        // 2. Парсим recurring — поддержка нового и старого формата
         var recurring struct {
             Type         string   `json:"type"`
             Days         []int    `json:"days"`
@@ -235,6 +235,14 @@ func GetAvailableSlots(db *gorm.DB) gin.HandlerFunc {
             StartDate    string   `json:"start_date"`
             EndDate      string   `json:"end_date"`
             Exceptions   []string `json:"exceptions"`
+            DaysConfig   []struct {
+                Day          int    `json:"day"`
+                IsWorking    bool   `json:"is_working"`
+                StartTime    string `json:"start_time"`
+                EndTime      string `json:"end_time"`
+                SlotDuration int    `json:"slot_duration"`
+                BreakBetween int    `json:"break_between"`
+            } `json:"days_config"`
         }
         if err := json.Unmarshal(rule.Recurring, &recurring); err != nil {
             c.JSON(http.StatusInternalServerError, gin.H{"error": "Ошибка парсинга правил"})
@@ -259,33 +267,75 @@ func GetAvailableSlots(db *gorm.DB) gin.HandlerFunc {
             }
         }
 
-        // 5. Проверяем день недели (только для weekly)
-        if recurring.Type == "weekly" && len(recurring.Days) > 0 {
-            dayOfWeek := int(date.Weekday())
-            if dayOfWeek == 0 {
-                dayOfWeek = 7
+        // 5. Определяем день недели (1=Пн ... 7=Вс)
+        dayOfWeek := int(date.Weekday())
+        if dayOfWeek == 0 {
+            dayOfWeek = 7
+        }
+
+        // 6. Определяем конфигурацию времени для этого дня
+        var dayStartTime, dayEndTime string
+        var daySlotDuration, dayBreakBetween int
+
+        // Новый формат: days_config
+        if len(recurring.DaysConfig) > 0 {
+            var dayConfig *struct {
+                Day          int    `json:"day"`
+                IsWorking    bool   `json:"is_working"`
+                StartTime    string `json:"start_time"`
+                EndTime      string `json:"end_time"`
+                SlotDuration int    `json:"slot_duration"`
+                BreakBetween int    `json:"break_between"`
             }
-            dayMatch := false
-            for _, d := range recurring.Days {
-                if d == dayOfWeek {
-                    dayMatch = true
+            for i := range recurring.DaysConfig {
+                if recurring.DaysConfig[i].Day == dayOfWeek {
+                    dayConfig = &recurring.DaysConfig[i]
                     break
                 }
             }
-            if !dayMatch {
+            if dayConfig == nil || !dayConfig.IsWorking {
                 c.JSON(http.StatusOK, gin.H{"slots": []interface{}{}})
                 return
             }
+            dayStartTime = dayConfig.StartTime
+            dayEndTime = dayConfig.EndTime
+            daySlotDuration = dayConfig.SlotDuration
+            dayBreakBetween = dayConfig.BreakBetween
+        } else {
+            // Старый формат: flat days + global times
+            if recurring.Type == "weekly" && len(recurring.Days) > 0 {
+                dayMatch := false
+                for _, d := range recurring.Days {
+                    if d == dayOfWeek {
+                        dayMatch = true
+                        break
+                    }
+                }
+                if !dayMatch {
+                    c.JSON(http.StatusOK, gin.H{"slots": []interface{}{}})
+                    return
+                }
+            }
+            dayStartTime = recurring.StartTime
+            dayEndTime = recurring.EndTime
+            daySlotDuration = recurring.SlotDuration
+            dayBreakBetween = recurring.BreakBetween
         }
 
-        // 6. Генерируем слоты в памяти
-        var sh, sm int
-        fmt.Sscanf(recurring.StartTime, "%d:%d", &sh, &sm)
-        var eh, em int
-        fmt.Sscanf(recurring.EndTime, "%d:%d", &eh, &em)
+        // Если время не задано — выходим
+        if dayStartTime == "" || dayEndTime == "" {
+            c.JSON(http.StatusOK, gin.H{"slots": []interface{}{}})
+            return
+        }
 
-        slotDuration := time.Duration(recurring.SlotDuration) * time.Minute
-        breakDuration := time.Duration(recurring.BreakBetween) * time.Minute
+        // 7. Генерируем слоты в памяти
+        var sh, sm int
+        fmt.Sscanf(dayStartTime, "%d:%d", &sh, &sm)
+        var eh, em int
+        fmt.Sscanf(dayEndTime, "%d:%d", &eh, &em)
+
+        slotDuration := time.Duration(daySlotDuration) * time.Minute
+        breakDuration := time.Duration(dayBreakBetween) * time.Minute
 
         currentStart := time.Date(date.Year(), date.Month(), date.Day(), sh, sm, 0, 0, time.UTC)
         dayEnd := time.Date(date.Year(), date.Month(), date.Day(), eh, em, 0, 0, time.UTC)
@@ -297,10 +347,10 @@ func GetAvailableSlots(db *gorm.DB) gin.HandlerFunc {
                 break
             }
             allSlots = append(allSlots, gin.H{
-                "start_time": currentStart.UTC().Format(time.RFC3339),
-                "end_time":   slotEnd.UTC().Format(time.RFC3339),
+                "start_time":  currentStart.UTC().Format(time.RFC3339),
+                "end_time":    slotEnd.UTC().Format(time.RFC3339),
                 "start_label": currentStart.Format("15:04"),
-                "end_label":   slotEnd.Format("15:04"),
+                "end_label":    slotEnd.Format("15:04"),
             })
             currentStart = currentStart.Add(slotDuration + breakDuration)
         }

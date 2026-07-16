@@ -95,6 +95,7 @@
         <ScheduleBuilder 
           :resource-id="currentEditingResourceId" 
           @saved="onScheduleSaved"
+          @deleted="onScheduleDeleted"
         />
       </div>
     </div>
@@ -181,6 +182,11 @@ const openBuilder = (id: string, name: string) => {
 }
 
 const onScheduleSaved = () => {
+  showBuilderModal.value = false
+  loadAnalytics()
+}
+
+const onScheduleDeleted = () => {
   showBuilderModal.value = false
   loadAnalytics()
 }

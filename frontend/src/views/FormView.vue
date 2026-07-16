@@ -245,7 +245,8 @@ const getQuestionTypeName = (type: string): string => {
     select: 'Выбор из списка',
     rating: 'Рейтинг',
     dictionary: 'Выбор из справочника',
-    date: 'Дата'
+    date: 'Дата',
+    schedule: 'Календарь бронирования'
   }
   return names[type] || type
 }

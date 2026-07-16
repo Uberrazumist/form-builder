@@ -72,6 +72,7 @@
               <option value="rating">Рейтинг (звёзды)</option>
               <option value="date">Дата</option>
               <option value="dictionary">Выбор из справочника</option>
+              <option value="schedule">Календарь бронирования</option>
             </select>
           </div>
 
@@ -131,6 +132,13 @@
                   <span class="hint">Включите, если это запись. Занятые варианты будут отмечены.</span>
                 </span>
               </label>
+            </div>
+          </div>
+
+          <div v-if="question.type === 'schedule'" class="schedule-section">
+            <div class="info-hint">
+              <Icon name="calendar" />
+              <span>Показывает календарь бронирования. Сначала создайте вопрос «Выбор из справочника» (учителя/кабинеты), затем в этом вопросе укажите его как «Зависит от».</span>
             </div>
           </div>
 
@@ -282,6 +290,10 @@ const submitForm = async () => {
       result.value = { error: `Вопрос "${q.title}" должен иметь выбранный справочник` }
       return
     }
+    if (q?.type === 'schedule' && !q.depends_on) {
+      result.value = { error: `Вопрос "${q.title}" (Календарь) должен быть привязан к вопросу выбора ресурса (Зависит от)` }
+      return
+    }
   }
 
   loading.value = true
@@ -392,6 +404,7 @@ input:focus, textarea:focus, select:focus { outline: none; border-color: var(--p
 .btn-remove svg { width: 18px; height: 18px; }
 .options-section, .dictionary-section { margin-bottom: 1.25rem; padding: 1rem; background: var(--surface); border-radius: var(--radius-sm); border: 1px dashed var(--border); }
 .dictionary-section { border-color: var(--primary-soft); background: color-mix(in srgb, var(--primary-soft) 40%, var(--surface)); }
+.schedule-section { margin-bottom: 1.25rem; }
 .options-list { display: flex; flex-direction: column; gap: 0.5rem; margin-bottom: 0.75rem; }
 .option-item { display: flex; gap: 0.5rem; }
 .option-item input { flex: 1; }

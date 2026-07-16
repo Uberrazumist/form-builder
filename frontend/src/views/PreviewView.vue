@@ -154,6 +154,10 @@
               <span v-if="answers[question.id]" class="rating-value">{{ answers[question.id] }} из {{ question.rating_max || 5 }}</span>
             </div>
 
+            <div v-else-if="question.type === 'schedule'">
+              <p class="preview-hint">Календарь бронирования (рендерится в режиме заполнения)</p>
+            </div>
+
             <div v-if="validationError" class="validation-error">
               <Icon name="error" />
               <span>{{ validationError }}</span>
@@ -356,7 +360,10 @@ const isQuestionVisible = (question: Question): boolean => {
   if (!question.depends_on) return true
 
   const parentAnswer = answers[question.depends_on]
-  return !!parentAnswer && String(parentAnswer).trim() !== ''
+  if (!parentAnswer) return false
+  // Если ответ — объект (например, данные из календаря), считаем заполненным
+  if (typeof parentAnswer === 'object' && parentAnswer !== null) return true
+  return typeof parentAnswer === 'string' && parentAnswer.trim() !== ''
 }
 
 const isSelectDisabled = (question: Question): boolean => {
@@ -583,8 +590,8 @@ const showPreviewNotice = () => {
 .option-label:hover { border-color: var(--primary); background: var(--surface); }
 .option-label input[type="radio"], .option-label input[type="checkbox"] { width: 18px; height: 18px; cursor: pointer; accent-color: var(--primary); }
 .empty-hint, .locked-hint { display: flex; align-items: center; gap: 0.6rem; padding: 0.85rem 1rem; border-radius: var(--radius-sm); font-size: 0.9rem; margin-top: 0.75rem; }
-.empty-hint { background: #fff8e1; color: #8a6d00; }
 .locked-hint { background: #f5f5f5; color: #666; border: 1px dashed var(--border); }
+.preview-hint { font-size: 0.85rem; color: var(--text-muted); font-style: italic; margin-top: 0.5rem; }
 .empty-hint svg, .locked-hint svg { width: 18px; height: 18px; flex-shrink: 0; }
 .rating-group { display: flex; flex-direction: column; gap: 0.75rem; }
 .stars { display: flex; gap: 0.5rem; }

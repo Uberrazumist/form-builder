@@ -404,11 +404,16 @@ const isQuestionVisible = (question: Question): boolean => {
     const parentQuestion = findParentQuestion(question)
     if (!parentQuestion) return true
     const parentAnswer = answers[parentQuestion.id]
-    return !!parentAnswer && String(parentAnswer).trim() !== ''
+    if (!parentAnswer) return false
+    if (typeof parentAnswer === 'object' && parentAnswer !== null) return true
+    return typeof parentAnswer === 'string' && parentAnswer.trim() !== ''
   }
 
   const parentAnswer = answers[question.depends_on]
-  return !!parentAnswer && String(parentAnswer).trim() !== ''
+  if (!parentAnswer) return false
+  // Если ответ — объект (например, данные из календаря), считаем заполненным
+  if (typeof parentAnswer === 'object' && parentAnswer !== null) return true
+  return typeof parentAnswer === 'string' && parentAnswer.trim() !== ''
 }
 
 const isSelectDisabled = (question: Question): boolean => {
