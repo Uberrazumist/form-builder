@@ -96,6 +96,7 @@
         </div>
         <ScheduleBuilder 
           :resource-id="currentEditingResourceId" 
+          :dictionaries="[]"
           @saved="onScheduleSaved"
         />
       </div>
@@ -136,6 +137,7 @@ const weekDays = computed(() => {
 })
 
 const currentWeekLabel = computed(() => {
+  if (weekDays.value.length < 7) return ''
   const start = weekDays.value[0].date
   const end = weekDays.value[6].date
   return `${start.toLocaleDateString('ru-RU', { day: 'numeric', month: 'short' })} — ${end.toLocaleDateString('ru-RU', { day: 'numeric', month: 'short', year: 'numeric' })}`
