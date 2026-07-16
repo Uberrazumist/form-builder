@@ -94,9 +94,9 @@
             <Icon name="close" />
           </button>
         </div>
+        <!-- Убран лишний проп dictionaries, оставлен только нужный resourceId -->
         <ScheduleBuilder 
           :resource-id="currentEditingResourceId" 
-          :dictionaries="[]"
           @saved="onScheduleSaved"
         />
       </div>
@@ -119,7 +119,7 @@ const selectedResourceId = ref<string | null>(null)
 const weekOffset = ref(0)
 
 const weekDays = computed(() => {
-  const days = []
+  const days: { date: Date; label: string }[] = []
   const baseDate = new Date()
   baseDate.setDate(baseDate.getDate() + (weekOffset.value * 7))
   const currentDay = baseDate.getDay()
@@ -136,10 +136,13 @@ const weekDays = computed(() => {
   return days
 })
 
+// ✅ ИСПРАВЛЕНИЕ ОШИБКИ TS2532: добавлена безопасная навигация (?.)
 const currentWeekLabel = computed(() => {
-  if (weekDays.value.length < 7) return ''
-  const start = weekDays.value[0].date
-  const end = weekDays.value[6].date
+  const start = weekDays.value[0]?.date
+  const end = weekDays.value[6]?.date
+  
+  if (!start || !end) return 'Загрузка...'
+  
   return `${start.toLocaleDateString('ru-RU', { day: 'numeric', month: 'short' })} — ${end.toLocaleDateString('ru-RU', { day: 'numeric', month: 'short', year: 'numeric' })}`
 })
 
