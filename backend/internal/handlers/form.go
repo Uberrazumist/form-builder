@@ -447,9 +447,6 @@ func SubmitResponse(db *gorm.DB) gin.HandlerFunc {
         // Поиск вопросов типа "schedule" (новый стиль бронирования)
         var scheduleQuestions []models.Question
         for i := range form.Questions {
-        // Поиск вопросов типа "schedule" (новый стиль бронирования)
-        var scheduleQuestions []models.Question
-        for i := range form.Questions {
             q := &form.Questions[i]
             if q.Type == "schedule" {
                 scheduleQuestions = append(scheduleQuestions, *q)
