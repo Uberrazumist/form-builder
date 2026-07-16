@@ -133,6 +133,7 @@ func main() {
         auth.GET("/schedules/:id", handlers.GetScheduleRule(db))
         auth.PUT("/schedules/:id", handlers.UpdateScheduleRule(db))
         auth.DELETE("/schedules/:id", handlers.DeleteScheduleRule(db))
+        auth.GET("/schedules/analytics", handlers.GetScheduleAnalytics(db))
         auth.POST("/bookings/:id/cancel", handlers.CancelBooking(db))
     }
 

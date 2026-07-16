@@ -25,6 +25,7 @@
             <router-link to="/create" class="nav-link" active-class="active">Создать форму</router-link>
             <router-link to="/my-forms" class="nav-link" active-class="active">Мои формы</router-link>
             <router-link to="/dictionaries" class="nav-link" active-class="active">Справочники</router-link>
+            <router-link to="/schedule" class="nav-link" active-class="active">Расписание</router-link>
             <button @click="logout" class="nav-link logout-btn">Выйти</button>
           </template>
           <template v-else>
@@ -43,6 +44,7 @@
           <router-link to="/create" class="nav-link" @click="menuOpen = false">Создать форму</router-link>
           <router-link to="/my-forms" class="nav-link" @click="menuOpen = false">Мои формы</router-link>
           <router-link to="/dictionaries" class="nav-link" @click="menuOpen = false">Справочники</router-link>
+          <router-link to="/schedule" class="nav-link" @click="menuOpen = false">Расписание</router-link>
           <button @click="handleLogout" class="nav-link logout-btn">Выйти</button>
         </template>
         <template v-else>

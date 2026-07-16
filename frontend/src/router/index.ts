@@ -15,6 +15,7 @@ import ForgotPasswordView from '../views/ForgotPasswordView.vue'
 import ResetPasswordView from '../views/ResetPasswordView.vue'
 import DictionariesView from '../views/DictionariesView.vue'
 import DictionaryItemsView from '../views/DictionaryItemsView.vue'
+import ScheduleView from '../views/ScheduleView.vue'
 
 const router = createRouter({
   history: createWebHistory(import.meta.env.BASE_URL),
@@ -93,6 +94,11 @@ const router = createRouter({
       path: '/dictionaries/:id/items',
       name: 'dictionary-items',
       component: DictionaryItemsView
+    },
+    {
+      path: '/schedule',
+      name: 'schedule',
+      component: ScheduleView
     }
   ]
 })
