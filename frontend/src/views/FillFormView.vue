@@ -155,12 +155,17 @@
             </div>
 
             <BookingCalendar
-              v-else-if="question.type === 'schedule' && question.depends_on"
+              v-else-if="question.type === 'schedule' && question.depends_on && answers[question.depends_on]"
               :resource-id="answers[question.depends_on] || ''"
               @select="onScheduleSelect(question.id, $event)"
             />
 
-            <div v-if="question.type === 'schedule'" class="info-hint">
+            <div v-else-if="question.type === 'schedule' && (!question.depends_on || !answers[question.depends_on])" class="locked-hint">
+              <Icon name="lock" />
+              <span>Сначала выберите ресурс в предыдущем вопросе</span>
+            </div>
+
+            <div v-if="question.type === 'schedule' && question.depends_on && answers[question.depends_on]" class="info-hint">
               <Icon name="calendar" />
               <span>Выберите доступное время в календаре</span>
             </div>

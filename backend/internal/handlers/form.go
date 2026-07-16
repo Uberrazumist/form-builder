@@ -523,10 +523,29 @@ func SubmitResponse(db *gorm.DB) gin.HandlerFunc {
                     endTime = time.Date(date.Year(), date.Month(), date.Day(), t.Hour(), t.Minute(), 0, 0, time.UTC)
                 }
 
-                // resource_id берём из depends_on (родительский вопрос графа — учитель/кабинет)
+                // resource_id берём из ответа на родительский вопрос
+                // depends_on указывает на вопрос выбора ресурса (типа dictionary)
+                // ответ на этот вопрос — это UUID выбранного элемента справочника
                 var resourceID uuid.UUID
                 if sq.DependsOn != nil {
-                    resourceID = *sq.DependsOn
+                    parentAnswer, hasParent := input.Answers[sq.DependsOn.String()]
+                    if !hasParent || parentAnswer == nil {
+                        tx.Rollback()
+                        c.JSON(http.StatusBadRequest, gin.H{"error": fmt.Sprintf("Не выбран ресурс для вопроса '%s'", sq.Title)})
+                        return
+                    }
+                    parentAnswerStr, ok := parentAnswer.(string)
+                    if !ok || parentAnswerStr == "" {
+                        tx.Rollback()
+                        c.JSON(http.StatusBadRequest, gin.H{"error": fmt.Sprintf("Неверный формат ответа на родительский вопрос для '%s'", sq.Title)})
+                        return
+                    }
+                    resourceID, err = uuid.Parse(parentAnswerStr)
+                    if err != nil {
+                        tx.Rollback()
+                        c.JSON(http.StatusBadRequest, gin.H{"error": fmt.Sprintf("Неверный ID ресурса для вопроса '%s'", sq.Title)})
+                        return
+                    }
                 } else {
                     tx.Rollback()
                     c.JSON(http.StatusBadRequest, gin.H{"error": fmt.Sprintf("Вопрос '%s' не привязан к ресурсу", sq.Title)})

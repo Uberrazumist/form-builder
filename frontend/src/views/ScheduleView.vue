@@ -69,15 +69,13 @@
             <tr v-for="res in filteredAnalytics" :key="res.id">
               <td class="col-resource">
                 <strong>{{ res.name }}</strong>
+                <span class="resource-bookings-count">{{ res.booked_slots_week }} зап.</span>
                 <button @click="openBuilder(res.id, res.name)" class="btn-tiny-edit">
                   <Icon name="edit" />
                 </button>
               </td>
               <td v-for="(day, idx) in weekDays" :key="idx" class="day-cell">
-                <div v-if="res.booked_slots_week > 0" class="booking-indicator">
-                  <span class="booking-count">{{ res.booked_slots_week }} записей</span>
-                </div>
-                <div v-else class="no-booking">Свободно</div>
+                <div class="day-status">—</div>
               </td>
             </tr>
           </tbody>
@@ -94,7 +92,6 @@
             <Icon name="close" />
           </button>
         </div>
-        <!-- Убран лишний проп dictionaries, оставлен только нужный resourceId -->
         <ScheduleBuilder 
           :resource-id="currentEditingResourceId" 
           @saved="onScheduleSaved"
@@ -228,13 +225,13 @@ const onScheduleSaved = () => {
 .timetable { width: 100%; border-collapse: collapse; min-width: 800px; }
 .timetable th, .timetable td { padding: 1rem; text-align: left; border-bottom: 1px solid var(--border); }
 .timetable th { background: var(--bg); font-weight: 600; color: var(--text-muted); font-size: 0.85rem; text-transform: uppercase; letter-spacing: 0.05em; }
-.col-resource { width: 250px; font-weight: 600; color: var(--text); display: flex; align-items: center; justify-content: space-between; }
+.col-resource { width: 250px; font-weight: 600; color: var(--text); display: flex; align-items: center; justify-content: space-between; gap: 0.5rem; }
+.resource-bookings-count { font-size: 0.8rem; color: var(--text-muted); font-weight: 400; }
 .btn-tiny-edit { width: 28px; height: 28px; border: none; background: transparent; color: var(--text-muted); cursor: pointer; border-radius: 4px; display: flex; align-items: center; justify-content: center; transition: all 0.2s; }
 .btn-tiny-edit:hover { background: var(--primary-soft); color: var(--primary); }
 .btn-tiny-edit svg { width: 14px; height: 14px; }
 .day-cell { text-align: center; }
-.booking-indicator { background: var(--primary-soft); color: var(--primary); padding: 0.4rem 0.8rem; border-radius: 6px; font-size: 0.85rem; font-weight: 600; display: inline-block; }
-.no-booking { color: var(--text-muted); font-size: 0.85rem; font-style: italic; }
+.day-status { color: var(--text-muted); font-size: 0.85rem; }
 
 .modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.5); display: flex; align-items: center; justify-content: center; z-index: 100; backdrop-filter: blur(2px); animation: fadeIn 0.2s ease; }
 @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }

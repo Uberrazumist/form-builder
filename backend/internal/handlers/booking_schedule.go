@@ -15,16 +15,6 @@ import (
     "github.com/Uberrazumist/form-builder/backend/internal/models"
 )
 
-// helper: парсинг времени "HH:MM" → часы, минуты
-func parseTime(t string) (int, int) {
-    var h, m int
-    fmt.Sscanf(t, "%d:%d", &h, &m)
-    if h < 0 || h > 23 || m < 0 || m > 59 {
-        h, m = 9, 0
-    }
-    return h, m
-}
-
 // ========================
 // CRUD ScheduleRule
 // ========================

@@ -101,7 +101,7 @@ import { ref, reactive, watch, computed } from 'vue'
 import Icon from './Icon.vue'
 
 const props = defineProps<{
-  dictionaries: Array<{ id: string; name: string }>
+  dictionaries?: Array<{ id: string; name: string }>
   initialRule?: any
   resourceId: string
 }>()
