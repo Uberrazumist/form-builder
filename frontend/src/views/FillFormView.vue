@@ -155,7 +155,7 @@
             </div>
 
             <BookingCalendar
-              v-else-if="question.type === 'schedule'"
+              v-else-if="question.type === 'schedule' && question.depends_on"
               :resource-id="answers[question.depends_on] || ''"
               @select="onScheduleSelect(question.id, $event)"
             />
