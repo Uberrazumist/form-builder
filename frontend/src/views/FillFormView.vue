@@ -483,7 +483,7 @@ const getFilteredOptions = (question: Question): any[] => {
   // Если depends_on задан явно — используем его
   if (question.depends_on) {
     const parentAnswer = answers[question.depends_on]
-    if (!parentAnswer || String(parentAnswer).trim() === '') return []
+    if (!parentAnswer || (typeof parentAnswer === 'string' && parentAnswer.trim() === '')) return []
     return allItems.filter((item: DictionaryItem) => {
       return String(item.parent_id) === String(parentAnswer)
     })
@@ -494,7 +494,7 @@ const getFilteredOptions = (question: Question): any[] => {
   if (!parentQuestion) return allItems
 
   const parentAnswer = answers[parentQuestion.id]
-  if (!parentAnswer || String(parentAnswer).trim() === '') return []
+  if (!parentAnswer || (typeof parentAnswer === 'string' && parentAnswer.trim() === '')) return []
 
   return allItems.filter((item: DictionaryItem) => {
     return String(item.parent_id) === String(parentAnswer)

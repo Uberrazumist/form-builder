@@ -61,14 +61,41 @@ func GetScheduleAnalytics(db *gorm.DB) gin.HandlerFunc {
 				BreakBetween int    `json:"break_between"`
 				StartTime    string `json:"start_time"`
 				EndTime      string `json:"end_time"`
+				DaysConfig   []struct {
+					Day          int    `json:"day"`
+					IsWorking    bool   `json:"is_working"`
+					StartTime    string `json:"start_time"`
+					EndTime      string `json:"end_time"`
+					SlotDuration int    `json:"slot_duration"`
+					BreakBetween int    `json:"break_between"`
+				} `json:"days_config"`
 			}
 			json.Unmarshal(rule.Recurring, &recurring)
 
 			totalSlots := 0
-			if len(recurring.Days) > 0 && recurring.SlotDuration > 0 && recurring.StartTime != "" && recurring.EndTime != "" {
+
+			// Новый формат: days_config
+			if len(recurring.DaysConfig) > 0 {
+				for _, dc := range recurring.DaysConfig {
+					if !dc.IsWorking || dc.StartTime == "" || dc.EndTime == "" {
+						continue
+					}
+					startParts := strings.Split(dc.StartTime, ":")
+					endParts := strings.Split(dc.EndTime, ":")
+					startH, _ := strconv.Atoi(startParts[0])
+					startM, _ := strconv.Atoi(startParts[1])
+					endH, _ := strconv.Atoi(endParts[0])
+					endM, _ := strconv.Atoi(endParts[1])
+					dayMins := (endH*60 + endM) - (startH*60 + startM)
+					if dayMins > 0 && dc.SlotDuration > 0 {
+						totalSlots += dayMins / (dc.SlotDuration + dc.BreakBetween)
+					}
+				}
+			} else if len(recurring.Days) > 0 && recurring.SlotDuration > 0 && recurring.StartTime != "" && recurring.EndTime != "" {
+				// Старый формат: flat days
 				startParts := strings.Split(recurring.StartTime, ":")
 				endParts := strings.Split(recurring.EndTime, ":")
-				
+
 				startH, _ := strconv.Atoi(startParts[0])
 				startM, _ := strconv.Atoi(startParts[1])
 				endH, _ := strconv.Atoi(endParts[0])

@@ -115,6 +115,15 @@ const emit = defineEmits<{
   deleted: []
 }>()
 
+interface DayConfig {
+  day: number
+  is_working: boolean
+  start_time: string
+  end_time: string
+  slot_duration: number
+  break_between: number
+}
+
 const dayNames = ['Понедельник', 'Вторник', 'Среда', 'Четверг', 'Пятница', 'Суббота', 'Воскресенье']
 
 const form = reactive({
@@ -129,7 +138,7 @@ const form = reactive({
     { day: 5, is_working: true, start_time: '09:00', end_time: '18:00', slot_duration: 45, break_between: 15 },
     { day: 6, is_working: false, start_time: '09:00', end_time: '18:00', slot_duration: 45, break_between: 15 },
     { day: 7, is_working: false, start_time: '09:00', end_time: '18:00', slot_duration: 45, break_between: 15 }
-  ]
+  ] as DayConfig[]
 })
 
 const exceptionsText = ref('')
@@ -199,8 +208,10 @@ const generatePreview = () => {
 
   if (!todayConfig || !todayConfig.is_working) return
 
-  const startTimeParts = (todayConfig.start_time || '09:00').split(':')
-  const endTimeParts = (todayConfig.end_time || '18:00').split(':')
+  // TS не делает narrowing после if (!todayConfig), поэтому используем ! 
+  const tc = todayConfig!
+  const startTimeParts = tc.start_time.split(':')
+  const endTimeParts = tc.end_time.split(':')
   const startH = parseInt(startTimeParts[0], 10)
   const startM = parseInt(startTimeParts[1], 10)
   const endH = parseInt(endTimeParts[0], 10)
@@ -211,8 +222,8 @@ const generatePreview = () => {
   const end = new Date()
   end.setHours(endH, endM, 0, 0)
 
-  const duration = (todayConfig.slot_duration || 45) * 60000
-  const breakMs = (todayConfig.break_between || 15) * 60000
+  const duration = (tc.slot_duration || 45) * 60000
+  const breakMs = (tc.break_between || 15) * 60000
 
   while (current.getTime() + duration <= end.getTime()) {
     const slotEnd = new Date(current.getTime() + duration)

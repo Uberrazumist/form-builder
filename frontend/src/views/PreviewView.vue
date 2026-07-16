@@ -414,7 +414,7 @@ const getFilteredOptions = (question: Question): any[] => {
   if (!question.depends_on) return allItems
 
   const parentAnswer = answers[question.depends_on]
-  if (!parentAnswer || String(parentAnswer).trim() === '') return []
+  if (!parentAnswer || (typeof parentAnswer === 'string' && parentAnswer.trim() === '')) return []
 
   // СТРОГАЯ ФИЛЬТРАЦИЯ: элемент остаётся только если его parent_id совпадает с ответом родителя
   return allItems.filter((item: DictionaryItem) => {
