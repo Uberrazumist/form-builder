@@ -255,7 +255,7 @@ func GetAvailableSlots(db *gorm.DB) gin.HandlerFunc {
         // 1. Находим активное правило расписания
         var rule models.ScheduleRule
         if err := db.Where("resource_id = ? AND is_deleted = false", resourceID).First(&rule).Error; err != nil {
-            c.JSON(http.StatusOK, gin.H{"slots": []})
+            c.JSON(http.StatusOK, gin.H{"slots": []interface{}{}})
             return
         }
 
@@ -279,7 +279,7 @@ func GetAvailableSlots(db *gorm.DB) gin.HandlerFunc {
         // 3. Проверяем exceptions (блокировка отдельных дней)
         for _, exc := range recurring.Exceptions {
             if exc == date.Format("2006-01-02") {
-                c.JSON(http.StatusOK, gin.H{"slots": []})
+                c.JSON(http.StatusOK, gin.H{"slots": []interface{}{}})
                 return
             }
         }
@@ -289,7 +289,7 @@ func GetAvailableSlots(db *gorm.DB) gin.HandlerFunc {
         endDate, err2 := time.Parse("2006-01-02", recurring.EndDate)
         if err1 == nil && err2 == nil {
             if date.Before(startDate) || date.After(endDate) {
-                c.JSON(http.StatusOK, gin.H{"slots": []})
+                c.JSON(http.StatusOK, gin.H{"slots": []interface{}{}})
                 return
             }
         }
@@ -308,7 +308,7 @@ func GetAvailableSlots(db *gorm.DB) gin.HandlerFunc {
                 }
             }
             if !dayMatch {
-                c.JSON(http.StatusOK, gin.H{"slots": []})
+                c.JSON(http.StatusOK, gin.H{"slots": []interface{}{}})
                 return
             }
         }
