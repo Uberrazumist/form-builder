@@ -83,6 +83,7 @@ k<template>
                 <option value="rating">Рейтинг (звёзды)</option>
                 <option value="date">Дата</option>
                 <option value="dictionary">Выбор из справочника</option>
+                <option value="schedule">Календарь бронирования</option>
               </select>
             </div>
 
@@ -149,6 +150,30 @@ k<template>
                 <option :value="5">5 звёзд</option>
                 <option :value="10">10 звёзд</option>
               </select>
+            </div>
+
+            <div v-if="question.type === 'schedule'" class="schedule-section">
+              <div class="form-group">
+                <label>
+                  <Icon name="link" />
+                  Зависит от вопроса (выбор ресурса) <span class="required">*</span>
+                </label>
+                <select v-model="question.depends_on">
+                  <option :value="null" disabled>— выберите предыдущий вопрос с ресурсом —</option>
+                  <option 
+                    v-for="q in formData.questions.filter(q => q.id !== question.id && q.type === 'dictionary')" 
+                    :key="q.id" 
+                    :value="q.id"
+                  >
+                    {{ q.title }}
+                  </option>
+                </select>
+                <span class="hint">Пользователь сначала выберет ресурс в указанном вопросе, а здесь увидит его расписание</span>
+              </div>
+              <div class="info-hint">
+                <Icon name="calendar" />
+                <span>Расписание для элементов этого справочника настраивается в разделе «Справочники» → Управление элементами</span>
+              </div>
             </div>
 
             <div class="checkbox-group">
@@ -384,7 +409,7 @@ const submitForm = async () => {
         is_required: q.is_required,
         dictionary_id: q.type === 'dictionary' ? q.dictionary_id : null,
         is_booking: q.type === 'dictionary' ? q.is_booking : false,
-        depends_on: q.depends_on || null,
+        depends_on: (q.type === 'schedule' || q.type === 'dictionary') ? q.depends_on : null,
         options: q.options || [],
         rating_max: q.rating_max || 5
       }))
@@ -473,6 +498,7 @@ input:focus, textarea:focus, select:focus { outline: none; border-color: var(--p
 .btn-remove svg { width: 18px; height: 18px; }
 .options-section, .dictionary-section { margin-bottom: 1.25rem; padding: 1rem; background: var(--surface); border-radius: var(--radius-sm); border: 1px dashed var(--border); }
 .dictionary-section { border-color: var(--primary-soft); background: color-mix(in srgb, var(--primary-soft) 40%, var(--surface)); }
+.schedule-section { border-color: var(--primary-soft); background: color-mix(in srgb, var(--primary-soft) 40%, var(--surface)); margin-bottom: 1.25rem; padding: 1rem; border-radius: var(--radius-sm); border: 1px dashed var(--primary-soft); }
 .options-list { display: flex; flex-direction: column; gap: 0.5rem; margin-bottom: 0.75rem; }
 .option-item { display: flex; gap: 0.5rem; }
 .option-item input { flex: 1; }

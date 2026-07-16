@@ -154,6 +154,17 @@
               <span v-if="answers[question.id]" class="rating-value">{{ answers[question.id] }} из {{ question.rating_max || 5 }}</span>
             </div>
 
+            <BookingCalendar
+              v-else-if="question.type === 'schedule'"
+              :resource-id="answers[question.depends_on] || ''"
+              @select="onScheduleSelect(question.id, $event)"
+            />
+
+            <div v-if="question.type === 'schedule'" class="info-hint">
+              <Icon name="calendar" />
+              <span>Выберите доступное время в календаре</span>
+            </div>
+
             <div v-if="validationError" class="validation-error">
               <Icon name="error" />
               <span>{{ validationError }}</span>
@@ -204,6 +215,7 @@ import { ref, reactive, onMounted, watch, nextTick, computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import Icon from '../components/Icon.vue'
 import FormResult from '../components/FormResult.vue'
+import BookingCalendar from '../components/BookingCalendar.vue'
 
 // ==========================================
 // СТРОГИЕ TYPESCRIPT ИНТЕРФЕЙСЫ (snake_case контракт)
@@ -497,6 +509,10 @@ const getOptionLabel = (option: any): string => {
 // БРОНИРОВАНИЕ
 // ==========================================
 
+const onScheduleSelect = (questionId: string, slotData: { date: string; start_time: string; end_time: string }) => {
+  answers[questionId] = slotData
+}
+
 const loadAvailableSlots = async (question: Question) => {
   if (!question || !question.is_booking || !form.value) return
 
@@ -634,7 +650,13 @@ const nextStep = () => {
 
   if (currentQ && isQuestionVisible(currentQ) && currentQ.is_required) {
     const answer = answers[currentQ.id]
-    if (!answer || (Array.isArray(answer) && answer.length === 0) || String(answer).trim() === '') {
+    // Для schedule-type проверяем объект с date/start_time/end_time
+    if (currentQ.type === 'schedule') {
+      if (!answer || !answer.date || !answer.start_time || !answer.end_time) {
+        validationError.value = 'Заполните обязательные поля'
+        return
+      }
+    } else if (!answer || (Array.isArray(answer) && answer.length === 0) || String(answer).trim() === '') {
       validationError.value = 'Заполните обязательные поля'
       return
     }
@@ -669,7 +691,13 @@ const submitResponses = async () => {
     if (!isQuestionVisible(q)) continue
     if (q.is_required) {
       const answer = answers[q.id]
-      if (!answer || (Array.isArray(answer) && answer.length === 0) || String(answer).trim() === '') {
+      // Для schedule-type проверяем объект с date/start_time/end_time
+      if (q.type === 'schedule') {
+        if (!answer || !answer.date || !answer.start_time || !answer.end_time) {
+          validationError.value = 'Заполните обязательные поля'
+          return
+        }
+      } else if (!answer || (Array.isArray(answer) && answer.length === 0) || String(answer).trim() === '') {
         validationError.value = 'Заполните обязательные поля'
         return
       }
