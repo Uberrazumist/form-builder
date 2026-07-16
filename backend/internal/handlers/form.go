@@ -444,135 +444,16 @@ func SubmitResponse(db *gorm.DB) gin.HandlerFunc {
             }
         }
 
-        // Поиск вопросов для бронирования (старый стиль: dictionary + is_booking)
-        var bookingQuestion *models.Question
-        var dateQuestion *models.Question
-
+        // Поиск вопросов типа "schedule" (новый стиль бронирования)
+        var scheduleQuestions []models.Question
         for i := range form.Questions {
-            q := &form.Questions[i]
-            if q.IsBooking && q.DictionaryID != nil {
-                bookingQuestion = q
-            }
-            if q.Type == "date" {
-                dateQuestion = q
-            }
-        }
-
-        // Поиск вопросов типа "schedule" (новый стиль)
+        // Поиск вопросов типа "schedule" (новый стиль бронирования)
         var scheduleQuestions []models.Question
         for i := range form.Questions {
             q := &form.Questions[i]
             if q.Type == "schedule" {
                 scheduleQuestions = append(scheduleQuestions, *q)
             }
-        }
-
-        // Если есть бронирование – выполняем атомарную блокировку
-        if bookingQuestion != nil {
-            if dateQuestion == nil {
-                c.JSON(http.StatusBadRequest, gin.H{"error": "Для бронирования требуется вопрос типа 'date'"})
-                return
-            }
-            dateStr, ok := input.Answers[dateQuestion.ID.String()].(string)
-            if !ok || dateStr == "" {
-                c.JSON(http.StatusBadRequest, gin.H{"error": "Дата не указана или имеет неверный формат"})
-                return
-            }
-            date, err := time.Parse("2006-01-02", dateStr)
-            if err != nil {
-                c.JSON(http.StatusBadRequest, gin.H{"error": "Неверный формат даты, ожидается YYYY-MM-DD"})
-                return
-            }
-
-            slotIDStr, ok := input.Answers[bookingQuestion.ID.String()].(string)
-            if !ok || slotIDStr == "" {
-                c.JSON(http.StatusBadRequest, gin.H{"error": "Не выбран слот для бронирования"})
-                return
-            }
-            slotUUID, err := uuid.Parse(slotIDStr)
-            if err != nil {
-                c.JSON(http.StatusBadRequest, gin.H{"error": "Неверный ID слота"})
-                return
-            }
-
-            var slotItem models.DictionaryItem
-            if err := db.First(&slotItem, "id = ?", slotUUID).Error; err != nil {
-                c.JSON(http.StatusBadRequest, gin.H{"error": "Выбранный слот не найден"})
-                return
-            }
-            if slotItem.ParentID == nil {
-                c.JSON(http.StatusBadRequest, gin.H{"error": "Слот не привязан к ресурсу"})
-                return
-            }
-            resourceID := *slotItem.ParentID
-
-            tx := db.Begin()
-            var existingBooking models.Booking
-            err = tx.Clauses(clause.Locking{Strength: "UPDATE"}).
-                Where("teacher_id = ? AND slot_id = ? AND date = ?", resourceID, slotUUID, date).
-                First(&existingBooking).Error
-
-            if err == nil {
-                tx.Rollback()
-                c.JSON(http.StatusConflict, gin.H{"error": "Выбранное время уже занято, пожалуйста, выберите другой слот"})
-                return
-            } else if !errors.Is(err, gorm.ErrRecordNotFound) {
-                tx.Rollback()
-                c.JSON(http.StatusInternalServerError, gin.H{"error": "Ошибка проверки бронирования"})
-                return
-            }
-
-            var userID uuid.UUID
-            if userIDStr != "" {
-                parsed, err := uuid.Parse(userIDStr)
-                if err != nil {
-                    tx.Rollback()
-                    c.JSON(http.StatusBadRequest, gin.H{"error": "Неверный ID пользователя"})
-                    return
-                }
-                userID = parsed
-            } else {
-                userID = uuid.Nil
-            }
-
-            booking := models.Booking{
-                FormID:    form.ID,
-                UserID:    userID,
-                TeacherID: resourceID,
-                SlotID:    slotUUID,
-                Date:      date,
-            }
-            if err := tx.Create(&booking).Error; err != nil {
-                tx.Rollback()
-                c.JSON(http.StatusInternalServerError, gin.H{"error": "Ошибка создания бронирования"})
-                return
-            }
-
-            var userIDPtr *uuid.UUID
-            if userIDStr != "" {
-                parsed, _ := uuid.Parse(userIDStr)
-                userIDPtr = &parsed
-            }
-            answersJSON, err := json.Marshal(input.Answers)
-            if err != nil {
-                tx.Rollback()
-                c.JSON(http.StatusBadRequest, gin.H{"error": "Ошибка сериализации ответов"})
-                return
-            }
-            response := models.Response{
-                FormID:  form.ID,
-                UserID:  userIDPtr,
-                Answers: datatypes.JSON(answersJSON),
-            }
-            if err := tx.Create(&response).Error; err != nil {
-                tx.Rollback()
-                c.JSON(http.StatusInternalServerError, gin.H{"error": "Ошибка сохранения ответа"})
-                return
-            }
-
-            tx.Commit()
-            c.JSON(http.StatusCreated, gin.H{"message": "Ответ сохранён и бронирование выполнено"})
-            return
         }
 
         // Обработка вопросов типа "schedule" (новый стиль бронирования)

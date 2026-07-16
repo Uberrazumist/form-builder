@@ -32,22 +32,8 @@ func parseTime(t string) (int, int) {
 // ListScheduleRules – GET /api/schedules
 func ListScheduleRules(db *gorm.DB) gin.HandlerFunc {
     return func(c *gin.Context) {
-        userIDStr := c.GetString("userID")
-        if userIDStr == "" {
-            c.JSON(http.StatusUnauthorized, gin.H{"error": "Требуется авторизация"})
-            return
-        }
-        userID, err := uuid.Parse(userIDStr)
-        if err != nil {
-            c.JSON(http.StatusBadRequest, gin.H{"error": "Неверный идентификатор пользователя"})
-            return
-        }
-
         var rules []models.ScheduleRule
-        if err := db.Where("resource_id IN (?)",
-            db.Model(&models.DictionaryItem{}).Select("id").
-                Joins("INNER JOIN forms_questions fq ON fq.dictionary_id = dictionary_items.dictionary_id OR 1=1")). // упрощённо
-            Where("is_deleted = false").Find(&rules).Error; err != nil {
+        if err := db.Where("is_deleted = false").Find(&rules).Error; err != nil {
             c.JSON(http.StatusInternalServerError, gin.H{"error": "Ошибка загрузки правил"})
             return
         }
@@ -71,17 +57,6 @@ func ListScheduleRules(db *gorm.DB) gin.HandlerFunc {
 // CreateScheduleRule – POST /api/schedules
 func CreateScheduleRule(db *gorm.DB) gin.HandlerFunc {
     return func(c *gin.Context) {
-        userIDStr := c.GetString("userID")
-        if userIDStr == "" {
-            c.JSON(http.StatusUnauthorized, gin.H{"error": "Требуется авторизация"})
-            return
-        }
-        userID, err := uuid.Parse(userIDStr)
-        if err != nil {
-            c.JSON(http.StatusBadRequest, gin.H{"error": "Неверный идентификатор пользователя"})
-            return
-        }
-
         var input struct {
             ResourceID string                 `json:"resource_id" binding:"required"`
             Name       string                 `json:"name" binding:"required"`
