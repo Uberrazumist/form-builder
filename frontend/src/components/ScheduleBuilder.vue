@@ -199,16 +199,20 @@ const generatePreview = () => {
 
   if (!todayConfig || !todayConfig.is_working) return
 
-  const [startH, startM] = todayConfig.start_time.split(':').map(Number)
-  const [endH, endM] = todayConfig.end_time.split(':').map(Number)
+  const startTimeParts = (todayConfig.start_time || '09:00').split(':')
+  const endTimeParts = (todayConfig.end_time || '18:00').split(':')
+  const startH = parseInt(startTimeParts[0], 10)
+  const startM = parseInt(startTimeParts[1], 10)
+  const endH = parseInt(endTimeParts[0], 10)
+  const endM = parseInt(endTimeParts[1], 10)
 
   const current = new Date()
   current.setHours(startH, startM, 0, 0)
   const end = new Date()
   end.setHours(endH, endM, 0, 0)
 
-  const duration = todayConfig.slot_duration * 60000
-  const breakMs = todayConfig.break_between * 60000
+  const duration = (todayConfig.slot_duration || 45) * 60000
+  const breakMs = (todayConfig.break_between || 15) * 60000
 
   while (current.getTime() + duration <= end.getTime()) {
     const slotEnd = new Date(current.getTime() + duration)
