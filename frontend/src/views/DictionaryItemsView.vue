@@ -72,6 +72,9 @@
             <div v-else class="item-empty">Нет связей</div>
           </div>
           <div class="col-actions">
+            <button @click="openScheduleModal(item)" class="btn-schedule-small" title="Настроить расписание">
+              <Icon name="calendar" />
+            </button>
             <button @click="openEditModal(item)" class="btn-edit-small" title="Редактировать">
               <Icon name="edit" />
             </button>
@@ -174,6 +177,18 @@
         </div>
       </div>
     </div>
+
+    <!-- Модальное окно расписания -->
+    <div v-if="showScheduleModal" class="modal-overlay" @click="showScheduleModal = false">
+      <div class="modal-content modal-large" @click.stop>
+        <h3>Расписание: {{ currentScheduleResourceName }}</h3>
+        <ScheduleBuilder
+          :resource-id="currentScheduleResourceId"
+          @saved="onScheduleSaved"
+        />
+        <button @click="showScheduleModal = false" class="btn-close-modal">Закрыть</button>
+      </div>
+    </div>
   </div>
 </template>
 
@@ -182,6 +197,7 @@ import { ref, reactive, onMounted, watch, computed } from 'vue'
 import { useRoute } from 'vue-router'
 import Icon from '../components/Icon.vue'
 import FormResult from '../components/FormResult.vue'
+import ScheduleBuilder from '../components/ScheduleBuilder.vue'
 
 interface Dictionary {
   id: string
@@ -213,6 +229,11 @@ const isEditing = ref(false)
 const editingId = ref<string | null>(null)
 const saving = ref(false)
 const metadataError = ref('')
+
+// Модальное окно расписания
+const showScheduleModal = ref(false)
+const currentScheduleResourceId = ref('')
+const currentScheduleResourceName = ref('')
 
 const selectedParentDictionaryId = ref<string | null>(null)
 const parentDictionaryItems = ref<DictionaryItem[]>([])
@@ -495,6 +516,16 @@ const deleteItem = async (itemId: string) => {
     result.value = { error: 'Ошибка сети' }
   }
 }
+
+const openScheduleModal = (item: DictionaryItem) => {
+  currentScheduleResourceId.value = item.id
+  currentScheduleResourceName.value = item.name
+  showScheduleModal.value = true
+}
+
+const onScheduleSaved = () => {
+  showScheduleModal.value = false
+}
 </script>
 
 <style scoped>
@@ -542,6 +573,9 @@ const deleteItem = async (itemId: string) => {
 .parent-tag { display: inline-flex; align-items: center; gap: 0.3rem; font-size: 0.85rem; color: var(--text); background: var(--primary-soft); color: var(--primary); padding: 0.25rem 0.6rem; border-radius: 6px; font-weight: 500; font-family: inherit; }
 .parent-tag svg { width: 12px; height: 12px; }
 .btn-edit-small, .btn-danger-small { width: 36px; height: 36px; border: 1.5px solid var(--border); background: var(--surface); cursor: pointer; border-radius: var(--radius-sm); display: flex; align-items: center; justify-content: center; transition: all 0.2s; flex-shrink: 0; }
+.btn-schedule-small { width: 36px; height: 36px; border: 1.5px solid var(--border); background: var(--surface); color: var(--primary); cursor: pointer; border-radius: var(--radius-sm); display: flex; align-items: center; justify-content: center; transition: all 0.2s; flex-shrink: 0; }
+.btn-schedule-small:hover { background: var(--primary-soft); border-color: var(--primary); }
+.btn-schedule-small svg { width: 16px; height: 16px; }
 .btn-edit-small { color: var(--primary); }
 .btn-edit-small:hover { background: var(--primary-soft); border-color: var(--primary); }
 .btn-danger-small { color: #c53030; }
@@ -578,6 +612,9 @@ const deleteItem = async (itemId: string) => {
 @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
 .modal-content { background: var(--surface); padding: 2rem; border-radius: var(--radius); max-width: 540px; width: 90%; max-height: 90vh; overflow-y: auto; box-shadow: var(--shadow-lg); font-family: inherit; }
 .modal-content h3 { font-size: 1.35rem; font-weight: 700; color: var(--text); margin-bottom: 1.5rem; font-family: inherit; }
+.modal-large { max-width: 800px; }
+.btn-close-modal { margin-top: 1rem; width: 100%; padding: 0.75rem; background: var(--bg); border: 1px solid var(--border); border-radius: var(--radius-sm); cursor: pointer; font-family: inherit; font-size: 0.95rem; }
+.btn-close-modal:hover { background: var(--surface); }
 .modal-form { display: flex; flex-direction: column; gap: 0.5rem; }
 .required { color: #c53030; }
 .modal-actions { display: flex; gap: 0.75rem; justify-content: flex-end; margin-top: 1rem; }

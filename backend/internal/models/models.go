@@ -159,10 +159,18 @@ type ScheduleException struct {
 	Intervals []TimeInterval `json:"intervals"`   // Если IsWorking=true, иначе игнорируется
 }
 
+// FixedSlot — разовый фиксированный слот (без генерации)
+type FixedSlot struct {
+	Date      string `json:"date"`       // "YYYY-MM-DD"
+	StartTime string `json:"start_time"` // "HH:MM"
+	EndTime   string `json:"end_time"`   // "HH:MM"
+}
+
 // RecurringSchedule — полная структура JSON для правила расписания
 type RecurringSchedule struct {
 	WeeklyIntervals []DaySchedule       `json:"weekly_intervals"`
 	Exceptions      []ScheduleException `json:"exceptions"`
+	FixedSlots      []FixedSlot         `json:"fixed_slots"`
 	SlotDuration    int                 `json:"slot_duration"` // в минутах
 	BreakBetween    int                 `json:"break_between"` // в минутах
 }

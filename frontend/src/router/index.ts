@@ -53,7 +53,8 @@ const router = createRouter({
     {
       path: '/create',
       name: 'create',
-      component: CreateFormView
+      component: CreateFormView,
+      meta: { requiresAuth: true }
     },
     {
       path: '/form/:id',
@@ -63,7 +64,8 @@ const router = createRouter({
     {
       path: '/edit/:id',
       name: 'edit',
-      component: EditFormView
+      component: EditFormView,
+      meta: { requiresAuth: true }
     },
     {
       path: '/fill/:id',
@@ -78,29 +80,41 @@ const router = createRouter({
     {
       path: '/responses/:id',
       name: 'responses',
-      component: ResponsesView
+      component: ResponsesView,
+      meta: { requiresAuth: true }
     },
     {
       path: '/my-forms',
       name: 'my-forms',
-      component: MyFormsView
+      component: MyFormsView,
+      meta: { requiresAuth: true }
     },
     {
       path: '/dictionaries',
       name: 'dictionaries',
-      component: DictionariesView
+      component: DictionariesView,
+      meta: { requiresAuth: true }
     },
     {
       path: '/dictionaries/:id/items',
       name: 'dictionary-items',
-      component: DictionaryItemsView
+      component: DictionaryItemsView,
+      meta: { requiresAuth: true }
     },
     {
       path: '/schedule',
       name: 'schedule',
-      component: ScheduleView
+      component: ScheduleView,
+      meta: { requiresAuth: true }
     }
   ]
+})
+
+router.beforeEach((to) => {
+  const token = localStorage.getItem('token')
+  if (to.meta.requiresAuth && !token) {
+    return { name: 'login' }
+  }
 })
 
 export default router

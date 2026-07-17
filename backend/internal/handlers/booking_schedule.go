@@ -432,6 +432,40 @@ func GetAvailableSlots(db *gorm.DB) gin.HandlerFunc {
 			}
 		}
 
+		// 3.2 Добавляем FIXED SLOTS (разовые фиксированные слоты)
+		for _, fs := range config.FixedSlots {
+			if fs.Date == targetDateStr {
+				startParts := strings.Split(fs.StartTime, ":")
+				endParts := strings.Split(fs.EndTime, ":")
+
+				sh, _ := strconv.Atoi(startParts[0])
+				sm, _ := strconv.Atoi(startParts[1])
+				eh, _ := strconv.Atoi(endParts[0])
+				em, _ := strconv.Atoi(endParts[1])
+
+				start := time.Date(targetDate.Year(), targetDate.Month(), targetDate.Day(), sh, sm, 0, 0, time.UTC)
+				end := time.Date(targetDate.Year(), targetDate.Month(), targetDate.Day(), eh, em, 0, 0, time.UTC)
+
+				allSlots = append(allSlots, gin.H{
+					"start_time":  start.UTC().Format(time.RFC3339),
+					"end_time":    end.UTC().Format(time.RFC3339),
+					"start_label": start.Format("15:04"),
+					"end_label":   end.Format("15:04"),
+				})
+			}
+		}
+
+		// 3.3 Снова сортируем (fixed slots могли добавиться в середину)
+		for i := 0; i < len(allSlots); i++ {
+			for j := i + 1; j < len(allSlots); j++ {
+				labelI := allSlots[i]["start_label"].(string)
+				labelJ := allSlots[j]["start_label"].(string)
+				if labelJ < labelI {
+					allSlots[i], allSlots[j] = allSlots[j], allSlots[i]
+				}
+			}
+		}
+
 		// 4. Фильтрация занятых слотов
 		var bookings []models.Booking
 		db.Where("resource_id = ? AND date = ?", resourceID, targetDate).Find(&bookings)

@@ -66,6 +66,27 @@
       <span class="hint">Даты, когда расписание не действует</span>
     </div>
 
+    <div class="fixed-slots-section">
+      <div class="section-header">
+        <h4>🎯 Разовые фиксированные слоты</h4>
+        <span class="hint">Укажите точное время приёма без генерации слотов</span>
+      </div>
+      <div class="fixed-slots-list">
+        <div v-for="(slot, idx) in form.fixed_slots" :key="idx" class="fixed-slot-row">
+          <input type="date" v-model="slot.date" class="fixed-slot-date" />
+          <input type="time" v-model="slot.start_time" class="fixed-slot-time" />
+          <span>—</span>
+          <input type="time" v-model="slot.end_time" class="fixed-slot-time" />
+          <button type="button" @click="removeFixedSlot(idx)" class="btn-icon-delete" title="Удалить слот">
+            <Icon name="trash" />
+          </button>
+        </div>
+      </div>
+      <button type="button" class="btn-add-fixed-slot" @click="addFixedSlot">
+        <Icon name="plus" /> Добавить разовый слот (без генерации)
+      </button>
+    </div>
+
     <div v-if="previewSlots.length > 0" class="preview-section">
       <h4>Предпросмотр на сегодня</h4>
       <div class="preview-slots">
@@ -138,7 +159,8 @@ const form = reactive({
     { day: 5, is_working: true, start_time: '09:00', end_time: '18:00', slot_duration: 45, break_between: 15 },
     { day: 6, is_working: false, start_time: '09:00', end_time: '18:00', slot_duration: 45, break_between: 15 },
     { day: 7, is_working: false, start_time: '09:00', end_time: '18:00', slot_duration: 45, break_between: 15 }
-  ] as DayConfig[]
+  ] as DayConfig[],
+  fixed_slots: [] as { date: string; start_time: string; end_time: string }[]
 })
 
 const exceptionsText = ref('')
@@ -198,6 +220,16 @@ const setWorkdays = (days: number[]) => {
   })
 }
 
+// Разовые фиксированные слоты
+const addFixedSlot = () => {
+  const today = new Date().toISOString().split('T')[0] || ''
+  form.fixed_slots.push({ date: today, start_time: '09:00', end_time: '10:00' })
+}
+
+const removeFixedSlot = (idx: number) => {
+  form.fixed_slots.splice(idx, 1)
+}
+
 // Собрать recurring JSON для отправки на бэкенд (новый формат weekly_intervals)
 const buildRecurring = () => {
   // Фильтруем нерабочие дни
@@ -218,6 +250,7 @@ const buildRecurring = () => {
     end_date: form.end_date,
     exceptions: exceptionsText.value.split('\n').map((s: string) => s.trim()).filter(Boolean),
     weekly_intervals: weeklyIntervals,
+    fixed_slots: form.fixed_slots,
     slot_duration: 45,
     break_between: 15
   }
@@ -683,6 +716,99 @@ input:checked + .slider:before {
 .hint {
   font-size: 0.8rem;
   color: var(--text-muted);
+}
+
+.fixed-slots-section {
+  margin: 1.5rem 0;
+  padding: 1rem;
+  background: var(--primary-soft);
+  border-radius: var(--radius-sm);
+  border: 1px dashed var(--primary);
+}
+
+.section-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 1rem;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.section-header h4 {
+  margin: 0;
+  font-size: 0.95rem;
+  color: var(--primary);
+}
+
+.fixed-slots-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  margin-bottom: 0.75rem;
+}
+
+.fixed-slot-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.fixed-slot-date {
+  width: 150px;
+}
+
+.fixed-slot-time {
+  width: 110px;
+}
+
+.btn-add-fixed-slot {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.5rem 1rem;
+  background: var(--surface);
+  border: 1px dashed var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--text-muted);
+  cursor: pointer;
+  width: 100%;
+  justify-content: center;
+  transition: all 0.2s;
+  font-family: inherit;
+  font-size: 0.85rem;
+}
+
+.btn-add-fixed-slot:hover {
+  border-color: var(--primary);
+  color: var(--primary);
+  background: var(--primary-soft);
+}
+
+.btn-icon-delete {
+  width: 32px;
+  height: 32px;
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--text-muted);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s;
+}
+
+.btn-icon-delete:hover {
+  color: #c53030;
+  border-color: #c53030;
+  background: #fdecec;
+}
+
+.btn-icon-delete svg {
+  width: 14px;
+  height: 14px;
 }
 
 @media (max-width: 720px) {
