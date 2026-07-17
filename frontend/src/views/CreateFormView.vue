@@ -53,8 +53,19 @@
           v-for="(question, index) in formData.questions"
           :key="question.id || index"
           class="question-card"
+          draggable="true"
+          @dragstart="onDragStart($event, index)"
+          @dragover.prevent="onDragOver($event, index)"
+          @dragenter="onDragEnter($event, index)"
+          @dragleave="onDragLeave($event, index)"
+          @drop="onDrop($event, index)"
+          @dragend="onDragEnd"
+          :class="{ 'drag-over': dragOverIndex === index }"
         >
           <div class="question-header">
+            <div class="drag-handle" title="Перетащить для смены порядка">
+              <Icon name="menu" />
+            </div>
             <span class="question-number">Вопрос {{ index + 1 }}</span>
             <button type="button" class="btn-remove" @click="removeQuestion(index)">
               <Icon name="trash" />
@@ -253,6 +264,59 @@ const addQuestion = () => {
 
 const removeQuestion = (index: number) => {
   formData.questions.splice(index, 1)
+  // Пересчитываем order_index после удаления
+  formData.questions.forEach((q, i) => { q.order_index = i + 1 })
+}
+
+// ==========================================
+// Drag-and-Drop для перестановки вопросов
+// ==========================================
+const dragIndex = ref<number | null>(null)
+const dragOverIndex = ref<number | null>(null)
+
+const onDragStart = (event: DragEvent, index: number) => {
+  dragIndex.value = index
+  event.dataTransfer?.setDragImage(document.createElement('div'), 0, 0)
+  if (event.dataTransfer) {
+    event.dataTransfer.effectAllowed = 'move'
+  }
+}
+
+const onDragOver = (event: DragEvent, index: number) => {
+  event.preventDefault()
+  if (dragIndex.value !== index) {
+    dragOverIndex.value = index
+  }
+}
+
+const onDragEnter = (event: DragEvent, index: number) => {
+  event.preventDefault()
+  dragOverIndex.value = index
+}
+
+const onDragLeave = (_event: DragEvent, _index: number) => {
+  dragOverIndex.value = null
+}
+
+const onDrop = (event: DragEvent, dropIndex: number) => {
+  event.preventDefault()
+  if (dragIndex.value === null || dragIndex.value === dropIndex) return
+
+  // Перемещаем вопрос
+  const removed = formData.questions.splice(dragIndex.value, 1)
+  if (removed.length === 0) return
+  formData.questions.splice(dropIndex, 0, removed[0]!)
+
+  // Пересчитываем order_index
+  formData.questions.forEach((q, i) => { q.order_index = i + 1 })
+
+  dragIndex.value = null
+  dragOverIndex.value = null
+}
+
+const onDragEnd = () => {
+  dragIndex.value = null
+  dragOverIndex.value = null
 }
 
 const addOption = (question: Question) => {
@@ -396,8 +460,13 @@ input:focus, textarea:focus, select:focus { outline: none; border-color: var(--p
 .empty-state { text-align: center; padding: 2rem; color: var(--text-muted); font-size: 0.95rem; }
 .info-hint { display: flex; align-items: center; gap: 0.6rem; padding: 0.85rem 1rem; background: var(--primary-soft); border-radius: var(--radius-sm); color: var(--primary); font-size: 0.88rem; margin-bottom: 1rem; }
 .info-hint svg { width: 18px; height: 18px; flex-shrink: 0; }
-.question-card { background: var(--bg); padding: 1.5rem; border-radius: var(--radius-sm); border: 1px solid var(--border); margin-bottom: 1rem; animation: fadeUp 0.3s ease both; }
-.question-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem; }
+.question-card { background: var(--bg); padding: 1.5rem; border-radius: var(--radius-sm); border: 1px solid var(--border); margin-bottom: 1rem; animation: fadeUp 0.3s ease both; transition: all 0.2s; }
+.question-card.drag-over { border-color: var(--primary); background: var(--primary-soft); box-shadow: 0 0 0 3px rgba(47, 79, 138, 0.1); }
+.question-card:active { cursor: grabbing; }
+.drag-handle { display: flex; align-items: center; justify-content: center; width: 28px; height: 28px; cursor: grab; color: var(--text-muted); border-radius: 4px; transition: all 0.2s; margin-right: 0.5rem; }
+.drag-handle:hover { color: var(--primary); background: var(--primary-soft); }
+.drag-handle:active { cursor: grabbing; }
+.drag-handle svg { width: 18px; height: 18px; }
 .question-number { font-size: 0.85rem; font-weight: 600; color: var(--primary); text-transform: uppercase; letter-spacing: 0.05em; }
 .btn-remove { width: 32px; height: 32px; border: none; background: transparent; color: #c53030; cursor: pointer; border-radius: 6px; display: flex; align-items: center; justify-content: center; transition: background 0.2s; }
 .btn-remove:hover { background: #fdecec; }

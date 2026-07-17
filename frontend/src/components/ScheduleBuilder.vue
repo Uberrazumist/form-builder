@@ -16,9 +16,32 @@
       </div>
     </div>
 
+    <!-- 🔥 Разовые фиксированные слоты — ВЫШЕ weekly schedule, т.к. чаще используются -->
+    <div class="fixed-slots-section">
+      <div class="section-header">
+        <h4>🎯 Разовые фиксированные слоты</h4>
+        <span class="hint">Укажите точное время приёма без генерации слотов (приоритет выше недельного)</span>
+      </div>
+      <div class="fixed-slots-list">
+        <div v-for="(slot, idx) in form.fixed_slots" :key="idx" class="fixed-slot-row">
+          <input type="date" v-model="slot.date" class="fixed-slot-date" />
+          <input type="time" v-model="slot.start_time" class="fixed-slot-time" />
+          <span>—</span>
+          <input type="time" v-model="slot.end_time" class="fixed-slot-time" />
+          <button type="button" @click="removeFixedSlot(idx)" class="btn-icon-delete" title="Удалить слот">
+            <Icon name="trash" />
+          </button>
+        </div>
+      </div>
+      <button type="button" class="btn-add-fixed-slot" @click="addFixedSlot">
+        <Icon name="plus" /> Добавить разовый слот (без генерации)
+      </button>
+    </div>
+
+    <!-- Недельное расписание -->
     <div class="days-config-section">
       <div class="days-header">
-        <h4>Расписание по дням недели</h4>
+        <h4>📅 Расписание по дням недели</h4>
         <div class="days-presets">
           <button type="button" class="btn-preset" @click="setWorkdays([1,2,3,4,5])">Будни</button>
           <button type="button" class="btn-preset" @click="setWorkdays([1,2,3,4,5,6])">Будни + сб</button>
@@ -64,27 +87,6 @@
         rows="2"
       ></textarea>
       <span class="hint">Даты, когда расписание не действует</span>
-    </div>
-
-    <div class="fixed-slots-section">
-      <div class="section-header">
-        <h4>🎯 Разовые фиксированные слоты</h4>
-        <span class="hint">Укажите точное время приёма без генерации слотов</span>
-      </div>
-      <div class="fixed-slots-list">
-        <div v-for="(slot, idx) in form.fixed_slots" :key="idx" class="fixed-slot-row">
-          <input type="date" v-model="slot.date" class="fixed-slot-date" />
-          <input type="time" v-model="slot.start_time" class="fixed-slot-time" />
-          <span>—</span>
-          <input type="time" v-model="slot.end_time" class="fixed-slot-time" />
-          <button type="button" @click="removeFixedSlot(idx)" class="btn-icon-delete" title="Удалить слот">
-            <Icon name="trash" />
-          </button>
-        </div>
-      </div>
-      <button type="button" class="btn-add-fixed-slot" @click="addFixedSlot">
-        <Icon name="plus" /> Добавить разовый слот (без генерации)
-      </button>
     </div>
 
     <div v-if="previewSlots.length > 0" class="preview-section">
@@ -295,6 +297,12 @@ const generatePreview = () => {
 const save = async () => {
   if (!form.name.trim()) {
     result.value = { success: false, message: 'Укажите название расписания' }
+    return
+  }
+
+  // 🔥 Валидация resourceId — критично для корректного сохранения
+  if (!props.resourceId) {
+    result.value = { success: false, message: 'Ошибка: не указан ресурс для расписания' }
     return
   }
 

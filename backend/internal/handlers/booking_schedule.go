@@ -24,46 +24,68 @@ func validateScheduleConfig(config *models.RecurringSchedule) error {
 		return errors.New("Длительность слота должна быть больше 0 минут")
 	}
 
-	if len(config.WeeklyIntervals) == 0 {
-		return errors.New("Добавьте хотя бы один рабочий день")
+	// Разрешаем пустые weekly_intervals, если есть fixed_slots
+	hasWeekly := len(config.WeeklyIntervals) > 0
+	hasFixed := len(config.FixedSlots) > 0
+
+	if !hasWeekly && !hasFixed {
+		return errors.New("Добавьте хотя бы один рабочий день или разовый слот")
 	}
 
-	// Проверяем каждый день недели
-	for _, day := range config.WeeklyIntervals {
-		if day.DayOfWeek < 1 || day.DayOfWeek > 7 {
-			return fmt.Errorf("Неверный день недели: %d (ожидалось 1-7)", day.DayOfWeek)
-		}
+	// Валидируем weekly_intervals только если они есть
+	if hasWeekly {
+		for _, day := range config.WeeklyIntervals {
+			if day.DayOfWeek < 1 || day.DayOfWeek > 7 {
+				return fmt.Errorf("Неверный день недели: %d (ожидалось 1-7)", day.DayOfWeek)
+			}
 
-		if len(day.Intervals) == 0 {
-			return fmt.Errorf("Для дня %d добавьте хотя бы один временной интервал", day.DayOfWeek)
-		}
+			if len(day.Intervals) == 0 {
+				return fmt.Errorf("Для дня %d добавьте хотя бы один временной интервал", day.DayOfWeek)
+			}
 
-		// Сортируем интервалы по времени начала
-		for i := 0; i < len(day.Intervals); i++ {
-			for j := i + 1; j < len(day.Intervals); j++ {
-				if day.Intervals[j].Start < day.Intervals[i].Start {
-					day.Intervals[i], day.Intervals[j] = day.Intervals[j], day.Intervals[i]
+			// Сортируем интервалы по времени начала
+			for i := 0; i < len(day.Intervals); i++ {
+				for j := i + 1; j < len(day.Intervals); j++ {
+					if day.Intervals[j].Start < day.Intervals[i].Start {
+						day.Intervals[i], day.Intervals[j] = day.Intervals[j], day.Intervals[i]
+					}
+				}
+			}
+
+			// Проверяем каждый интервал
+			for i, interval := range day.Intervals {
+				if interval.Start == "" || interval.End == "" {
+					return fmt.Errorf("Интервал #%d дня %d: укажите start и end", i+1, day.DayOfWeek)
+				}
+				if interval.Start >= interval.End {
+					return fmt.Errorf("День %d, интервал #%d: время начала должно быть раньше окончания (%s < %s)",
+						day.DayOfWeek, i+1, interval.Start, interval.End)
+				}
+
+				// Проверяем пересечение с следующим интервалом
+				if i < len(day.Intervals)-1 {
+					if interval.End > day.Intervals[i+1].Start {
+						return fmt.Errorf("День %d: интервалы пересекаются (%s-%s и %s-%s)",
+							day.DayOfWeek, interval.Start, interval.End,
+							day.Intervals[i+1].Start, day.Intervals[i+1].End)
+					}
 				}
 			}
 		}
+	}
 
-		// Проверяем каждый интервал
-		for i, interval := range day.Intervals {
-			if interval.Start == "" || interval.End == "" {
-				return fmt.Errorf("Интервал #%d дня %d: укажите start и end", i+1, day.DayOfWeek)
+	// Валидируем fixed_slots если они есть
+	if hasFixed {
+		for i, fs := range config.FixedSlots {
+			if fs.Date == "" {
+				return fmt.Errorf("Разовый слот #%d: укажите дату", i+1)
 			}
-			if interval.Start >= interval.End {
-				return fmt.Errorf("День %d, интервал #%d: время начала должно быть раньше окончания (%s < %s)",
-					day.DayOfWeek, i+1, interval.Start, interval.End)
+			if fs.StartTime == "" || fs.EndTime == "" {
+				return fmt.Errorf("Разовый слот #%d: укажите время начала и окончания", i+1)
 			}
-
-			// Проверяем пересечение с следующим интервалом
-			if i < len(day.Intervals)-1 {
-				if interval.End > day.Intervals[i+1].Start {
-					return fmt.Errorf("День %d: интервалы пересекаются (%s-%s и %s-%s)",
-						day.DayOfWeek, interval.Start, interval.End,
-						day.Intervals[i+1].Start, day.Intervals[i+1].End)
-				}
+			if fs.StartTime >= fs.EndTime {
+				return fmt.Errorf("Разовый слот #%d: время начала должно быть раньше окончания (%s < %s)",
+					i+1, fs.StartTime, fs.EndTime)
 			}
 		}
 	}
@@ -80,51 +102,77 @@ func validateBookingInterval(config *models.RecurringSchedule, date time.Time, s
 		dayOfWeek = 7
 	}
 
-	// Определяем активные интервалы для этой даты
-	var activeIntervals []models.TimeInterval
+	// Конвертируем время бронирования в минуты от начала дня
+	bookStart := startTime.Hour()*60 + startTime.Minute()
+	bookEnd := endTime.Hour()*60 + endTime.Minute()
 
-	// 1. Проверяем исключения
+	// 1. Проверяем fixed_slots (приоритет выше weekly_intervals)
+	for _, fs := range config.FixedSlots {
+		if fs.Date == targetDateStr {
+			startParts := strings.Split(fs.StartTime, ":")
+			endParts := strings.Split(fs.EndTime, ":")
+			sh, _ := strconv.Atoi(startParts[0])
+			sm, _ := strconv.Atoi(startParts[1])
+			eh, _ := strconv.Atoi(endParts[0])
+			em, _ := strconv.Atoi(endParts[1])
+			fsStart := sh*60 + sm
+			fsEnd := eh*60 + em
+			if bookStart >= fsStart && bookEnd <= fsEnd {
+				return nil // OK — укладывается в fixed_slot
+			}
+		}
+	}
+
+	// 2. Проверяем исключения
 	for _, exc := range config.Exceptions {
 		if exc.Date == targetDateStr {
 			if !exc.IsWorking {
 				return errors.New("На эту дату расписание не действует (выходной)")
 			}
-			activeIntervals = exc.Intervals
+			for _, interval := range exc.Intervals {
+				intParts := strings.Split(interval.Start, ":")
+				endParts := strings.Split(interval.End, ":")
+				intStartH, _ := strconv.Atoi(intParts[0])
+				intStartM, _ := strconv.Atoi(intParts[1])
+				intEndH, _ := strconv.Atoi(endParts[0])
+				intEndM, _ := strconv.Atoi(endParts[1])
+				intStart := intStartH*60 + intStartM
+				intEnd := intEndH*60 + intEndM
+				if bookStart >= intStart && bookEnd <= intEnd {
+					return nil // OK — укладывается
+				}
+			}
 			break
 		}
 	}
 
-	// 2. Если исключений нет, берём недельное расписание
-	if len(activeIntervals) == 0 {
-		for _, day := range config.WeeklyIntervals {
-			if day.DayOfWeek == dayOfWeek {
-				activeIntervals = day.Intervals
-				break
-			}
+	// 3. Проверяем weekly_intervals (только если нет fixed_slots на эту дату)
+	hasFixedSlots := false
+	for _, fs := range config.FixedSlots {
+		if fs.Date == targetDateStr {
+			hasFixedSlots = true
+			break
 		}
 	}
 
-	if len(activeIntervals) == 0 {
-		return errors.New("В этот день расписание не действует")
-	}
-
-	// Конвертируем время бронирования в минуты от начала дня
-	bookStart := startTime.Hour()*60 + startTime.Minute()
-	bookEnd := endTime.Hour()*60 + endTime.Minute()
-
-	// Проверяем, что всё укладывается в один интервал
-	for _, interval := range activeIntervals {
-		intParts := strings.Split(interval.Start, ":")
-		endParts := strings.Split(interval.End, ":")
-		intStartH, _ := strconv.Atoi(intParts[0])
-		intStartM, _ := strconv.Atoi(intParts[1])
-		intEndH, _ := strconv.Atoi(endParts[0])
-		intEndM, _ := strconv.Atoi(endParts[1])
-		intStart := intStartH*60 + intStartM
-		intEnd := intEndH*60 + intEndM
-
-		if bookStart >= intStart && bookEnd <= intEnd {
-			return nil // Всё OK — бронирование укладывается
+	if !hasFixedSlots {
+		for _, day := range config.WeeklyIntervals {
+			if day.DayOfWeek == dayOfWeek {
+				for _, interval := range day.Intervals {
+					intParts := strings.Split(interval.Start, ":")
+					endParts := strings.Split(interval.End, ":")
+					intStartH, _ := strconv.Atoi(intParts[0])
+					intStartM, _ := strconv.Atoi(intParts[1])
+					intEndH, _ := strconv.Atoi(endParts[0])
+					intEndM, _ := strconv.Atoi(endParts[1])
+					intStart := intStartH*60 + intStartM
+					intEnd := intEndH*60 + intEndM
+					if bookStart >= intStart && bookEnd <= intEnd {
+						return nil // OK — укладывается
+					}
+				}
+				break
+			}
 		}
 	}
 
@@ -377,8 +425,20 @@ func GetAvailableSlots(db *gorm.DB) gin.HandlerFunc {
 			}
 		}
 
-		// 2. Если исключения нет, берем недельное расписание
-		if !exceptionFound {
+		// 2. Проверяем fixed_slots (приоритет выше weekly_intervals)
+		// Если на эту дату есть fixed_slots — weekly_intervals игнорируются
+		var hasFixedSlots bool
+		if len(config.FixedSlots) > 0 {
+			for _, fs := range config.FixedSlots {
+				if fs.Date == targetDateStr {
+					hasFixedSlots = true
+					break
+				}
+			}
+		}
+
+		// 3. Если нет fixed_slots — берём weekly_intervals (если нет исключения)
+		if !exceptionFound && !hasFixedSlots {
 			for _, day := range config.WeeklyIntervals {
 				if day.DayOfWeek == dayOfWeek {
 					activeIntervals = day.Intervals
@@ -387,12 +447,12 @@ func GetAvailableSlots(db *gorm.DB) gin.HandlerFunc {
 			}
 		}
 
-		if len(activeIntervals) == 0 {
+		if len(activeIntervals) == 0 && !hasFixedSlots {
 			c.JSON(http.StatusOK, gin.H{"slots": []interface{}{}})
 			return
 		}
 
-		// 3. Генерируем слоты для КАЖДОГО интервала этого дня
+		// 4. Генерируем слоты из интервалов (weekly_intervals / exceptions)
 		var allSlots []gin.H
 		slotDuration := time.Duration(config.SlotDuration) * time.Minute
 		stepDuration := time.Duration(config.SlotDuration+config.BreakBetween) * time.Minute
@@ -421,7 +481,7 @@ func GetAvailableSlots(db *gorm.DB) gin.HandlerFunc {
 			}
 		}
 
-		// 3.1 Сортируем слоты по времени (интервалы могут идти не по порядку)
+		// 4.1 Сортируем сгенерированные слоты
 		for i := 0; i < len(allSlots); i++ {
 			for j := i + 1; j < len(allSlots); j++ {
 				labelI := allSlots[i]["start_label"].(string)
@@ -432,30 +492,32 @@ func GetAvailableSlots(db *gorm.DB) gin.HandlerFunc {
 			}
 		}
 
-		// 3.2 Добавляем FIXED SLOTS (разовые фиксированные слоты)
-		for _, fs := range config.FixedSlots {
-			if fs.Date == targetDateStr {
-				startParts := strings.Split(fs.StartTime, ":")
-				endParts := strings.Split(fs.EndTime, ":")
+		// 5. Добавляем fixed_slots (только если на эту дату есть)
+		if hasFixedSlots {
+			for _, fs := range config.FixedSlots {
+				if fs.Date == targetDateStr {
+					startParts := strings.Split(fs.StartTime, ":")
+					endParts := strings.Split(fs.EndTime, ":")
 
-				sh, _ := strconv.Atoi(startParts[0])
-				sm, _ := strconv.Atoi(startParts[1])
-				eh, _ := strconv.Atoi(endParts[0])
-				em, _ := strconv.Atoi(endParts[1])
+					sh, _ := strconv.Atoi(startParts[0])
+					sm, _ := strconv.Atoi(startParts[1])
+					eh, _ := strconv.Atoi(endParts[0])
+					em, _ := strconv.Atoi(endParts[1])
 
-				start := time.Date(targetDate.Year(), targetDate.Month(), targetDate.Day(), sh, sm, 0, 0, time.UTC)
-				end := time.Date(targetDate.Year(), targetDate.Month(), targetDate.Day(), eh, em, 0, 0, time.UTC)
+					start := time.Date(targetDate.Year(), targetDate.Month(), targetDate.Day(), sh, sm, 0, 0, time.UTC)
+					end := time.Date(targetDate.Year(), targetDate.Month(), targetDate.Day(), eh, em, 0, 0, time.UTC)
 
-				allSlots = append(allSlots, gin.H{
-					"start_time":  start.UTC().Format(time.RFC3339),
-					"end_time":    end.UTC().Format(time.RFC3339),
-					"start_label": start.Format("15:04"),
-					"end_label":   end.Format("15:04"),
-				})
+					allSlots = append(allSlots, gin.H{
+						"start_time":  start.UTC().Format(time.RFC3339),
+						"end_time":    end.UTC().Format(time.RFC3339),
+						"start_label": start.Format("15:04"),
+						"end_label":   end.Format("15:04"),
+					})
+				}
 			}
 		}
 
-		// 3.3 Снова сортируем (fixed slots могли добавиться в середину)
+		// 5.1 Финальная сортировка всех слотов
 		for i := 0; i < len(allSlots); i++ {
 			for j := i + 1; j < len(allSlots); j++ {
 				labelI := allSlots[i]["start_label"].(string)
@@ -465,6 +527,18 @@ func GetAvailableSlots(db *gorm.DB) gin.HandlerFunc {
 				}
 			}
 		}
+
+		// 5.2 Дедупликация — убираем дубли по start_label
+		seenLabels := make(map[string]bool)
+		var dedupedSlots []gin.H
+		for _, slot := range allSlots {
+			label := slot["start_label"].(string)
+			if !seenLabels[label] {
+				seenLabels[label] = true
+				dedupedSlots = append(dedupedSlots, slot)
+			}
+		}
+		allSlots = dedupedSlots
 
 		// 4. Фильтрация занятых слотов
 		var bookings []models.Booking
