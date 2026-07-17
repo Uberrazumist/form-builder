@@ -152,7 +152,7 @@ const previewDayLabel = computed(() => {
   return dayNames[today - 1]
 })
 
-// Загрузка существующих данных с миграцией старого формата
+// Загрузка существующих данных с миграцией форматов
 watch(() => props.initialRule, (rule) => {
   if (!rule) return
   form.name = rule.name || ''
@@ -160,19 +160,33 @@ watch(() => props.initialRule, (rule) => {
   form.end_date = rule.recurring?.end_date || form.end_date
   exceptionsText.value = (rule.recurring?.exceptions || []).join('\n')
 
-  // Новый формат: days_config
-  if (rule.recurring?.days_config && rule.recurring.days_config.length > 0) {
-    form.days_config = rule.recurring.days_config
+  const recurring = rule.recurring || {}
+
+  // Новый формат: weekly_intervals
+  if (recurring.weekly_intervals && recurring.weekly_intervals.length > 0) {
+    // Сбрасываем все дни в нерабочие
+    form.days_config.forEach(config => { config.is_working = false })
+    // Устанавливаем рабочие дни из weekly_intervals
+    recurring.weekly_intervals.forEach((wi: any) => {
+      const dayConfig = form.days_config.find(c => c.day === wi.day_of_week)
+      if (dayConfig && wi.intervals && wi.intervals.length > 0) {
+        dayConfig.is_working = true
+        dayConfig.start_time = wi.intervals[0].start || '09:00'
+        dayConfig.end_time = wi.intervals[0].end || '18:00'
+      }
+    })
   }
-  // Старый формат: flat days + global times → миграция в days_config
-  else if (rule.recurring?.days && rule.recurring.days.length > 0) {
-    const workingDays = rule.recurring.days
+  // Старый формат: days_config
+  else if (recurring.days_config && recurring.days_config.length > 0) {
+    form.days_config = recurring.days_config
+  }
+  // Самый старый формат: flat days
+  else if (recurring.days && recurring.days.length > 0) {
+    const workingDays = recurring.days
     form.days_config.forEach(config => {
       config.is_working = workingDays.includes(config.day)
-      config.start_time = rule.recurring.start_time || '09:00'
-      config.end_time = rule.recurring.end_time || '18:00'
-      config.slot_duration = rule.recurring.slot_duration || 45
-      config.break_between = rule.recurring.break_between || 15
+      config.start_time = recurring.start_time || '09:00'
+      config.end_time = recurring.end_time || '18:00'
     })
   }
 }, { immediate: true })
@@ -184,21 +198,30 @@ const setWorkdays = (days: number[]) => {
   })
 }
 
-// Собрать recurring JSON для отправки на бэкенд
-const buildRecurring = () => ({
-  type: 'weekly',
-  start_date: form.start_date,
-  end_date: form.end_date,
-  exceptions: exceptionsText.value.split('\n').map((s: string) => s.trim()).filter(Boolean),
-  days_config: form.days_config.map(c => ({
-    day: c.day,
-    is_working: c.is_working,
-    start_time: c.start_time,
-    end_time: c.end_time,
-    slot_duration: c.slot_duration,
-    break_between: c.break_between
+// Собрать recurring JSON для отправки на бэкенд (новый формат weekly_intervals)
+const buildRecurring = () => {
+  // Фильтруем нерабочие дни
+  const workingDays = form.days_config.filter(c => c.is_working)
+  
+  // Группируем по дням недели
+  const weeklyIntervals = workingDays.map(c => ({
+    day_of_week: c.day,
+    intervals: [{
+      start: c.start_time,
+      end: c.end_time
+    }]
   }))
-})
+
+  return {
+    type: 'weekly',
+    start_date: form.start_date,
+    end_date: form.end_date,
+    exceptions: exceptionsText.value.split('\n').map((s: string) => s.trim()).filter(Boolean),
+    weekly_intervals: weeklyIntervals,
+    slot_duration: 45,
+    break_between: 15
+  }
+}
 
 // Генерация предпросмотра слотов для текущего дня
 const generatePreview = () => {

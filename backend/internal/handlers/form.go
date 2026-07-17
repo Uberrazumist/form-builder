@@ -581,6 +581,19 @@ func SubmitResponse(db *gorm.DB) gin.HandlerFunc {
                     userID = uuid.Nil
                 }
 
+                // Валидация: проверяем, что бронирование укладывается в разрешённые интервалы
+                var rule models.ScheduleRule
+                if err := tx.Where("resource_id = ? AND is_deleted = false", resourceID).First(&rule).Error; err == nil {
+                    var config models.RecurringSchedule
+                    if json.Unmarshal(rule.Recurring, &config) == nil {
+						if err := validateBookingInterval(&config, date, startTime, endTime); err != nil {
+							tx.Rollback()
+							c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+							return
+						}
+					}
+                }
+
                 booking := models.Booking{
                     FormID:     form.ID,
                     UserID:     userID,

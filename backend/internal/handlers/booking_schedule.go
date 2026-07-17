@@ -1,411 +1,486 @@
 package handlers
 
 import (
-    "encoding/json"
-    "errors"
-    "fmt"
-    "net/http"
-    "time"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"net/http"
+	"strconv"
+	"strings"
+	"time"
 
-    "github.com/gin-gonic/gin"
-    "github.com/google/uuid"
-    "gorm.io/datatypes"
-    "gorm.io/gorm"
+	"github.com/gin-gonic/gin"
+	"github.com/google/uuid"
+	"gorm.io/datatypes"
+	"gorm.io/gorm"
 
-    "github.com/Uberrazumist/form-builder/backend/internal/models"
+	"github.com/Uberrazumist/form-builder/backend/internal/models"
 )
 
-// ========================
-// CRUD ScheduleRule
-// ========================
+// validateScheduleConfig проверяет корректность конфигурации расписания
+func validateScheduleConfig(config *models.RecurringSchedule) error {
+	// SlotDuration не может быть 0 или отрицательным
+	if config.SlotDuration <= 0 {
+		return errors.New("Длительность слота должна быть больше 0 минут")
+	}
+
+	if len(config.WeeklyIntervals) == 0 {
+		return errors.New("Добавьте хотя бы один рабочий день")
+	}
+
+	// Проверяем каждый день недели
+	for _, day := range config.WeeklyIntervals {
+		if day.DayOfWeek < 1 || day.DayOfWeek > 7 {
+			return fmt.Errorf("Неверный день недели: %d (ожидалось 1-7)", day.DayOfWeek)
+		}
+
+		if len(day.Intervals) == 0 {
+			return fmt.Errorf("Для дня %d добавьте хотя бы один временной интервал", day.DayOfWeek)
+		}
+
+		// Сортируем интервалы по времени начала
+		for i := 0; i < len(day.Intervals); i++ {
+			for j := i + 1; j < len(day.Intervals); j++ {
+				if day.Intervals[j].Start < day.Intervals[i].Start {
+					day.Intervals[i], day.Intervals[j] = day.Intervals[j], day.Intervals[i]
+				}
+			}
+		}
+
+		// Проверяем каждый интервал
+		for i, interval := range day.Intervals {
+			if interval.Start == "" || interval.End == "" {
+				return fmt.Errorf("Интервал #%d дня %d: укажите start и end", i+1, day.DayOfWeek)
+			}
+			if interval.Start >= interval.End {
+				return fmt.Errorf("День %d, интервал #%d: время начала должно быть раньше окончания (%s < %s)",
+					day.DayOfWeek, i+1, interval.Start, interval.End)
+			}
+
+			// Проверяем пересечение с следующим интервалом
+			if i < len(day.Intervals)-1 {
+				if interval.End > day.Intervals[i+1].Start {
+					return fmt.Errorf("День %d: интервалы пересекаются (%s-%s и %s-%s)",
+						day.DayOfWeek, interval.Start, interval.End,
+						day.Intervals[i+1].Start, day.Intervals[i+1].End)
+				}
+			}
+		}
+	}
+
+	return nil
+}
+
+// validateBookingInterval проверяет, что запрашиваемое бронирование укладывается
+// в один из разрешённых интервалов расписания на указанную дату
+func validateBookingInterval(config *models.RecurringSchedule, date time.Time, startTime, endTime time.Time) error {
+	targetDateStr := date.Format("2006-01-02")
+	dayOfWeek := int(date.Weekday())
+	if dayOfWeek == 0 {
+		dayOfWeek = 7
+	}
+
+	// Определяем активные интервалы для этой даты
+	var activeIntervals []models.TimeInterval
+
+	// 1. Проверяем исключения
+	for _, exc := range config.Exceptions {
+		if exc.Date == targetDateStr {
+			if !exc.IsWorking {
+				return errors.New("На эту дату расписание не действует (выходной)")
+			}
+			activeIntervals = exc.Intervals
+			break
+		}
+	}
+
+	// 2. Если исключений нет, берём недельное расписание
+	if len(activeIntervals) == 0 {
+		for _, day := range config.WeeklyIntervals {
+			if day.DayOfWeek == dayOfWeek {
+				activeIntervals = day.Intervals
+				break
+			}
+		}
+	}
+
+	if len(activeIntervals) == 0 {
+		return errors.New("В этот день расписание не действует")
+	}
+
+	// Конвертируем время бронирования в минуты от начала дня
+	bookStart := startTime.Hour()*60 + startTime.Minute()
+	bookEnd := endTime.Hour()*60 + endTime.Minute()
+
+	// Проверяем, что всё укладывается в один интервал
+	for _, interval := range activeIntervals {
+		intParts := strings.Split(interval.Start, ":")
+		endParts := strings.Split(interval.End, ":")
+		intStartH, _ := strconv.Atoi(intParts[0])
+		intStartM, _ := strconv.Atoi(intParts[1])
+		intEndH, _ := strconv.Atoi(endParts[0])
+		intEndM, _ := strconv.Atoi(endParts[1])
+		intStart := intStartH*60 + intStartM
+		intEnd := intEndH*60 + intEndM
+
+		if bookStart >= intStart && bookEnd <= intEnd {
+			return nil // Всё OK — бронирование укладывается
+		}
+	}
+
+	return errors.New("Выбранное время не укладывается в разрешённые интервалы расписания")
+}
 
 // ListScheduleRules – GET /api/schedules
 func ListScheduleRules(db *gorm.DB) gin.HandlerFunc {
-    return func(c *gin.Context) {
-        var rules []models.ScheduleRule
-        if err := db.Where("is_deleted = false").Find(&rules).Error; err != nil {
-            c.JSON(http.StatusInternalServerError, gin.H{"error": "Ошибка загрузки правил"})
-            return
-        }
+	return func(c *gin.Context) {
+		var rules []models.ScheduleRule
+		if err := db.Where("is_deleted = false").Find(&rules).Error; err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Ошибка загрузки правил"})
+			return
+		}
 
-        result := make([]gin.H, len(rules))
-        for i, r := range rules {
-            result[i] = gin.H{
-                "id":         r.ID.String(),
-                "resource_id": r.ResourceID.String(),
-                "name":       r.Name,
-                "recurring":  r.Recurring,
-                "is_deleted": r.IsDeleted,
-                "created_at": r.CreatedAt,
-                "updated_at": r.UpdatedAt,
-            }
-        }
-        c.JSON(http.StatusOK, result)
-    }
+		result := make([]gin.H, len(rules))
+		for i, r := range rules {
+			result[i] = gin.H{
+				"id":          r.ID.String(),
+				"resource_id": r.ResourceID.String(),
+				"name":        r.Name,
+				"recurring":   r.Recurring,
+				"is_deleted":  r.IsDeleted,
+				"created_at":  r.CreatedAt,
+				"updated_at":  r.UpdatedAt,
+			}
+		}
+		c.JSON(http.StatusOK, result)
+	}
 }
 
 // CreateScheduleRule – POST /api/schedules
 func CreateScheduleRule(db *gorm.DB) gin.HandlerFunc {
-    return func(c *gin.Context) {
-        var input struct {
-            ResourceID string                 `json:"resource_id" binding:"required"`
-            Name       string                 `json:"name" binding:"required"`
-            Recurring  map[string]interface{} `json:"recurring" binding:"required"`
-        }
-        if err := c.ShouldBindJSON(&input); err != nil {
-            c.JSON(http.StatusBadRequest, gin.H{"error": "Некорректный JSON: " + err.Error()})
-            return
-        }
+	return func(c *gin.Context) {
+		var input struct {
+			ResourceID string                 `json:"resource_id" binding:"required"`
+			Name       string                 `json:"name" binding:"required"`
+			Recurring  map[string]interface{} `json:"recurring" binding:"required"`
+		}
+		if err := c.ShouldBindJSON(&input); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Некорректный JSON: " + err.Error()})
+			return
+		}
 
-        resourceID, err := uuid.Parse(input.ResourceID)
-        if err != nil {
-            c.JSON(http.StatusBadRequest, gin.H{"error": "Неверный ID ресурса"})
-            return
-        }
+		resourceID, err := uuid.Parse(input.ResourceID)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Неверный ID ресурса"})
+			return
+		}
 
-        recurringJSON, err := json.Marshal(input.Recurring)
-        if err != nil {
-            c.JSON(http.StatusBadRequest, gin.H{"error": "Ошибка сериализации правил"})
-            return
-        }
+		// Парсим и валидируем recurring
+		recurringJSON, err := json.Marshal(input.Recurring)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Ошибка сериализации правил"})
+			return
+		}
 
-        rule := models.ScheduleRule{
-            ResourceID: resourceID,
-            Name:       input.Name,
-            Recurring:  datatypes.JSON(recurringJSON),
-        }
-        if err := db.Create(&rule).Error; err != nil {
-            c.JSON(http.StatusInternalServerError, gin.H{"error": "Ошибка создания правила"})
-            return
-        }
-        c.JSON(http.StatusCreated, rule)
-    }
+		var config models.RecurringSchedule
+		if err := json.Unmarshal(recurringJSON, &config); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Ошибка парсинга правил расписания"})
+			return
+		}
+		if err := validateScheduleConfig(&config); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
+
+		rule := models.ScheduleRule{
+			ResourceID: resourceID,
+			Name:       input.Name,
+			Recurring:  datatypes.JSON(recurringJSON),
+		}
+		if err := db.Create(&rule).Error; err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Ошибка создания правила"})
+			return
+		}
+		c.JSON(http.StatusCreated, rule)
+	}
 }
 
 // GetScheduleRule – GET /api/schedules/:id
 func GetScheduleRule(db *gorm.DB) gin.HandlerFunc {
-    return func(c *gin.Context) {
-        id := c.Param("id")
-        var rule models.ScheduleRule
-        if err := db.First(&rule, "id = ?", id).Error; err != nil {
-            if errors.Is(err, gorm.ErrRecordNotFound) {
-                c.JSON(http.StatusNotFound, gin.H{"error": "Правило не найдено"})
-            } else {
-                c.JSON(http.StatusInternalServerError, gin.H{"error": "Ошибка загрузки"})
-            }
-            return
-        }
-        c.JSON(http.StatusOK, rule)
-    }
+	return func(c *gin.Context) {
+		id := c.Param("id")
+		var rule models.ScheduleRule
+		if err := db.First(&rule, "id = ?", id).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				c.JSON(http.StatusNotFound, gin.H{"error": "Правило не найдено"})
+			} else {
+				c.JSON(http.StatusInternalServerError, gin.H{"error": "Ошибка загрузки"})
+			}
+			return
+		}
+		c.JSON(http.StatusOK, rule)
+	}
 }
 
 // UpdateScheduleRule – PUT /api/schedules/:id
 func UpdateScheduleRule(db *gorm.DB) gin.HandlerFunc {
-    return func(c *gin.Context) {
-        id := c.Param("id")
-        var rule models.ScheduleRule
-        if err := db.First(&rule, "id = ?", id).Error; err != nil {
-            if errors.Is(err, gorm.ErrRecordNotFound) {
-                c.JSON(http.StatusNotFound, gin.H{"error": "Правило не найдено"})
-            } else {
-                c.JSON(http.StatusInternalServerError, gin.H{"error": "Ошибка загрузки"})
-            }
-            return
-        }
+	return func(c *gin.Context) {
+		id := c.Param("id")
+		var rule models.ScheduleRule
+		if err := db.First(&rule, "id = ?", id).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				c.JSON(http.StatusNotFound, gin.H{"error": "Правило не найдено"})
+			} else {
+				c.JSON(http.StatusInternalServerError, gin.H{"error": "Ошибка загрузки"})
+			}
+			return
+		}
 
-        // Проверяем, есть ли бронирования для этого ресурса
-        var bookingCount int64
-        db.Model(&models.Booking{}).Where("resource_id = ?", rule.ResourceID).Count(&bookingCount)
-        if bookingCount > 0 {
-            c.JSON(http.StatusBadRequest, gin.H{"error": "Нельзя обновлять правило с существующими бронированиями. Создайте новое правило."})
-            return
-        }
+		var bookingCount int64
+		db.Model(&models.Booking{}).Where("resource_id = ?", rule.ResourceID).Count(&bookingCount)
+		if bookingCount > 0 {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Нельзя обновлять правило с существующими бронированиями. Создайте новое правило."})
+			return
+		}
 
-        var input struct {
-            ResourceID string                 `json:"resource_id"`
-            Name       string                 `json:"name"`
-            Recurring  map[string]interface{} `json:"recurring"`
-        }
-        if err := c.ShouldBindJSON(&input); err != nil {
-            c.JSON(http.StatusBadRequest, gin.H{"error": "Некорректный JSON: " + err.Error()})
-            return
-        }
+		var input struct {
+			ResourceID string                 `json:"resource_id"`
+			Name       string                 `json:"name"`
+			Recurring  map[string]interface{} `json:"recurring"`
+		}
+		if err := c.ShouldBindJSON(&input); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Некорректный JSON: " + err.Error()})
+			return
+		}
 
-        if input.Name != "" {
-            rule.Name = input.Name
-        }
-        if input.ResourceID != "" {
-            newResourceID, err := uuid.Parse(input.ResourceID)
-            if err != nil {
-                c.JSON(http.StatusBadRequest, gin.H{"error": "Неверный ID ресурса"})
-                return
-            }
-            rule.ResourceID = newResourceID
-        }
-        if input.Recurring != nil {
-            recurringJSON, err := json.Marshal(input.Recurring)
-            if err != nil {
-                c.JSON(http.StatusBadRequest, gin.H{"error": "Ошибка сериализации правил"})
-                return
-            }
-            rule.Recurring = datatypes.JSON(recurringJSON)
-        }
+		if input.Name != "" {
+			rule.Name = input.Name
+		}
+		if input.ResourceID != "" {
+			newResourceID, err := uuid.Parse(input.ResourceID)
+			if err != nil {
+				c.JSON(http.StatusBadRequest, gin.H{"error": "Неверный ID ресурса"})
+				return
+			}
+			rule.ResourceID = newResourceID
+		}
+		if input.Recurring != nil {
+			recurringJSON, err := json.Marshal(input.Recurring)
+			if err != nil {
+				c.JSON(http.StatusBadRequest, gin.H{"error": "Ошибка сериализации правил"})
+				return
+			}
+			var config models.RecurringSchedule
+			if err := json.Unmarshal(recurringJSON, &config); err != nil {
+				c.JSON(http.StatusBadRequest, gin.H{"error": "Ошибка парсинга правил расписания"})
+				return
+			}
+			if err := validateScheduleConfig(&config); err != nil {
+				c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+				return
+			}
+			rule.Recurring = datatypes.JSON(recurringJSON)
+		}
 
-        if err := db.Save(&rule).Error; err != nil {
-            c.JSON(http.StatusInternalServerError, gin.H{"error": "Ошибка обновления правила"})
-            return
-        }
-        c.JSON(http.StatusOK, rule)
-    }
+		if err := db.Save(&rule).Error; err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Ошибка обновления правила"})
+			return
+		}
+		c.JSON(http.StatusOK, rule)
+	}
 }
 
 // DeleteScheduleRule – DELETE /api/schedules/:id
 func DeleteScheduleRule(db *gorm.DB) gin.HandlerFunc {
-    return func(c *gin.Context) {
-        id := c.Param("id")
-        var rule models.ScheduleRule
-        if err := db.First(&rule, "id = ?", id).Error; err != nil {
-            if errors.Is(err, gorm.ErrRecordNotFound) {
-                c.JSON(http.StatusNotFound, gin.H{"error": "Правило не найдено"})
-            } else {
-                c.JSON(http.StatusInternalServerError, gin.H{"error": "Ошибка загрузки"})
-            }
-            return
-        }
+	return func(c *gin.Context) {
+		id := c.Param("id")
+		var rule models.ScheduleRule
+		if err := db.First(&rule, "id = ?", id).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				c.JSON(http.StatusNotFound, gin.H{"error": "Правило не найдено"})
+			} else {
+				c.JSON(http.StatusInternalServerError, gin.H{"error": "Ошибка загрузки"})
+			}
+			return
+		}
 
-        // Проверяем бронирования
-        var bookingCount int64
-        db.Model(&models.Booking{}).Where("resource_id = ?", rule.ResourceID).Count(&bookingCount)
-        if bookingCount > 0 {
-            c.JSON(http.StatusBadRequest, gin.H{"error": "Нельзя удалить правило с существующими бронированиями."})
-            return
-        }
+		var bookingCount int64
+		db.Model(&models.Booking{}).Where("resource_id = ?", rule.ResourceID).Count(&bookingCount)
+		if bookingCount > 0 {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Нельзя удалить правило с существующими бронированиями."})
+			return
+		}
 
-        rule.IsDeleted = true
-        if err := db.Save(&rule).Error; err != nil {
-            c.JSON(http.StatusInternalServerError, gin.H{"error": "Ошибка удаления правила"})
-            return
-        }
-        c.JSON(http.StatusOK, gin.H{"message": "Правило удалено"})
-    }
+		rule.IsDeleted = true
+		if err := db.Save(&rule).Error; err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Ошибка удаления правила"})
+			return
+		}
+		c.JSON(http.StatusOK, gin.H{"message": "Правило удалено"})
+	}
 }
-
-// ========================
-// Генерация слотов на лету
-// ========================
 
 // GetAvailableSlots – GET /api/schedules/available?resource_id=...&date=...
 func GetAvailableSlots(db *gorm.DB) gin.HandlerFunc {
-    return func(c *gin.Context) {
-        resourceIDStr := c.Query("resource_id")
-        dateStr := c.Query("date")
+	return func(c *gin.Context) {
+		resourceIDStr := c.Query("resource_id")
+		dateStr := c.Query("date")
 
-        if resourceIDStr == "" || dateStr == "" {
-            c.JSON(http.StatusBadRequest, gin.H{"error": "resource_id и date обязательны"})
-            return
-        }
+		if resourceIDStr == "" || dateStr == "" {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "resource_id и date обязательны"})
+			return
+		}
 
-        resourceID, err := uuid.Parse(resourceIDStr)
-        if err != nil {
-            c.JSON(http.StatusBadRequest, gin.H{"error": "Неверный ID ресурса"})
-            return
-        }
+		resourceID, err := uuid.Parse(resourceIDStr)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Неверный ID ресурса"})
+			return
+		}
 
-        date, err := time.Parse("2006-01-02", dateStr)
-        if err != nil {
-            c.JSON(http.StatusBadRequest, gin.H{"error": "Неверный формат даты, ожидается YYYY-MM-DD"})
-            return
-        }
+		targetDate, err := time.Parse("2006-01-02", dateStr)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Неверный формат даты"})
+			return
+		}
 
-        // 1. Находим активное правило расписания
-        var rule models.ScheduleRule
-        if err := db.Where("resource_id = ? AND is_deleted = false", resourceID).First(&rule).Error; err != nil {
-            c.JSON(http.StatusOK, gin.H{"slots": []interface{}{}})
-            return
-        }
+		var rule models.ScheduleRule
+		if err := db.Where("resource_id = ? AND is_deleted = false", resourceID).First(&rule).Error; err != nil {
+			c.JSON(http.StatusOK, gin.H{"slots": []interface{}{}})
+			return
+		}
 
-        // 2. Парсим recurring — поддержка нового и старого формата
-        var recurring struct {
-            Type         string   `json:"type"`
-            Days         []int    `json:"days"`
-            StartTime    string   `json:"start_time"`
-            EndTime      string   `json:"end_time"`
-            SlotDuration int      `json:"slot_duration"`
-            BreakBetween int      `json:"break_between"`
-            StartDate    string   `json:"start_date"`
-            EndDate      string   `json:"end_date"`
-            Exceptions   []string `json:"exceptions"`
-            DaysConfig   []struct {
-                Day          int    `json:"day"`
-                IsWorking    bool   `json:"is_working"`
-                StartTime    string `json:"start_time"`
-                EndTime      string `json:"end_time"`
-                SlotDuration int    `json:"slot_duration"`
-                BreakBetween int    `json:"break_between"`
-            } `json:"days_config"`
-        }
-        if err := json.Unmarshal(rule.Recurring, &recurring); err != nil {
-            c.JSON(http.StatusInternalServerError, gin.H{"error": "Ошибка парсинга правил"})
-            return
-        }
+		var config models.RecurringSchedule
+		if err := json.Unmarshal(rule.Recurring, &config); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Ошибка парсинга правил"})
+			return
+		}
 
-        // 3. Проверяем exceptions (блокировка отдельных дней)
-        for _, exc := range recurring.Exceptions {
-            if exc == date.Format("2006-01-02") {
-                c.JSON(http.StatusOK, gin.H{"slots": []interface{}{}})
-                return
-            }
-        }
+		targetDateStr := targetDate.Format("2006-01-02")
+		dayOfWeek := int(targetDate.Weekday())
+		if dayOfWeek == 0 {
+			dayOfWeek = 7
+		}
 
-        // 4. Проверяем диапазон дат
-        startDate, err1 := time.Parse("2006-01-02", recurring.StartDate)
-        endDate, err2 := time.Parse("2006-01-02", recurring.EndDate)
-        if err1 == nil && err2 == nil {
-            if date.Before(startDate) || date.After(endDate) {
-                c.JSON(http.StatusOK, gin.H{"slots": []interface{}{}})
-                return
-            }
-        }
+		var activeIntervals []models.TimeInterval
 
-        // 5. Определяем день недели (1=Пн ... 7=Вс)
-        dayOfWeek := int(date.Weekday())
-        if dayOfWeek == 0 {
-            dayOfWeek = 7
-        }
+		// 1. Проверяем исключения (приоритет выше недельного расписания)
+		exceptionFound := false
+		for _, exc := range config.Exceptions {
+			if exc.Date == targetDateStr {
+				exceptionFound = true
+				if !exc.IsWorking {
+					c.JSON(http.StatusOK, gin.H{"slots": []interface{}{}}) // Полный выходной
+					return
+				}
+				activeIntervals = exc.Intervals // Используем интервалы исключения
+				break
+			}
+		}
 
-        // 6. Определяем конфигурацию времени для этого дня
-        var dayStartTime, dayEndTime string
-        var daySlotDuration, dayBreakBetween int
+		// 2. Если исключения нет, берем недельное расписание
+		if !exceptionFound {
+			for _, day := range config.WeeklyIntervals {
+				if day.DayOfWeek == dayOfWeek {
+					activeIntervals = day.Intervals
+					break
+				}
+			}
+		}
 
-        // Новый формат: days_config
-        if len(recurring.DaysConfig) > 0 {
-            var dayConfig *struct {
-                Day          int    `json:"day"`
-                IsWorking    bool   `json:"is_working"`
-                StartTime    string `json:"start_time"`
-                EndTime      string `json:"end_time"`
-                SlotDuration int    `json:"slot_duration"`
-                BreakBetween int    `json:"break_between"`
-            }
-            for i := range recurring.DaysConfig {
-                if recurring.DaysConfig[i].Day == dayOfWeek {
-                    dayConfig = &recurring.DaysConfig[i]
-                    break
-                }
-            }
-            if dayConfig == nil || !dayConfig.IsWorking {
-                c.JSON(http.StatusOK, gin.H{"slots": []interface{}{}})
-                return
-            }
-            dayStartTime = dayConfig.StartTime
-            dayEndTime = dayConfig.EndTime
-            daySlotDuration = dayConfig.SlotDuration
-            dayBreakBetween = dayConfig.BreakBetween
-        } else {
-            // Старый формат: flat days + global times
-            if recurring.Type == "weekly" && len(recurring.Days) > 0 {
-                dayMatch := false
-                for _, d := range recurring.Days {
-                    if d == dayOfWeek {
-                        dayMatch = true
-                        break
-                    }
-                }
-                if !dayMatch {
-                    c.JSON(http.StatusOK, gin.H{"slots": []interface{}{}})
-                    return
-                }
-            }
-            dayStartTime = recurring.StartTime
-            dayEndTime = recurring.EndTime
-            daySlotDuration = recurring.SlotDuration
-            dayBreakBetween = recurring.BreakBetween
-        }
+		if len(activeIntervals) == 0 {
+			c.JSON(http.StatusOK, gin.H{"slots": []interface{}{}})
+			return
+		}
 
-        // Если время не задано — выходим
-        if dayStartTime == "" || dayEndTime == "" {
-            c.JSON(http.StatusOK, gin.H{"slots": []interface{}{}})
-            return
-        }
+		// 3. Генерируем слоты для КАЖДОГО интервала этого дня
+		var allSlots []gin.H
+		slotDuration := time.Duration(config.SlotDuration) * time.Minute
+		stepDuration := time.Duration(config.SlotDuration+config.BreakBetween) * time.Minute
 
-        // 7. Генерируем слоты в памяти
-        var sh, sm int
-        fmt.Sscanf(dayStartTime, "%d:%d", &sh, &sm)
-        var eh, em int
-        fmt.Sscanf(dayEndTime, "%d:%d", &eh, &em)
+		for _, interval := range activeIntervals {
+			startParts := strings.Split(interval.Start, ":")
+			endParts := strings.Split(interval.End, ":")
 
-        slotDuration := time.Duration(daySlotDuration) * time.Minute
-        breakDuration := time.Duration(dayBreakBetween) * time.Minute
+			sh, _ := strconv.Atoi(startParts[0])
+			sm, _ := strconv.Atoi(startParts[1])
+			eh, _ := strconv.Atoi(endParts[0])
+			em, _ := strconv.Atoi(endParts[1])
 
-        currentStart := time.Date(date.Year(), date.Month(), date.Day(), sh, sm, 0, 0, time.UTC)
-        dayEnd := time.Date(date.Year(), date.Month(), date.Day(), eh, em, 0, 0, time.UTC)
+			current := time.Date(targetDate.Year(), targetDate.Month(), targetDate.Day(), sh, sm, 0, 0, time.UTC)
+			endTime := time.Date(targetDate.Year(), targetDate.Month(), targetDate.Day(), eh, em, 0, 0, time.UTC)
 
-        var allSlots []gin.H
-        for {
-            slotEnd := currentStart.Add(slotDuration)
-            if slotEnd.After(dayEnd) {
-                break
-            }
-            allSlots = append(allSlots, gin.H{
-                "start_time":  currentStart.UTC().Format(time.RFC3339),
-                "end_time":    slotEnd.UTC().Format(time.RFC3339),
-                "start_label": currentStart.Format("15:04"),
-                "end_label":    slotEnd.Format("15:04"),
-            })
-            currentStart = currentStart.Add(slotDuration + breakDuration)
-        }
+			for !current.Add(slotDuration).After(endTime) {
+				slotEnd := current.Add(slotDuration)
+				allSlots = append(allSlots, gin.H{
+					"start_time":  current.UTC().Format(time.RFC3339),
+					"end_time":    slotEnd.UTC().Format(time.RFC3339),
+					"start_label": current.Format("15:04"),
+					"end_label":   slotEnd.Format("15:04"),
+				})
+				current = current.Add(stepDuration)
+			}
+		}
 
-        // 7. Получаем занятые слоты (бронирования)
-        var bookings []models.Booking
-        db.Where("resource_id = ? AND date = ?", resourceID, date).Find(&bookings)
+		// 3.1 Сортируем слоты по времени (интервалы могут идти не по порядку)
+		for i := 0; i < len(allSlots); i++ {
+			for j := i + 1; j < len(allSlots); j++ {
+				labelI := allSlots[i]["start_label"].(string)
+				labelJ := allSlots[j]["start_label"].(string)
+				if labelJ < labelI {
+					allSlots[i], allSlots[j] = allSlots[j], allSlots[i]
+				}
+			}
+		}
 
-        bookedStartTimes := make(map[string]bool)
-        for _, b := range bookings {
-            bookedStartTimes[b.StartTime.Format("15:04")] = true
-        }
+		// 4. Фильтрация занятых слотов
+		var bookings []models.Booking
+		db.Where("resource_id = ? AND date = ?", resourceID, targetDate).Find(&bookings)
 
-        // 8. Фильтруем свободные
-        available := []gin.H{}
-        for _, slot := range allSlots {
-            startLabel := slot["start_label"].(string)
-            if !bookedStartTimes[startLabel] {
-                available = append(available, slot)
-            }
-        }
+		bookedMap := make(map[string]bool)
+		for _, b := range bookings {
+			bookedMap[b.StartTime.Format("15:04")] = true
+		}
 
-        c.JSON(http.StatusOK, gin.H{"slots": available})
-    }
+		var available []gin.H
+		for _, slot := range allSlots {
+			if !bookedMap[slot["start_label"].(string)] {
+				available = append(available, slot)
+			}
+		}
+
+		c.JSON(http.StatusOK, gin.H{"slots": available})
+	}
 }
 
 // CancelBooking – POST /api/bookings/:id/cancel
 func CancelBooking(db *gorm.DB) gin.HandlerFunc {
-    return func(c *gin.Context) {
-        userIDStr := c.GetString("userID")
-        if userIDStr == "" {
-            c.JSON(http.StatusUnauthorized, gin.H{"error": "Требуется авторизация"})
-            return
-        }
-        userID, err := uuid.Parse(userIDStr)
-        if err != nil {
-            c.JSON(http.StatusBadRequest, gin.H{"error": "Неверный идентификатор пользователя"})
-            return
-        }
+	return func(c *gin.Context) {
+		userIDStr := c.GetString("userID")
+		if userIDStr == "" {
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "Требуется авторизация"})
+			return
+		}
+		userID, err := uuid.Parse(userIDStr)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Неверный идентификатор пользователя"})
+			return
+		}
 
-        bookingID := c.Param("id")
-        var booking models.Booking
-        if err := db.Where("id = ? AND user_id = ?", bookingID, userID).First(&booking).Error; err != nil {
-            if errors.Is(err, gorm.ErrRecordNotFound) {
-                c.JSON(http.StatusNotFound, gin.H{"error": "Бронирование не найдено"})
-            } else {
-                c.JSON(http.StatusInternalServerError, gin.H{"error": "Ошибка"})
-            }
-            return
-        }
+		bookingID := c.Param("id")
+		var booking models.Booking
+		if err := db.Where("id = ? AND user_id = ?", bookingID, userID).First(&booking).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				c.JSON(http.StatusNotFound, gin.H{"error": "Бронирование не найдено"})
+			} else {
+				c.JSON(http.StatusInternalServerError, gin.H{"error": "Ошибка"})
+			}
+			return
+		}
 
-        if err := db.Delete(&booking).Error; err != nil {
-            c.JSON(http.StatusInternalServerError, gin.H{"error": "Ошибка отмены бронирования"})
-            return
-        }
-        c.JSON(http.StatusOK, gin.H{"message": "Бронирование отменено"})
-    }
+		if err := db.Delete(&booking).Error; err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Ошибка отмены бронирования"})
+			return
+		}
+		c.JSON(http.StatusOK, gin.H{"message": "Бронирование отменено"})
+	}
 }
