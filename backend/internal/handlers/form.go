@@ -738,47 +738,34 @@ func GetResponses(db *gorm.DB) gin.HandlerFunc {
 				answers = make(map[string]interface{})
 			}
 
-			fmt.Printf("[GetResponses] Response %d: answers=%v, questions=%d\n", i, answers, len(form.Questions))
-
 			for qKey, answer := range answers {
-				fmt.Printf("[GetResponses]   qKey=%q, answer=%v (type=%T)\n", qKey, answer, answer)
 				// Ключ может быть числовым (индекс) или UUID
 				var qIndex int
 
 				// Вариант 1: ключ — числовая строка (индекс)
 				if idx, err := strconv.Atoi(qKey); err == nil {
 					qIndex = idx
-					fmt.Printf("[GetResponses]   Numeric key: %s -> index=%d\n", qKey, idx)
 				} else {
 					// Вариант 2: ключ — UUID вопроса
 					qType := questionTypes[qKey]
-					fmt.Printf("[GetResponses]   UUID key: %s -> type=%q\n", qKey, qType)
 					if qType == "" {
 						continue // Неизвестный ключ, пропускаем
 					}
 
 					switch qType {
 					case "dictionary":
-						fmt.Printf("[GetResponses]   dictionary question: itemID=%q\n", answer)
 						if itemID, ok := answer.(string); ok && len(itemID) == 36 {
 							if name, exists := dictNameCache[itemID]; exists {
-								fmt.Printf("[GetResponses]   CACHE HIT: %s -> %s\n", itemID, name)
 								answers[qKey] = name
 							} else {
 								var dictItem models.DictionaryItem
-								err := db.Select("name").Where("id = ?", itemID).First(&dictItem).Error
-								fmt.Printf("[GetResponses]   DB query: id=%s, err=%v, item.Name=%q\n", itemID, err, dictItem.Name)
-								if err == nil {
+								if err := db.Select("name").Where("id = ?", itemID).First(&dictItem).Error; err == nil {
 									dictNameCache[itemID] = dictItem.Name
 									answers[qKey] = dictItem.Name
-									fmt.Printf("[GetResponses]   DB HIT: replaced with %s\n", dictItem.Name)
 								} else {
 									answers[qKey] = "Не найдено"
-									fmt.Printf("[GetResponses]   DB MISS: replaced with 'Не найдено'\n")
 								}
 							}
-						} else {
-							fmt.Printf("[GetResponses]   NOT a 36-char string, skipping\n")
 						}
 
 					case "schedule":
@@ -796,7 +783,6 @@ func GetResponses(db *gorm.DB) gin.HandlerFunc {
 						}
 					}
 
-					fmt.Printf("[GetResponses]   answer after processing: %v\n", answers[qKey])
 					continue
 				}
 
@@ -807,8 +793,6 @@ func GetResponses(db *gorm.DB) gin.HandlerFunc {
 
 				question := form.Questions[qIndex]
 				qType := question.Type
-
-				fmt.Printf("[GetResponses]   Numeric index %d -> type=%q\n", qIndex, qType)
 
 				switch qType {
 				case "dictionary":
@@ -845,6 +829,12 @@ func GetResponses(db *gorm.DB) gin.HandlerFunc {
 			responses[i].Answers, _ = json.Marshal(answers)
 		}
 
-		c.JSON(http.StatusOK, responses)
+		c.JSON(http.StatusOK, gin.H{
+			"responses": responses,
+			"_debug": gin.H{
+				"question_types": questionTypes,
+				"num_questions":  len(form.Questions),
+			},
+		})
 	}
 }

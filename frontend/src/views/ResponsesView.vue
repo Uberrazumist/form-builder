@@ -216,7 +216,12 @@ const loadData = async () => {
       return
     }
     const data = await responsesResponse.json()
-    responses.value = Array.isArray(data) ? data : (data.responses || [])
+    responses.value = Array.isArray(data.responses) ? data.responses : (data.responses || [])
+    
+    // DEBUG: показываем debug-информацию
+    if (data._debug) {
+      console.log('[Responses] DEBUG:', data._debug)
+    }
   } catch (err) {
     console.error('[Responses] Load error:', err)
     error.value = 'Ошибка сети. Попробуйте позже.'
