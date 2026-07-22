@@ -713,21 +713,30 @@ func GetResponses(db *gorm.DB) gin.HandlerFunc {
 		}
 
 		var responses []models.Response
-		if err := db.Where("form_id = ?", formID).Find(&responses).Error; err != nil {
+		if err := db.Where("form_id = ?", formID).Order("created_at DESC").Find(&responses).Error; err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "Ошибка получения ответов"})
 			return
 		}
 
-		// Маппинг: question_id -> question type
+		// Маппинг: question_id (UUID) -> question type
 		questionTypes := make(map[string]string)
 		for _, q := range form.Questions {
 			questionTypes[q.ID.String()] = q.Type
 		}
 
-		// ГЛОБАЛЬНЫЙ кэш: itemID -> Name (один раз запросили — всегда найдём)
+		// Вспомогательная функция для вывода ключей map
+		getMapKeys := func(m map[string]interface{}) []string {
+			keys := make([]string, 0, len(m))
+			for k := range m {
+				keys = append(keys, k)
+			}
+			return keys
+		}
+
+		// ГЛОБАЛЬНЫЙ кэш: itemID -> Name
 		dictNameCache := make(map[string]string)
 
-		// Обрабатываем ответы: заменяем UUID на названия
+		// Обрабатываем ответы
 		for i := range responses {
 			var answers map[string]interface{}
 			if len(responses[i].Answers) > 0 {
@@ -737,17 +746,26 @@ func GetResponses(db *gorm.DB) gin.HandlerFunc {
 				answers = make(map[string]interface{})
 			}
 
+			// DEBUG: покажем структуру ответов
+			if i == 0 {
+				fmt.Printf("[GetResponses] First response answers type: %T, keys: %v\n", answers, getMapKeys(answers))
+				for k, v := range answers {
+					fmt.Printf("  Key: %q, Value type: %T, Value: %v\n", k, v, v)
+				}
+			}
+
 			for qID, answer := range answers {
 				qType := questionTypes[qID]
 
 				switch qType {
 				case "dictionary":
+					// Если ответ — строка (UUID), подгружаем DictionaryItem
 					if itemID, ok := answer.(string); ok && len(itemID) == 36 {
 						// 1. Проверяем глобальный кэш
 						if name, exists := dictNameCache[itemID]; exists {
 							answers[qID] = name
 						} else {
-							// 2. Запрашиваем из БД
+							// 2. Запрашиваем из БД (только name для скорости)
 							var dictItem models.DictionaryItem
 							if err := db.Select("name").Where("id = ?", itemID).First(&dictItem).Error; err == nil {
 								dictNameCache[itemID] = dictItem.Name
@@ -759,6 +777,7 @@ func GetResponses(db *gorm.DB) gin.HandlerFunc {
 					}
 
 				case "schedule":
+					// Если ответ — объект, форматируем в строку
 					if ansMap, ok := answer.(map[string]interface{}); ok {
 						date, _ := ansMap["date"].(string)
 						startTime, _ := ansMap["start_time"].(string)

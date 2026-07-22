@@ -5,11 +5,18 @@
       <Icon name="menu" /> Вопросы
     </button>
 
+    <!-- Вертикальная плашка (показывается только когда sidebar скрыт на десктопе) -->
+    <div v-if="!sidebarOpen && windowWidth >= 1024" class="sidebar-tab" @click="sidebarOpen = true" title="Открыть список вопросов">
+      <span class="sidebar-tab-text">Вопросы</span>
+      <span class="sidebar-tab-count">({{ formData.questions.length }})</span>
+      <span class="sidebar-tab-arrow">›</span>
+    </div>
+
     <!-- Sidebar навигация -->
     <div class="sidebar" :class="{ open: sidebarOpen }">
       <div class="sidebar-header">
         <h3>Вопросы</h3>
-        <button class="sidebar-close" @click="sidebarOpen = false">
+        <button class="sidebar-close" @click="sidebarOpen = false" title="Скрыть список">
           <Icon name="close" />
         </button>
       </div>
@@ -18,12 +25,22 @@
           v-for="(question, index) in formData.questions"
           :key="question.id || index"
           class="sidebar-item"
-          :class="{ active: activeQuestionIndex === index }"
-          @click="scrollToQuestion(index)"
+          :class="{ active: activeQuestionIndex === index, 'sidebar-drag-over': sidebarDragOverIndex === index }"
         >
+          <div class="sidebar-drag-handle" title="Перетащить для смены порядка">
+            <Icon name="menu" />
+          </div>
           <span class="sidebar-item-number">{{ index + 1 }}</span>
           <span class="sidebar-item-type">{{ getTypeIcon(question.type) }}</span>
           <span class="sidebar-item-title">{{ question.title || 'Без названия' }}</span>
+          <button
+            type="button"
+            class="sidebar-item-delete"
+            @click.stop="confirmAndRemoveQuestion(index)"
+            title="Удалить вопрос"
+          >
+            <Icon name="trash" />
+          </button>
         </div>
       </div>
     </div>
@@ -511,6 +528,83 @@ const onDragEnd = () => {
 }
 
 // ==========================================
+// Drag-and-Drop в Sidebar
+// ==========================================
+const sidebarDragIndex = ref<number | null>(null)
+const sidebarDragOverIndex = ref<number | null>(null)
+
+const onSidebarDragStart = (event: DragEvent, index: number) => {
+  sidebarDragIndex.value = index
+  
+  const target = event.currentTarget as HTMLElement
+  target.style.opacity = '0.4'
+  
+  if (event.dataTransfer) {
+    event.dataTransfer.effectAllowed = 'move'
+    event.dataTransfer.setData('text/plain', String(index))
+  }
+}
+
+const onSidebarDragOver = (event: DragEvent, index: number) => {
+  event.preventDefault()
+  event.dataTransfer!.dropEffect = 'move'
+  sidebarDragOverIndex.value = index
+}
+
+const onSidebarDragEnter = (event: DragEvent, index: number) => {
+  event.preventDefault()
+  sidebarDragOverIndex.value = index
+}
+
+const onSidebarDragLeave = (_event: DragEvent, _index: number) => {
+  sidebarDragOverIndex.value = null
+}
+
+const onSidebarDrop = (event: DragEvent, dropIndex: number) => {
+  event.preventDefault()
+  if (sidebarDragIndex.value === null || sidebarDragIndex.value === dropIndex) return
+
+  // Перемещаем вопрос
+  const removed = formData.questions.splice(sidebarDragIndex.value, 1)
+  if (removed.length === 0) return
+  formData.questions.splice(dropIndex, 0, removed[0]!)
+
+  // Пересчитываем order_index
+  formData.questions.forEach((q, i) => { q.order_index = i + 1 })
+
+  sidebarDragIndex.value = null
+  sidebarDragOverIndex.value = null
+  
+  // Сброс opacity
+  const sidebarItems = document.querySelectorAll('.sidebar-item')
+  sidebarItems.forEach(item => {
+    if (item instanceof HTMLElement) item.style.opacity = '1'
+  })
+}
+
+const onSidebarDragEnd = () => {
+  sidebarDragIndex.value = null
+  sidebarDragOverIndex.value = null
+  
+  // Сброс opacity
+  const sidebarItems = document.querySelectorAll('.sidebar-item')
+  sidebarItems.forEach(item => {
+    if (item instanceof HTMLElement) item.style.opacity = '1'
+  })
+}
+
+// ==========================================
+// Удаление вопроса с подтверждением
+// ==========================================
+const confirmAndRemoveQuestion = (index: number) => {
+  const question = formData.questions[index]
+  if (!question) return
+  if (confirm(`Удалить вопрос "${question.title || 'Без названия'}"?`)) {
+    removeQuestion(index)
+  }
+}
+
+// ==========================================
 // Sidebar навигация
 // ==========================================
 const getTypeIcon = (type: string): string => {
@@ -801,14 +895,69 @@ input:focus, textarea:focus, select:focus { outline: none; border-color: var(--p
   padding: 0.75rem 0;
 }
 
+/* ==========================================
+   Вертикальная плашка (когда sidebar скрыт)
+   ========================================== */
+.sidebar-tab {
+  position: fixed;
+  left: 0;
+  top: 50%;
+  transform: translateY(-50%);
+  writing-mode: vertical-rl;
+  text-orientation: mixed;
+  background: var(--primary);
+  color: #fff;
+  padding: 1.25rem 0.6rem;
+  border-radius: 0 8px 8px 0;
+  cursor: pointer;
+  z-index: 99;
+  font-weight: 600;
+  font-size: 0.85rem;
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  box-shadow: 2px 2px 8px rgba(0,0,0,0.15);
+  transition: all 0.2s ease;
+  user-select: none;
+}
+
+.sidebar-tab:hover {
+  padding-left: 0.75rem;
+  box-shadow: 4px 2px 12px rgba(0,0,0,0.2);
+}
+
+.sidebar-tab-text {
+  font-size: 0.85rem;
+}
+
+.sidebar-tab-count {
+  font-size: 0.75rem;
+  opacity: 0.9;
+}
+
+.sidebar-tab-arrow {
+  writing-mode: horizontal-tb;
+  font-size: 1.2rem;
+  margin-left: 0.25rem;
+}
+
+/* ==========================================
+   Улучшения Sidebar
+   ========================================== */
+
 .sidebar-item {
   display: flex;
   align-items: center;
-  gap: 0.6rem;
-  padding: 0.6rem 1.25rem;
+  gap: 0.5rem;
+  padding: 0.75rem 1rem;
   cursor: pointer;
   transition: all 0.2s;
   border-left: 3px solid transparent;
+  border-bottom: 1px solid var(--border);
+}
+
+.sidebar-item:last-child {
+  border-bottom: none;
 }
 
 .sidebar-item:hover {
@@ -818,6 +967,38 @@ input:focus, textarea:focus, select:focus { outline: none; border-color: var(--p
 .sidebar-item.active {
   background: var(--primary-soft);
   border-left-color: var(--primary);
+}
+
+.sidebar-item.sidebar-drag-over {
+  border-top: 2px solid var(--primary);
+  background: var(--primary-soft);
+}
+
+.sidebar-drag-handle {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  cursor: grab;
+  color: var(--text-muted);
+  border-radius: 4px;
+  transition: all 0.2s;
+  flex-shrink: 0;
+}
+
+.sidebar-drag-handle:hover {
+  color: var(--primary);
+  background: rgba(47, 79, 138, 0.1);
+}
+
+.sidebar-drag-handle:active {
+  cursor: grabbing;
+}
+
+.sidebar-drag-handle svg {
+  width: 16px;
+  height: 16px;
 }
 
 .sidebar-item-number {
@@ -838,6 +1019,36 @@ input:focus, textarea:focus, select:focus { outline: none; border-color: var(--p
   overflow: hidden;
   text-overflow: ellipsis;
   flex: 1;
+}
+
+.sidebar-item-delete {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  border-radius: 4px;
+  transition: all 0.2s;
+  flex-shrink: 0;
+  opacity: 0;
+}
+
+.sidebar-item:hover .sidebar-item-delete {
+  opacity: 1;
+}
+
+.sidebar-item-delete:hover {
+  background: #fdecec;
+  color: #c53030;
+}
+
+.sidebar-item-delete svg {
+  width: 14px;
+  height: 14px;
 }
 
 .sidebar-toggle {
