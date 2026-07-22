@@ -193,7 +193,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, onMounted, watch, computed } from 'vue'
+import { ref, reactive, onMounted, watch, computed, onUnmounted } from 'vue'
 import { useRoute } from 'vue-router'
 import Icon from '../components/Icon.vue'
 import FormResult from '../components/FormResult.vue'
@@ -245,8 +245,23 @@ const formData = reactive({
   metadataRaw: ''
 })
 
+const handleEsc = (e: KeyboardEvent) => {
+  if (e.key === 'Escape') {
+    if (showScheduleModal.value) {
+      showScheduleModal.value = false
+    } else if (showModal.value) {
+      closeModal()
+    }
+  }
+}
+
 onMounted(async () => {
   await loadData()
+  window.addEventListener('keydown', handleEsc)
+})
+
+onUnmounted(() => {
+  window.removeEventListener('keydown', handleEsc)
 })
 
 watch(() => formData.metadataRaw, (value) => {
@@ -334,7 +349,7 @@ const onParentDictionaryChange = () => {
 }
 
 const clearAllLinks = () => {
-  formData.linked_ids = []
+  formData.linked_ids.splice(0, formData.linked_ids.length)
   selectedParentDictionaryId.value = null
   parentDictionaryItems.value = []
 }

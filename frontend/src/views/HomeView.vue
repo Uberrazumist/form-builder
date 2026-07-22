@@ -249,15 +249,21 @@
   </div>
 </template>
 
-<script setup>
-import { ref, onMounted } from 'vue'
+<script setup lang="ts">
+import { computed } from 'vue'
+import { useRouter } from 'vue-router'
+import { useAuthStore } from '../stores/auth'
 import Icon from '../components/Icon.vue'
 
-const isAuthenticated = ref(false)
+const router = useRouter()
+const authStore = useAuthStore()
 
-onMounted(() => {
-  isAuthenticated.value = !!localStorage.getItem('token')
-})
+const isAuthenticated = computed(() => authStore.isAuthenticated)
+
+const logout = () => {
+  authStore.logout()
+  router.push('/login')
+}
 </script>
 
 <style scoped>

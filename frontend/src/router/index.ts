@@ -16,6 +16,7 @@ import ResetPasswordView from '../views/ResetPasswordView.vue'
 import DictionariesView from '../views/DictionariesView.vue'
 import DictionaryItemsView from '../views/DictionaryItemsView.vue'
 import ScheduleView from '../views/ScheduleView.vue'
+import { useAuthStore } from '../stores/auth'
 
 const router = createRouter({
   history: createWebHistory(import.meta.env.BASE_URL),
@@ -111,9 +112,19 @@ const router = createRouter({
 })
 
 router.beforeEach((to) => {
-  const token = localStorage.getItem('token')
-  if (to.meta.requiresAuth && !token) {
-    return { name: 'login' }
+  const authStore = useAuthStore()
+
+  // Если маршрут требует авторизации и нет токена
+  if (to.meta.requiresAuth && !authStore.isAuthenticated) {
+    return {
+      name: 'login',
+      query: { redirect: to.fullPath }
+    }
+  }
+
+  // Если пользователь авторизован и идёт на login/register/verify — редиректим на главную
+  if (authStore.isAuthenticated && (to.name === 'login' || to.name === 'register' || to.name === 'verify')) {
+    return { name: 'my-forms' }
   }
 })
 

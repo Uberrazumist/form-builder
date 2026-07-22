@@ -355,15 +355,21 @@ const generateFakeSlots = () => {
   }
 }
 
+// Универсальная проверка: является ли ответ родителя "заполненным"
+const isParentAnswerFilled = (answer: any): boolean => {
+  if (answer === null || answer === undefined) return false
+  if (Array.isArray(answer)) return answer.length > 0
+  if (typeof answer === 'object') return true // Календарь {date, start_time, end_time}
+  if (typeof answer === 'string') return answer.trim() !== ''
+  return false
+}
+
 const isQuestionVisible = (question: Question): boolean => {
   if (!question) return false
   if (!question.depends_on) return true
 
   const parentAnswer = answers[question.depends_on]
-  if (!parentAnswer) return false
-  // Если ответ — объект (например, данные из календаря), считаем заполненным
-  if (typeof parentAnswer === 'object' && parentAnswer !== null) return true
-  return typeof parentAnswer === 'string' && parentAnswer.trim() !== ''
+  return isParentAnswerFilled(parentAnswer)
 }
 
 const isSelectDisabled = (question: Question): boolean => {
@@ -414,7 +420,7 @@ const getFilteredOptions = (question: Question): any[] => {
   if (!question.depends_on) return allItems
 
   const parentAnswer = answers[question.depends_on]
-  if (!parentAnswer || (typeof parentAnswer === 'string' && parentAnswer.trim() === '')) return []
+  if (!isParentAnswerFilled(parentAnswer)) return []
 
   // СТРОГАЯ ФИЛЬТРАЦИЯ: элемент остаётся только если его parent_id совпадает с ответом родителя
   return allItems.filter((item: DictionaryItem) => {

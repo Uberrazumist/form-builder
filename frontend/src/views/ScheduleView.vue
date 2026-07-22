@@ -125,11 +125,16 @@ interface ScheduleRule {
   updated_at: string
 }
 
+interface SlotPreview {
+  start_label: string
+  end_label: string
+}
+
 const loading = ref(true)
 const loadingSlots = ref<Record<string, boolean>>({})
 const analyticsData = ref<ResourceAnalytics[]>([])
 const scheduleRules = ref<ScheduleRule[]>([])
-const slotsForRule = ref<Record<string, any[]>>({})
+const slotsForRule = ref<Record<string, SlotPreview[]>>({})
 
 const loadData = async () => {
   loading.value = true
@@ -271,7 +276,7 @@ onMounted(() => {
 }
 
 .stat-card:hover {
-  box-shadow: var(--shadow);
+  box-shadow: var(--shadow-sm);
 }
 
 .stat-header {

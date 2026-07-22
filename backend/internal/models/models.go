@@ -22,10 +22,10 @@ type User struct {
 type EmailVerification struct {
 	ID        uuid.UUID `gorm:"type:uuid;primaryKey;default:gen_random_uuid()" json:"id"`
 	Email     string    `gorm:"not null;index" json:"email"`
-	Code      string    `gorm:"not null" json:"code"`
+	Code      string    `gorm:"not null" json:"-"` // Никогда не возвращать в JSON
 	Type      string    `gorm:"not null" json:"type"` // 'registration' или 'reset_password'
 	ExpiresAt time.Time `gorm:"not null" json:"expires_at"`
-	Used      bool      `gorm:"default:false" json:"used"`
+	Used      bool      `gorm:"default:false" json:"-"`
 	CreatedAt time.Time `json:"created_at"`
 }
 
@@ -58,6 +58,7 @@ type Question struct {
 	DependsValues datatypes.JSON `gorm:"type:jsonb" json:"depends_values,omitempty"`
 	DictionaryID  *uuid.UUID     `gorm:"type:uuid;index" json:"dictionary_id"`
 	IsBooking     bool           `gorm:"default:false" json:"is_booking"`
+	RatingMax     int            `gorm:"default:5" json:"rating_max"`
 }
 
 // Response – ответ пользователя
@@ -72,7 +73,7 @@ type Response struct {
 // Dictionary – справочник
 type Dictionary struct {
 	ID          uuid.UUID        `gorm:"type:uuid;primaryKey;default:gen_random_uuid()" json:"id"`
-	Name        string           `gorm:"not null" json:"name"`
+	Name        string           `gorm:"not null;uniqueIndex:idx_dict_name" json:"name"`
 	Description string           `json:"description"`
 	CreatedAt   time.Time        `json:"created_at"`
 	UpdatedAt   time.Time        `json:"updated_at"`

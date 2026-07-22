@@ -127,9 +127,27 @@
 import { ref, reactive, watch, computed } from 'vue'
 import Icon from './Icon.vue'
 
+interface ScheduleRule {
+  id: string
+  name: string
+  recurring?: {
+    start_date?: string
+    end_date?: string
+    exceptions?: string[]
+    weekly_intervals?: Array<{
+      day_of_week: number
+      intervals: Array<{ start: string; end: string }>
+    }>
+    days_config?: DayConfig[]
+    days?: number[]
+    start_time?: string
+    end_time?: string
+  }
+}
+
 const props = defineProps<{
   dictionaries?: Array<{ id: string; name: string }>
-  initialRule?: any
+  initialRule?: ScheduleRule
   resourceId: string
 }>()
 
@@ -145,6 +163,11 @@ interface DayConfig {
   end_time: string
   slot_duration: number
   break_between: number
+}
+
+interface PreviewSlot {
+  start_label: string
+  end_label: string
 }
 
 const dayNames = ['Понедельник', 'Вторник', 'Среда', 'Четверг', 'Пятница', 'Суббота', 'Воскресенье']
@@ -166,10 +189,38 @@ const form = reactive({
 })
 
 const exceptionsText = ref('')
-const previewSlots = ref<any[]>([])
+const previewSlots = ref<PreviewSlot[]>([])
 const saving = ref(false)
 const deleting = ref(false)
 const result = ref<{ success: boolean; message: string } | null>(null)
+
+// ==========================================
+// ВАЛИДАЦИЯ ПЕРЕСЕЧЕНИЙ ИНТЕРВАЛОВ
+// ==========================================
+
+const timeToMins = (time: string): number => {
+  const parts = time.split(':')
+  const h = parseInt(parts[0] || '0', 10)
+  const m = parseInt(parts[1] || '0', 10)
+  return h * 60 + m
+}
+
+const validateDay = (config: DayConfig): string | null => {
+  if (!config.is_working) return null
+  const start = timeToMins(config.start_time)
+  const end = timeToMins(config.end_time)
+  if (start >= end) return `Начало (${config.start_time}) должно быть раньше конца (${config.end_time})`
+  if (start < 0 || end > 24 * 60) return 'Время должно быть в диапазоне 00:00–24:00'
+  return null
+}
+
+const validateAllDays = (): string | null => {
+  for (const config of form.days_config) {
+    const error = validateDay(config)
+    if (error) return error
+  }
+  return null
+}
 
 const previewDayLabel = computed(() => {
   const today = new Date().getDay() || 7
@@ -306,6 +357,13 @@ const save = async () => {
     return
   }
 
+  // 🔥 Валидация пересечений интервалов
+  const dayValidationError = validateAllDays()
+  if (dayValidationError) {
+    result.value = { success: false, message: `Ошибка расписания: ${dayValidationError}` }
+    return
+  }
+
   saving.value = true
   result.value = null
 
@@ -355,7 +413,7 @@ const deleteSchedule = async () => {
 
   try {
     const token = localStorage.getItem('token') || ''
-    const response = await fetch(`/api/schedules/${props.initialRule.id}`, {
+    const response = await fetch(`/api/schedules/${props.initialRule!.id}`, {
       method: 'DELETE',
       headers: { 'Authorization': `Bearer ${token}` }
     })

@@ -147,9 +147,26 @@
           </div>
 
           <div v-if="question.type === 'schedule'" class="schedule-section">
+            <div class="form-group">
+              <label>
+                <Icon name="link" />
+                Зависит от вопроса (выбор ресурса) <span class="required">*</span>
+              </label>
+              <select v-model="question.depends_on">
+                <option :value="null" disabled>— выберите предыдущий вопрос с ресурсом —</option>
+                <option 
+                  v-for="q in formData.questions.filter(q => q.id !== question.id && q.type === 'dictionary')" 
+                  :key="q.id" 
+                  :value="q.id"
+                >
+                  {{ q.title }}
+                </option>
+              </select>
+              <span class="hint">Пользователь сначала выберет ресурс в указанном вопросе, а здесь увидит его расписание</span>
+            </div>
             <div class="info-hint">
               <Icon name="calendar" />
-              <span>Показывает календарь бронирования. Сначала создайте вопрос «Выбор из справочника» (учителя/кабинеты), затем в этом вопросе укажите его как «Зависит от».</span>
+              <span>Расписание для элементов этого справочника настраивается в разделе «Справочники» → Управление элементами</span>
             </div>
           </div>
 
@@ -380,7 +397,7 @@ const submitForm = async () => {
         is_booking: q.type === 'dictionary' ? q.is_booking : false,
         depends_on: q.depends_on || null,
         options: q.options || [],
-        rating_max: q.rating_max || 5
+        rating_max: Number(q.rating_max) || 5
       }))
     }
 

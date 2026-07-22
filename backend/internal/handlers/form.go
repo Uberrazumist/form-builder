@@ -36,7 +36,7 @@ func CreateForm(db *gorm.DB) gin.HandlerFunc {
             IsPublished bool                   `json:"is_published"`
             IsPublic    bool                   `json:"is_public"`
             Settings    map[string]interface{} `json:"settings"`
-            Questions   []struct {
+Questions   []struct {
                 Type         string                 `json:"type" binding:"required"`
                 Title        string                 `json:"title" binding:"required"`
                 Description  string                 `json:"description"`
@@ -47,6 +47,7 @@ func CreateForm(db *gorm.DB) gin.HandlerFunc {
                 DependsOn    *string                `json:"depends_on"`
                 DictionaryID *string                `json:"dictionary_id"`
                 IsBooking    bool                   `json:"is_booking"`
+                RatingMax    int                    `json:"rating_max"`
             } `json:"questions"`
         }
 
@@ -105,7 +106,7 @@ func CreateForm(db *gorm.DB) gin.HandlerFunc {
                 return
             }
             validationJSON, err := json.Marshal(q.Validation)
-            if err != nil {
+if err != nil {
                 tx.Rollback()
                 c.JSON(http.StatusBadRequest, gin.H{"error": "Ошибка сериализации валидации"})
                 return
@@ -123,6 +124,7 @@ func CreateForm(db *gorm.DB) gin.HandlerFunc {
                 DependsOn:    dependsOn,
                 DictionaryID: dictID,
                 IsBooking:    q.IsBooking,
+                RatingMax:    q.RatingMax,
             }
             if question.OrderIndex == 0 {
                 question.OrderIndex = i
@@ -205,7 +207,11 @@ func ListForms(db *gorm.DB) gin.HandlerFunc {
         }
 
         var forms []models.Form
-        if err := db.Where("created_by = ?", userID).Find(&forms).Error; err != nil {
+        // Получаем формы пользователя И формы, где у пользователя есть доступ через FormPermission
+        if err := db.Joins("LEFT JOIN form_permissions ON form_permissions.form_id = forms.id AND form_permissions.user_id = ?", userID).
+            Where("forms.created_by = ? OR form_permissions.user_id = ?", userID, userID).
+            Distinct().
+            Find(&forms).Error; err != nil {
             c.JSON(http.StatusInternalServerError, gin.H{"error": "Ошибка получения списка"})
             return
         }
@@ -257,7 +263,7 @@ func UpdateForm(db *gorm.DB) gin.HandlerFunc {
             IsPublished bool                   `json:"is_published"`
             IsPublic    bool                   `json:"is_public"`
             Settings    map[string]interface{} `json:"settings"`
-            Questions   []struct {
+Questions   []struct {
                 ID           *string                `json:"id,omitempty"`
                 Type         string                 `json:"type" binding:"required"`
                 Title        string                 `json:"title" binding:"required"`
@@ -269,6 +275,7 @@ func UpdateForm(db *gorm.DB) gin.HandlerFunc {
                 DependsOn    *string                `json:"depends_on"`
                 DictionaryID *string                `json:"dictionary_id"`
                 IsBooking    bool                   `json:"is_booking"`
+                RatingMax    int                    `json:"rating_max"`
             } `json:"questions"`
         }
 
@@ -332,7 +339,7 @@ func UpdateForm(db *gorm.DB) gin.HandlerFunc {
                 return
             }
             validationJSON, err := json.Marshal(q.Validation)
-            if err != nil {
+if err != nil {
                 tx.Rollback()
                 c.JSON(http.StatusBadRequest, gin.H{"error": "Ошибка сериализации валидации"})
                 return
@@ -350,6 +357,7 @@ func UpdateForm(db *gorm.DB) gin.HandlerFunc {
                 DependsOn:    dependsOn,
                 DictionaryID: dictID,
                 IsBooking:    q.IsBooking,
+                RatingMax:    q.RatingMax,
             }
             if question.OrderIndex == 0 {
                 question.OrderIndex = i
@@ -552,10 +560,13 @@ func SubmitResponse(db *gorm.DB) gin.HandlerFunc {
                     return
                 }
 
-                // Атомарная проверка + создание бронирования
+                // Атомарная проверка пересечения + создание бронирования
+                // Проверяем: есть ли уже бронирование, которое ПЕРЕСЕКАЕТся с новым
+                // Два диапазона пересекаются если: new.start < existing.end AND new.end > existing.start
                 var existingBooking models.Booking
                 err = tx.Clauses(clause.Locking{Strength: "UPDATE"}).
-                    Where("resource_id = ? AND date = ? AND start_time = ?", resourceID, date, startTime).
+                    Where("resource_id = ? AND date = ? AND start_time < ? AND end_time > ?",
+                        resourceID, date, endTime, startTime).
                     First(&existingBooking).Error
 
                 if err == nil {

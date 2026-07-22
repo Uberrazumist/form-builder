@@ -103,7 +103,7 @@
   </div>
 </template>
 
-<script setup>
+<script setup lang="ts">
 import { ref, reactive } from 'vue'
 import { useRouter } from 'vue-router'
 import Icon from './Icon.vue'
@@ -119,7 +119,14 @@ const formData = reactive({
 const confirmPassword = ref('')
 const showPassword = ref(false)
 const showConfirmPassword = ref(false)
-const result = ref(null)
+const result = ref<{ 
+  error?: string
+  warning?: string
+  success?: boolean
+  message?: string
+  user?: Record<string, any>
+  details?: string
+} | null>(null)
 const loading = ref(false)
 
 const register = async () => {
@@ -189,13 +196,14 @@ const register = async () => {
         query: { email: formData.email } 
       })
     }, 1500)
-  } catch (error) {
+  } catch (error: unknown) {
     console.error('[Register] Error:', error)
     if (import.meta.env.DEV) {
+      const errorMessage = error instanceof Error ? error.message : String(error)
       result.value = {
         warning: 'Network error',
         message: 'Не удалось связаться с сервером',
-        details: error.message
+        details: errorMessage
       }
     } else {
       result.value = { error: 'Ошибка сети. Попробуйте позже.' }

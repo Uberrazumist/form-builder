@@ -2,6 +2,8 @@ package handlers
 
 import (
     "encoding/json"
+    "errors"
+    "fmt"
     "net/http"
 
     "github.com/gin-gonic/gin"
@@ -58,40 +60,44 @@ func GetDictionary(db *gorm.DB) gin.HandlerFunc {
     }
 }
 
+// UpdateDictionary – только авторизованным (любой может редактировать)
 func UpdateDictionary(db *gorm.DB) gin.HandlerFunc {
-    return func(c *gin.Context) {
-        id := c.Param("id")
-        var dict models.Dictionary
-        if err := db.First(&dict, "id = ?", id).Error; err != nil {
-            c.JSON(http.StatusNotFound, gin.H{"error": "Dictionary not found"})
-            return
-        }
-        var input struct {
-            Name        string `json:"name"`
-            Description string `json:"description"`
-        }
-        if err := c.ShouldBindJSON(&input); err != nil {
-            c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-            return
-        }
-        if input.Name != "" {
-            dict.Name = input.Name
-        }
-        if input.Description != "" {
-            dict.Description = input.Description
-        }
-        db.Save(&dict)
-        c.JSON(http.StatusOK, dict)
-    }
+	return func(c *gin.Context) {
+		id := c.Param("id")
+		var dict models.Dictionary
+		if err := db.First(&dict, "id = ?", id).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				c.JSON(http.StatusNotFound, gin.H{"error": "Dictionary not found"})
+				return
+			}
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Database error"})
+			return
+		}
+		var input struct {
+			Name        string `json:"name"`
+			Description string `json:"description"`
+		}
+		if err := c.ShouldBindJSON(&input); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
+		if input.Name != "" {
+			dict.Name = input.Name
+		}
+		if input.Description != "" {
+			dict.Description = input.Description
+		}
+		if err := db.Save(&dict).Error; err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to update dictionary"})
+			return
+		}
+		c.JSON(http.StatusOK, dict)
+	}
 }
 
 func DeleteDictionary(db *gorm.DB) gin.HandlerFunc {
     return func(c *gin.Context) {
         id := c.Param("id")
-        if err := db.Where("dictionary_id = ?", id).Delete(&models.DictionaryItem{}).Error; err != nil {
-            c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to delete items"})
-            return
-        }
         if err := db.Delete(&models.Dictionary{}, "id = ?", id).Error; err != nil {
             c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to delete dictionary"})
             return
@@ -113,15 +119,26 @@ func ListDictionaryItems(db *gorm.DB) gin.HandlerFunc {
             query = query.Where("parent_id = ?", parentID)
         }
 
-        if filterMetadata != "" {
+if filterMetadata != "" {
             // Парсим JSON фильтра
             var filters map[string]interface{}
             if err := json.Unmarshal([]byte(filterMetadata), &filters); err == nil {
                 // Ищем элементы, у которых metadata содержит все ключи-значения из фильтра
                 // Для PostgreSQL используем оператор @> (contains)
                 for key, val := range filters {
-                    // Используем jsonb @> для проверки наличия пары ключ-значение
-                    query = query.Where("metadata @> ?", datatypes.JSON([]byte(`{"`+key+`":"`+val.(string)+`"}`)))
+                    // Безопасная конвертация значения в строку
+                    var valStr string
+                    switch v := val.(type) {
+                    case string:
+                        valStr = v
+                    case float64: // JSON числа парсятся как float64
+                        valStr = fmt.Sprintf("%v", v)
+                    case bool:
+                        valStr = fmt.Sprintf("%v", v)
+                    default:
+                        continue // Пропускаем неподдерживаемые типы
+                    }
+                    query = query.Where("metadata @> ?", datatypes.JSON([]byte(`{"`+key+`":"`+valStr+`"}`)))
                 }
             }
         }
@@ -179,33 +196,24 @@ func CreateDictionaryItem(db *gorm.DB) gin.HandlerFunc {
 }
 
 func DeleteDictionaryItem(db *gorm.DB) gin.HandlerFunc {
-    return func(c *gin.Context) {
-        itemID := c.Param("itemId")
-        if err := db.Delete(&models.DictionaryItem{}, "id = ?", itemID).Error; err != nil {
-            c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to delete item"})
-            return
-        }
-        c.JSON(http.StatusOK, gin.H{"message": "Item deleted"})
-    }
+	return func(c *gin.Context) {
+		itemID := c.Param("itemId")
+
+		// Сначала удаляем все дочерние элементы (каскадное удаление)
+		if err := db.Where("parent_id = ?", itemID).Delete(&models.DictionaryItem{}).Error; err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to delete child items"})
+			return
+		}
+
+		// Затем удаляем сам элемент
+		if err := db.Delete(&models.DictionaryItem{}, "id = ?", itemID).Error; err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to delete item"})
+			return
+		}
+		c.JSON(http.StatusOK, gin.H{"message": "Item deleted"})
+	}
 }
 
-// --- Проверка занятости ---
-func CheckBooking(db *gorm.DB) gin.HandlerFunc {
-    return func(c *gin.Context) {
-        itemID := c.Query("item_id")
-        formID := c.Query("form_id")
-        if itemID == "" || formID == "" {
-            c.JSON(http.StatusBadRequest, gin.H{"error": "item_id and form_id required"})
-            return
-        }
-        var count int64
-        if err := db.Model(&models.Booking{}).Where("dictionary_item_id = ? AND form_id = ?", itemID, formID).Count(&count).Error; err != nil {
-            c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to check booking"})
-            return
-        }
-        c.JSON(http.StatusOK, gin.H{"booked": count > 0})
-    }
-}
 func UpdateDictionaryItem(db *gorm.DB) gin.HandlerFunc {
     return func(c *gin.Context) {
         itemID := c.Param("itemId")

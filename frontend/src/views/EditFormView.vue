@@ -1,4 +1,4 @@
-k<template>
+<template>
   <div class="edit-form-page">
     <div v-if="loading" class="loading-state">
       <div class="spinner"></div>
@@ -455,6 +455,10 @@ const submitForm = async () => {
       result.value = { error: `Вопрос "${q.title}" должен иметь выбранный справочник` }
       return
     }
+    if (q?.type === 'schedule' && !q.depends_on) {
+      result.value = { error: `Вопрос "${q.title}" (Календарь) должен быть привязан к вопросу выбора ресурса (Зависит от)` }
+      return
+    }
   }
 
   submitting.value = true
@@ -479,7 +483,7 @@ const submitForm = async () => {
         is_booking: q.type === 'dictionary' ? q.is_booking : false,
         depends_on: (q.type === 'schedule' || q.type === 'dictionary') ? q.depends_on : null,
         options: q.options || [],
-        rating_max: q.rating_max || 5
+        rating_max: Number(q.rating_max) || 5
       }))
     }
 

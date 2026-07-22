@@ -393,6 +393,15 @@ const findParentQuestion = (question: Question): Question | null => {
   return null
 }
 
+// Универсальная проверка: является ли ответ родителя "заполненным"
+const isParentAnswerFilled = (answer: any): boolean => {
+  if (answer === null || answer === undefined) return false
+  if (Array.isArray(answer)) return answer.length > 0
+  if (typeof answer === 'object') return true // Календарь {date, start_time, end_time}
+  if (typeof answer === 'string') return answer.trim() !== ''
+  return false
+}
+
 // ==========================================
 // ЛОГИКА ВИДИМОСТИ И БЛОКИРОВКИ
 // ==========================================
@@ -404,16 +413,11 @@ const isQuestionVisible = (question: Question): boolean => {
     const parentQuestion = findParentQuestion(question)
     if (!parentQuestion) return true
     const parentAnswer = answers[parentQuestion.id]
-    if (!parentAnswer) return false
-    if (typeof parentAnswer === 'object' && parentAnswer !== null) return true
-    return typeof parentAnswer === 'string' && parentAnswer.trim() !== ''
+    return isParentAnswerFilled(parentAnswer)
   }
 
   const parentAnswer = answers[question.depends_on]
-  if (!parentAnswer) return false
-  // Если ответ — объект (например, данные из календаря), считаем заполненным
-  if (typeof parentAnswer === 'object' && parentAnswer !== null) return true
-  return typeof parentAnswer === 'string' && parentAnswer.trim() !== ''
+  return isParentAnswerFilled(parentAnswer)
 }
 
 const isSelectDisabled = (question: Question): boolean => {
@@ -483,7 +487,7 @@ const getFilteredOptions = (question: Question): any[] => {
   // Если depends_on задан явно — используем его
   if (question.depends_on) {
     const parentAnswer = answers[question.depends_on]
-    if (!parentAnswer || (typeof parentAnswer === 'string' && parentAnswer.trim() === '')) return []
+    if (!isParentAnswerFilled(parentAnswer)) return []
     return allItems.filter((item: DictionaryItem) => {
       return String(item.parent_id) === String(parentAnswer)
     })
@@ -494,7 +498,7 @@ const getFilteredOptions = (question: Question): any[] => {
   if (!parentQuestion) return allItems
 
   const parentAnswer = answers[parentQuestion.id]
-  if (!parentAnswer || (typeof parentAnswer === 'string' && parentAnswer.trim() === '')) return []
+  if (!isParentAnswerFilled(parentAnswer)) return []
 
   return allItems.filter((item: DictionaryItem) => {
     return String(item.parent_id) === String(parentAnswer)
@@ -567,30 +571,40 @@ const loadAvailableSlots = async (question: Question) => {
 }
 
 // ==========================================
-// OPTIMIZED WATCH
+// OPTIMIZED WATCH — только при изменении зависимых полей
 // ==========================================
 
 watch(answers, (newVal, oldVal) => {
-  if (!form.value || !oldVal) return
+  if (!form.value) return
 
   for (const q of form.value.questions) {
-    if (q.depends_on && newVal[q.depends_on] !== oldVal[q.depends_on]) {
+    // Обновляем слоты при изменении depends_on (родительского поля)
+    if (q.depends_on) {
       const newParentValue = newVal[q.depends_on]
       const oldParentValue = oldVal[q.depends_on]
 
-      if (oldParentValue && !newParentValue) {
-        answers[q.id] = q.type === 'checkbox' ? [] : ''
-      }
+      if (newParentValue !== oldParentValue) {
+        // Сбрасываем ответ зависимого вопроса если родитель очищен
+        if (oldParentValue && !newParentValue) {
+          answers[q.id] = q.type === 'checkbox' ? [] : ''
+        }
 
-      if (q.is_booking) {
-        loadAvailableSlots(q)
+        // Загружаем слоты для booking вопросов
+        if (q.is_booking) {
+          loadAvailableSlots(q)
+        }
       }
     }
 
-    if (q.type === 'date' && newVal[q.id] !== oldVal[q.id]) {
-      for (const resourceQ of form.value.questions) {
-        if (resourceQ.is_booking && resourceQ.type === 'dictionary') {
-          loadAvailableSlots(resourceQ)
+    // Обновляем все booking-словари при изменении даты
+    if (q.type === 'date') {
+      const newDateValue = newVal[q.id]
+      const oldDateValue = oldVal[q.id]
+      if (newDateValue !== oldDateValue) {
+        for (const resourceQ of form.value.questions) {
+          if (resourceQ.is_booking && resourceQ.type === 'dictionary') {
+            loadAvailableSlots(resourceQ)
+          }
         }
       }
     }

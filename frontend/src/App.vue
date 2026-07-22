@@ -78,25 +78,21 @@
   </div>
 </template>
 
-<script setup>
-import { ref, onMounted } from 'vue'
+<script setup lang="ts">
+import { ref, computed, onMounted } from 'vue'
+import { useRouter } from 'vue-router'
+import { useAuthStore } from './stores/auth'
+
+const router = useRouter()
+const authStore = useAuthStore()
 
 const menuOpen = ref(false)
-const isAuthenticated = ref(false)
 
-onMounted(() => {
-  checkAuth()
-})
-
-const checkAuth = () => {
-  isAuthenticated.value = !!localStorage.getItem('token')
-}
+const isAuthenticated = computed(() => authStore.isAuthenticated)
 
 const logout = () => {
-  localStorage.removeItem('token')
-  localStorage.removeItem('user')
-  isAuthenticated.value = false
-  window.location.reload()
+  authStore.logout()
+  router.push('/login')
 }
 
 const handleLogout = () => {

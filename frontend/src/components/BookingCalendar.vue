@@ -46,10 +46,19 @@ const emit = defineEmits<{
   select: [data: { date: string; start_time: string; end_time: string }]
 }>()
 
+interface SlotData {
+  start_label: string
+  end_label: string
+  start_time: string
+  end_time: string
+  available: boolean
+}
+
 const loading = ref(false)
-const slots = ref<any[]>([])
-const selectedSlot = ref<any | null>(null)
+const slots = ref<SlotData[]>([])
+const selectedSlot = ref<SlotData | null>(null)
 const selectedDate = ref(new Date())
+let loadSlotsTimeout: ReturnType<typeof setTimeout> | null = null
 
 // Безопасное форматирование локальной даты (избегает сдвига из-за UTC)
 const formatLocalDate = (d: Date): string => {
@@ -67,7 +76,7 @@ const formatDate = (d: Date) => {
   })
 }
 
-const isSelected = (slot: any) => {
+const isSelected = (slot: SlotData) => {
   if (!selectedSlot.value) return false
   return selectedSlot.value.start_time === slot.start_time
 }
@@ -77,10 +86,15 @@ const changeDate = (delta: number) => {
   newDate.setDate(newDate.getDate() + delta)
   selectedDate.value = newDate
   selectedSlot.value = null
-  loadSlots()
+  
+  // Debounce: если уже есть pending запрос — отменяем его
+  if (loadSlotsTimeout) clearTimeout(loadSlotsTimeout)
+  loadSlotsTimeout = setTimeout(() => {
+    loadSlots()
+  }, 200)
 }
 
-const selectSlot = (slot: any) => {
+const selectSlot = (slot: SlotData) => {
   if (!slot.available) return
   selectedSlot.value = slot
   emit('select', {
@@ -102,7 +116,7 @@ const loadSlots = async () => {
     )
     if (response.ok) {
       const data = await response.json()
-      slots.value = (data.slots || []).map((s: any) => ({
+      slots.value = (data.slots || []).map((s: SlotData) => ({
         ...s,
         available: true
       }))

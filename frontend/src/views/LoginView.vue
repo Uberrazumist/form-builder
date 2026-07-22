@@ -62,37 +62,37 @@
   </div>
 </template>
 
-<script setup>
+<script setup lang="ts">
 import { ref, onMounted } from 'vue'
-import { useRoute } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
+import { useAuthStore } from '../stores/auth'
 import Icon from '../components/Icon.vue'
 import FormResult from '../components/FormResult.vue'
 
 const route = useRoute()
+const router = useRouter()
+const authStore = useAuthStore()
 
 const email = ref('')
 const password = ref('')
 const showPassword = ref(false)
-const result = ref(null)
+const result = ref<{ 
+  error?: string
+  warning?: string
+  success?: boolean
+  message?: string
+  details?: string
+} | null>(null)
 const loading = ref(false)
 
 onMounted(() => {
-  const successType = route.query.success
+  const successType = route.query.success as string
   if (successType === 'verified') {
-    result.value = { 
-      success: true, 
-      message: 'Email подтверждён! Теперь вы можете войти.' 
-    }
+    result.value = { success: true, message: 'Email подтверждён! Теперь вы можете войти.' }
   } else if (successType === 'reset') {
-    result.value = { 
-      success: true, 
-      message: 'Пароль успешно сброшен! Войдите с новым паролем.' 
-    }
+    result.value = { success: true, message: 'Пароль успешно сброшен! Войдите с новым паролем.' }
   } else if (successType === 'registered') {
-    result.value = { 
-      success: true, 
-      message: 'Регистрация успешна! Войдите в аккаунт.' 
-    }
+    result.value = { success: true, message: 'Регистрация успешна! Войдите в аккаунт.' }
   }
 })
 
@@ -121,23 +121,26 @@ const login = async () => {
     }
 
     const data = await response.json()
-    console.log('[Login] Success:', data)
     
-    localStorage.setItem('token', data.token)
-    localStorage.setItem('user', JSON.stringify(data.user))
+    // Сохраняем через store
+    authStore.setToken(data.token)
+    authStore.setUser(JSON.stringify(data.user))
     
     result.value = { success: true, message: 'Вход выполнен успешно' }
     
+    // Редирект с учётом redirect параметра
+    const redirect = route.query.redirect as string
     setTimeout(() => {
-      window.location.href = '/'
+      router.push(redirect || '/my-forms')
     }, 800)
-  } catch (error) {
+  } catch (error: unknown) {
     console.error('[Login] Error:', error)
     if (import.meta.env.DEV) {
+      const errorMessage = error instanceof Error ? error.message : String(error)
       result.value = {
         warning: 'Network error',
         message: 'Не удалось связаться с сервером',
-        details: error.message
+        details: errorMessage
       }
     } else {
       result.value = { error: 'Ошибка сети. Попробуйте позже.' }

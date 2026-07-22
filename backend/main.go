@@ -1,9 +1,14 @@
 package main
 
 import (
+    "context"
+    "fmt"
     "log"
     "net/http"
     "os"
+    "os/signal"
+    "syscall"
+    "time"
 
     "github.com/gin-gonic/gin"
     "github.com/golang-jwt/jwt/v5"
@@ -84,10 +89,14 @@ func main() {
             c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "Missing token"})
             return
         }
-        if len(tokenString) > 7 && tokenString[:7] == "Bearer " {
+if len(tokenString) >= 7 && tokenString[:7] == "Bearer " {
             tokenString = tokenString[7:]
         }
         token, err := jwt.Parse(tokenString, func(token *jwt.Token) (interface{}, error) {
+            // Защита от атаки alg:none — принимаем только HS256
+            if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
+                return nil, fmt.Errorf("unexpected signing method: %v", token.Header["alg"])
+            }
             return []byte(jwtSecret), nil
         })
         if err != nil || !token.Valid {
@@ -143,6 +152,32 @@ func main() {
     r.GET("/api/dictionaries/:id/items", handlers.ListDictionaryItems(db))
     r.GET("/api/schedules/available", handlers.GetAvailableSlots(db))
 
-    log.Println("Server starting on :8080")
-    r.Run(":8080")
+log.Println("Server starting on :8080")
+
+    srv := &http.Server{
+        Addr:         ":8080",
+        Handler:      r,
+        ReadTimeout:  10 * time.Second,
+        WriteTimeout: 15 * time.Second,
+        IdleTimeout:  60 * time.Second,
+    }
+
+    // Graceful shutdown
+    go func() {
+        if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+            log.Fatalf("Server failed: %v", err)
+        }
+    }()
+
+    quit := make(chan os.Signal, 1)
+    signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
+    <-quit
+    log.Println("Shutting down server...")
+
+    ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+    defer cancel()
+    if err := srv.Shutdown(ctx); err != nil {
+        log.Fatalf("Server forced to shutdown: %v", err)
+    }
+    log.Println("Server exited gracefully")
 }
