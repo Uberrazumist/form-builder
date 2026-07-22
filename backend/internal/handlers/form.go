@@ -724,12 +724,11 @@ func GetResponses(db *gorm.DB) gin.HandlerFunc {
 			questionTypes[q.ID.String()] = q.Type
 		}
 
-		// Маппинг: dictionary_id -> dictionary items cache
-		dictItemsCache := make(map[string]map[string]string) // qID -> {itemID: itemName}
+		// ГЛОБАЛЬНЫЙ кэш: itemID -> Name (один раз запросили — всегда найдём)
+		dictNameCache := make(map[string]string)
 
 		// Обрабатываем ответы: заменяем UUID на названия
 		for i := range responses {
-			// Парсим Answers как map[string]interface{}
 			var answers map[string]interface{}
 			if len(responses[i].Answers) > 0 {
 				json.Unmarshal(responses[i].Answers, &answers)
@@ -743,38 +742,39 @@ func GetResponses(db *gorm.DB) gin.HandlerFunc {
 
 				switch qType {
 				case "dictionary":
-					// Если ответ — строка (UUID), подгружаем DictionaryItem
-					if itemID, ok := answer.(string); ok && itemID != "" {
-						// Проверяем, что это UUID (упрощённая проверка: 36 символов)
-						if len(itemID) == 36 {
-							// Загружаем из кеша или из БД
-							if dictItemsCache[qID] == nil {
-								dictItemsCache[qID] = make(map[string]string)
-								var dictItem models.DictionaryItem
-								if err := db.Where("id = ?", itemID).First(&dictItem).Error; err == nil {
-									dictItemsCache[qID][itemID] = dictItem.Name
-								}
-							}
-							if name, exists := dictItemsCache[qID][itemID]; exists {
-								answers[qID] = name
+					if itemID, ok := answer.(string); ok && len(itemID) == 36 {
+						// 1. Проверяем глобальный кэш
+						if name, exists := dictNameCache[itemID]; exists {
+							answers[qID] = name
+						} else {
+							// 2. Запрашиваем из БД
+							var dictItem models.DictionaryItem
+							if err := db.Select("name").Where("id = ?", itemID).First(&dictItem).Error; err == nil {
+								dictNameCache[itemID] = dictItem.Name
+								answers[qID] = dictItem.Name
 							} else {
-								answers[qID] = "—" // Если не нашли, показываем прочерк
+								answers[qID] = "Не найдено"
 							}
 						}
 					}
 
 				case "schedule":
-					// Если ответ — объект, форматируем в строку
 					if ansMap, ok := answer.(map[string]interface{}); ok {
 						date, _ := ansMap["date"].(string)
 						startTime, _ := ansMap["start_time"].(string)
 						endTime, _ := ansMap["end_time"].(string)
-						answers[qID] = fmt.Sprintf("%s %s–%s", date, startTime, endTime)
+						// Безопасная обрезка времени
+						if len(startTime) > 5 {
+							startTime = startTime[:5]
+						}
+						if len(endTime) > 5 {
+							endTime = endTime[:5]
+						}
+						answers[qID] = fmt.Sprintf("%s, %s–%s", date, startTime, endTime)
 					}
 				}
 			}
 
-			// Сохраняем обратно в response
 			responses[i].Answers, _ = json.Marshal(answers)
 		}
 

@@ -29,7 +29,7 @@
     </div>
 
     <!-- Основной контент -->
-    <div class="main-content">
+    <div class="main-content" :class="{ 'with-sidebar': sidebarOpen }">
       <div v-if="loading" class="loading-state">
       <div class="spinner"></div>
       <p>Загрузка формы...</p>
@@ -46,8 +46,13 @@
 
     <div v-else class="form-container">
       <div class="page-header">
-        <h1 class="page-title">Редактирование формы</h1>
-        <p class="page-subtitle">Измените данные и сохраните</p>
+        <div class="page-header-left">
+          <h1 class="page-title">Редактирование формы</h1>
+          <p class="page-subtitle">Измените данные и сохраните</p>
+        </div>
+        <button v-if="windowWidth >= 1024" class="sidebar-toggle-desktop" @click="sidebarOpen = !sidebarOpen" title="Скрыть/показать вопросы">
+          <Icon name="menu" />
+        </button>
       </div>
 
       <form @submit.prevent="submitForm" class="form-builder" novalidate>
@@ -311,16 +316,25 @@ const result = ref<any>(null)
 const submitting = ref(false)
 
 // Sidebar
-const sidebarOpen = ref(false)
+const sidebarOpen = ref(window.innerWidth >= 1024)
+const windowWidth = ref(window.innerWidth)
 const activeQuestionIndex = ref(-1)
 let intersectionObserver: IntersectionObserver | null = null
+let resizeListener: (() => void) | null = null
 
 onMounted(async () => {
   await Promise.all([loadForm(), loadDictionaries()])
-  
+
   nextTick(() => {
     setupIntersectionObserver()
   })
+
+  // Слушаем изменение размера окна для sidebar и windowWidth
+  resizeListener = () => {
+    windowWidth.value = window.innerWidth
+    sidebarOpen.value = window.innerWidth >= 1024
+  }
+  window.addEventListener('resize', resizeListener)
 })
 
 // Перезапускаем observer при изменении вопросов
@@ -333,6 +347,9 @@ watch(() => formData.questions.length, () => {
 onBeforeUnmount(() => {
   if (intersectionObserver) {
     intersectionObserver.disconnect()
+  }
+  if (resizeListener) {
+    window.removeEventListener('resize', resizeListener)
   }
 })
 
@@ -663,7 +680,16 @@ const submitForm = async () => {
 .btn-secondary { display: inline-flex; align-items: center; gap: 0.5rem; padding: 0.75rem 1.5rem; background: var(--surface); color: var(--text); border: 1.5px solid var(--border); border-radius: var(--radius-sm); font-size: 0.95rem; font-weight: 600; text-decoration: none; cursor: pointer; transition: all 0.2s; }
 .btn-secondary:hover { background: var(--bg); border-color: #cfd6e3; }
 .form-container { animation: fadeUp 0.5s ease both; }
-.page-header { margin-bottom: 2rem; }
+.page-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  margin-bottom: 2rem;
+  gap: 1rem;
+}
+.page-header-left {
+  flex: 1;
+}
 .page-title { font-size: 2rem; font-weight: 700; color: var(--text); letter-spacing: -0.02em; margin-bottom: 0.5rem; }
 .page-subtitle { color: var(--text-muted); font-size: 1rem; }
 .form-builder { display: flex; flex-direction: column; gap: 1.5rem; }
@@ -831,17 +857,54 @@ input:focus, textarea:focus, select:focus { outline: none; border-color: var(--p
   box-shadow: var(--shadow-sm);
 }
 
+.sidebar-toggle-desktop {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  padding: 0;
+  background: var(--surface);
+  color: var(--text-muted);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: all 0.2s;
+  flex-shrink: 0;
+}
+
+.sidebar-toggle-desktop:hover {
+  background: var(--primary-soft);
+  color: var(--primary);
+  border-color: var(--primary);
+}
+
+.sidebar-toggle-desktop svg {
+  width: 18px;
+  height: 18px;
+}
+
 .main-content {
   width: 100%;
 }
 
+.sidebar.open + .main-content,
+.main-content.with-sidebar {
+  margin-left: 280px;
+}
+
 @media (max-width: 1024px) {
+  .sidebar.open + .main-content,
+  .main-content.with-sidebar {
+    margin-left: 0;
+  }
+
   .sidebar-toggle {
     display: flex;
     align-items: center;
     gap: 0.4rem;
   }
-  
+
   .sidebar-toggle svg {
     width: 16px;
     height: 16px;
