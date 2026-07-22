@@ -80,12 +80,8 @@ func validateScheduleConfig(config *models.RecurringSchedule) error {
 			if fs.Date == "" {
 				return fmt.Errorf("Разовый слот #%d: укажите дату", i+1)
 			}
-			if fs.StartTime == "" || fs.EndTime == "" {
-				return fmt.Errorf("Разовый слот #%d: укажите время начала и окончания", i+1)
-			}
-			if fs.StartTime >= fs.EndTime {
-				return fmt.Errorf("Разовый слот #%d: время начала должно быть раньше окончания (%s < %s)",
-					i+1, fs.StartTime, fs.EndTime)
+			if fs.StartTime == "" {
+				return fmt.Errorf("Разовый слот #%d: укажите время начала", i+1)
 			}
 		}
 	}
@@ -110,13 +106,11 @@ func validateBookingInterval(config *models.RecurringSchedule, date time.Time, s
 	for _, fs := range config.FixedSlots {
 		if fs.Date == targetDateStr {
 			startParts := strings.Split(fs.StartTime, ":")
-			endParts := strings.Split(fs.EndTime, ":")
 			sh, _ := strconv.Atoi(startParts[0])
 			sm, _ := strconv.Atoi(startParts[1])
-			eh, _ := strconv.Atoi(endParts[0])
-			em, _ := strconv.Atoi(endParts[1])
 			fsStart := sh*60 + sm
-			fsEnd := eh*60 + em
+			// end_time вычисляется из slot_duration
+			fsEnd := fsStart + config.SlotDuration
 			if bookStart >= fsStart && bookEnd <= fsEnd {
 				return nil // OK — укладывается в fixed_slot
 			}
@@ -497,15 +491,12 @@ func GetAvailableSlots(db *gorm.DB) gin.HandlerFunc {
 			for _, fs := range config.FixedSlots {
 				if fs.Date == targetDateStr {
 					startParts := strings.Split(fs.StartTime, ":")
-					endParts := strings.Split(fs.EndTime, ":")
-
 					sh, _ := strconv.Atoi(startParts[0])
 					sm, _ := strconv.Atoi(startParts[1])
-					eh, _ := strconv.Atoi(endParts[0])
-					em, _ := strconv.Atoi(endParts[1])
 
 					start := time.Date(targetDate.Year(), targetDate.Month(), targetDate.Day(), sh, sm, 0, 0, time.UTC)
-					end := time.Date(targetDate.Year(), targetDate.Month(), targetDate.Day(), eh, em, 0, 0, time.UTC)
+					// Автоматически вычисляем end_time из slot_duration
+					end := start.Add(time.Duration(config.SlotDuration) * time.Minute)
 
 					allSlots = append(allSlots, gin.H{
 						"start_time":  start.UTC().Format(time.RFC3339),

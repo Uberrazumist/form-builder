@@ -22,7 +22,7 @@ type User struct {
 type EmailVerification struct {
 	ID        uuid.UUID `gorm:"type:uuid;primaryKey;default:gen_random_uuid()" json:"id"`
 	Email     string    `gorm:"not null;index" json:"email"`
-	Code      string    `gorm:"not null" json:"-"` // Никогда не возвращать в JSON
+	Code      string    `gorm:"not null" json:"-"`    // Никогда не возвращать в JSON
 	Type      string    `gorm:"not null" json:"type"` // 'registration' или 'reset_password'
 	ExpiresAt time.Time `gorm:"not null" json:"expires_at"`
 	Used      bool      `gorm:"default:false" json:"-"`
@@ -155,16 +155,15 @@ type DaySchedule struct {
 
 // ScheduleException переопределяет расписание для конкретной даты
 type ScheduleException struct {
-	Date      string         `json:"date"`        // "YYYY-MM-DD"
-	IsWorking bool           `json:"is_working"`  // false = выходной, true = особый график
-	Intervals []TimeInterval `json:"intervals"`   // Если IsWorking=true, иначе игнорируется
+	Date      string         `json:"date"`       // "YYYY-MM-DD"
+	IsWorking bool           `json:"is_working"` // false = выходной, true = особый график
+	Intervals []TimeInterval `json:"intervals"`  // Если IsWorking=true, иначе игнорируется
 }
 
 // FixedSlot — разовый фиксированный слот (без генерации)
 type FixedSlot struct {
 	Date      string `json:"date"`       // "YYYY-MM-DD"
 	StartTime string `json:"start_time"` // "HH:MM"
-	EndTime   string `json:"end_time"`   // "HH:MM"
 }
 
 // RecurringSchedule — полная структура JSON для правила расписания

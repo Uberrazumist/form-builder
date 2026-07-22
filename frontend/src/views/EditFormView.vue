@@ -1,6 +1,36 @@
 <template>
   <div class="edit-form-page">
-    <div v-if="loading" class="loading-state">
+    <!-- Кнопка открытия sidebar на мобильных -->
+    <button class="sidebar-toggle" @click="sidebarOpen = !sidebarOpen">
+      <Icon name="menu" /> Вопросы
+    </button>
+
+    <!-- Sidebar навигация -->
+    <div class="sidebar" :class="{ open: sidebarOpen }">
+      <div class="sidebar-header">
+        <h3>Вопросы</h3>
+        <button class="sidebar-close" @click="sidebarOpen = false">
+          <Icon name="close" />
+        </button>
+      </div>
+      <div class="sidebar-list">
+        <div
+          v-for="(question, index) in formData.questions"
+          :key="question.id || index"
+          class="sidebar-item"
+          :class="{ active: activeQuestionIndex === index }"
+          @click="scrollToQuestion(index)"
+        >
+          <span class="sidebar-item-number">{{ index + 1 }}</span>
+          <span class="sidebar-item-type">{{ getTypeIcon(question.type) }}</span>
+          <span class="sidebar-item-title">{{ question.title || 'Без названия' }}</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Основной контент -->
+    <div class="main-content">
+      <div v-if="loading" class="loading-state">
       <div class="spinner"></div>
       <p>Загрузка формы...</p>
     </div>
@@ -68,6 +98,7 @@
             v-for="(question, index) in formData.questions"
             :key="question.id || index"
             class="question-card"
+            :data-question-index="index"
             draggable="true"
             @dragstart="onDragStart($event, index)"
             @dragover.prevent="onDragOver($event, index)"
@@ -223,14 +254,17 @@
           </button>
         </div>
 
-        <FormResult v-if="result" :result="result" />
+        <div class="form-card">
+          <FormResult v-if="result" :result="result" />
+        </div>
       </form>
+      </div>
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, onMounted } from 'vue'
+import { ref, reactive, onMounted, nextTick, onBeforeUnmount, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import Icon from '../components/Icon.vue'
 import FormResult from '../components/FormResult.vue'
@@ -276,8 +310,30 @@ const error = ref<string | null>(null)
 const result = ref<any>(null)
 const submitting = ref(false)
 
+// Sidebar
+const sidebarOpen = ref(false)
+const activeQuestionIndex = ref(-1)
+let intersectionObserver: IntersectionObserver | null = null
+
 onMounted(async () => {
   await Promise.all([loadForm(), loadDictionaries()])
+  
+  nextTick(() => {
+    setupIntersectionObserver()
+  })
+})
+
+// Перезапускаем observer при изменении вопросов
+watch(() => formData.questions.length, () => {
+  nextTick(() => {
+    setupIntersectionObserver()
+  })
+})
+
+onBeforeUnmount(() => {
+  if (intersectionObserver) {
+    intersectionObserver.disconnect()
+  }
 })
 
 const loadDictionaries = async () => {
@@ -374,20 +430,25 @@ const removeQuestion = (index: number) => {
 // ==========================================
 const dragIndex = ref<number | null>(null)
 const dragOverIndex = ref<number | null>(null)
+const dragGhostEl = ref<HTMLElement | null>(null)
 
 const onDragStart = (event: DragEvent, index: number) => {
   dragIndex.value = index
-  event.dataTransfer?.setDragImage(document.createElement('div'), 0, 0)
+  
+  // Визуальная обратная связь: полупрозрачный клон
+  const target = event.currentTarget as HTMLElement
+  target.style.opacity = '0.4'
+  
   if (event.dataTransfer) {
     event.dataTransfer.effectAllowed = 'move'
+    event.dataTransfer.setData('text/plain', String(index))
   }
 }
 
 const onDragOver = (event: DragEvent, index: number) => {
   event.preventDefault()
-  if (dragIndex.value !== index) {
-    dragOverIndex.value = index
-  }
+  event.dataTransfer!.dropEffect = 'move'
+  dragOverIndex.value = index
 }
 
 const onDragEnter = (event: DragEvent, index: number) => {
@@ -413,11 +474,74 @@ const onDrop = (event: DragEvent, dropIndex: number) => {
 
   dragIndex.value = null
   dragOverIndex.value = null
+  
+  // Сброс opacity
+  const questionCards = document.querySelectorAll('.question-card')
+  questionCards.forEach(card => {
+    if (card instanceof HTMLElement) card.style.opacity = '1'
+  })
 }
 
 const onDragEnd = () => {
   dragIndex.value = null
   dragOverIndex.value = null
+  
+  // Сброс opacity
+  const questionCards = document.querySelectorAll('.question-card')
+  questionCards.forEach(card => {
+    if (card instanceof HTMLElement) card.style.opacity = '1'
+  })
+}
+
+// ==========================================
+// Sidebar навигация
+// ==========================================
+const getTypeIcon = (type: string): string => {
+  const icons: Record<string, string> = {
+    text: '📝',
+    textarea: '📄',
+    radio: '🔘',
+    checkbox: '☑️',
+    select: '📋',
+    rating: '⭐',
+    date: '📅',
+    dictionary: '📚',
+    schedule: '🗓️'
+  }
+  return icons[type] || '❓'
+}
+
+const scrollToQuestion = (index: number) => {
+  const el = document.querySelector(`[data-question-index="${index}"]`) as HTMLElement
+  if (el) {
+    el.scrollIntoView({ behavior: 'smooth', block: 'center' })
+    activeQuestionIndex.value = index
+  }
+}
+
+// Intersection Observer для подсветки активного вопроса
+const setupIntersectionObserver = () => {
+  if (intersectionObserver) {
+    intersectionObserver.disconnect()
+  }
+
+  const questionCards = document.querySelectorAll('.question-card')
+  intersectionObserver = new IntersectionObserver((entries) => {
+    entries.forEach(entry => {
+      if (entry.isIntersecting) {
+        const idx = Number(entry.target.getAttribute('data-question-index') || '-1')
+        if (idx >= 0) {
+          activeQuestionIndex.value = idx
+        }
+      }
+    })
+  }, {
+    root: null,
+    rootMargin: '-20% 0px -60% 0px',
+    threshold: 0
+  })
+
+  questionCards.forEach(card => intersectionObserver!.observe(card))
 }
 
 const addOption = (question: Question) => {
@@ -587,6 +711,142 @@ input:focus, textarea:focus, select:focus { outline: none; border-color: var(--p
 .btn-add svg, .btn-add-small svg { width: 16px; height: 16px; }
 .btn-add-small { padding: 0.5rem 0.85rem; font-size: 0.85rem; }
 .form-actions { display: flex; gap: 1rem; justify-content: flex-end; flex-wrap: wrap; align-items: center; }
+
+/* ==========================================
+   Sidebar Navigation
+   ========================================== */
+.sidebar {
+  position: fixed;
+  top: 0;
+  left: -280px;
+  width: 280px;
+  height: 100vh;
+  background: var(--surface);
+  border-right: 1px solid var(--border);
+  z-index: 100;
+  transition: left 0.3s ease;
+  overflow-y: auto;
+  box-shadow: var(--shadow-md);
+}
+
+.sidebar.open {
+  left: 0;
+}
+
+.sidebar-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 1rem 1.25rem;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg);
+  position: sticky;
+  top: 0;
+  z-index: 1;
+}
+
+.sidebar-header h3 {
+  font-size: 1rem;
+  font-weight: 700;
+  color: var(--text);
+  margin: 0;
+}
+
+.sidebar-close {
+  width: 28px;
+  height: 28px;
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  border-radius: 6px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s;
+}
+
+.sidebar-close:hover {
+  background: var(--primary-soft);
+  color: var(--primary);
+}
+
+.sidebar-list {
+  padding: 0.75rem 0;
+}
+
+.sidebar-item {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.6rem 1.25rem;
+  cursor: pointer;
+  transition: all 0.2s;
+  border-left: 3px solid transparent;
+}
+
+.sidebar-item:hover {
+  background: var(--primary-soft);
+}
+
+.sidebar-item.active {
+  background: var(--primary-soft);
+  border-left-color: var(--primary);
+}
+
+.sidebar-item-number {
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: var(--text-muted);
+  min-width: 20px;
+}
+
+.sidebar-item-type {
+  font-size: 1rem;
+}
+
+.sidebar-item-title {
+  font-size: 0.85rem;
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  flex: 1;
+}
+
+.sidebar-toggle {
+  display: none;
+  position: fixed;
+  top: 1rem;
+  left: 1rem;
+  z-index: 101;
+  padding: 0.6rem 1rem;
+  background: var(--primary);
+  color: #fff;
+  border: none;
+  border-radius: var(--radius-sm);
+  font-size: 0.9rem;
+  font-weight: 600;
+  cursor: pointer;
+  box-shadow: var(--shadow-sm);
+}
+
+.main-content {
+  width: 100%;
+}
+
+@media (max-width: 1024px) {
+  .sidebar-toggle {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+  }
+  
+  .sidebar-toggle svg {
+    width: 16px;
+    height: 16px;
+  }
+}
 .responses-link-block { display: flex; align-items: center; gap: 0.5rem; padding: 0.6rem 1rem; background: var(--primary-soft); border-radius: var(--radius-sm); flex: 1; min-width: 280px; }
 .responses-link-block svg { width: 16px; height: 16px; color: var(--primary); flex-shrink: 0; }
 .link-label { font-size: 0.85rem; font-weight: 600; color: var(--primary); white-space: nowrap; }

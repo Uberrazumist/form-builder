@@ -26,8 +26,6 @@
         <div v-for="(slot, idx) in form.fixed_slots" :key="idx" class="fixed-slot-row">
           <input type="date" v-model="slot.date" class="fixed-slot-date" />
           <input type="time" v-model="slot.start_time" class="fixed-slot-time" />
-          <span>—</span>
-          <input type="time" v-model="slot.end_time" class="fixed-slot-time" />
           <button type="button" @click="removeFixedSlot(idx)" class="btn-icon-delete" title="Удалить слот">
             <Icon name="trash" />
           </button>
@@ -156,6 +154,11 @@ const emit = defineEmits<{
   deleted: []
 }>()
 
+interface FixedSlot {
+  date: string
+  start_time: string
+}
+
 interface DayConfig {
   day: number
   is_working: boolean
@@ -185,7 +188,7 @@ const form = reactive({
     { day: 6, is_working: false, start_time: '09:00', end_time: '18:00', slot_duration: 45, break_between: 15 },
     { day: 7, is_working: false, start_time: '09:00', end_time: '18:00', slot_duration: 45, break_between: 15 }
   ] as DayConfig[],
-  fixed_slots: [] as { date: string; start_time: string; end_time: string }[]
+  fixed_slots: [] as FixedSlot[]
 })
 
 const exceptionsText = ref('')
@@ -276,7 +279,7 @@ const setWorkdays = (days: number[]) => {
 // Разовые фиксированные слоты
 const addFixedSlot = () => {
   const today = new Date().toISOString().split('T')[0] || ''
-  form.fixed_slots.push({ date: today, start_time: '09:00', end_time: '10:00' })
+  form.fixed_slots.push({ date: today, start_time: '09:00' })
 }
 
 const removeFixedSlot = (idx: number) => {

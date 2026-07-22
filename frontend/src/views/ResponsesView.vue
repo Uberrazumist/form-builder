@@ -30,7 +30,15 @@
 
       <div v-else class="table-container">
         <div class="table-header">
-          <span class="response-count">Всего ответов: {{ responses.length }}</span>
+          <div class="header-left">
+            <span class="response-count">Всего ответов: {{ filteredResponses.length }}</span>
+            <input
+              v-model="searchQuery"
+              type="text"
+              placeholder="Поиск по ответам..."
+              class="search-input"
+            />
+          </div>
           <button @click="exportCSV" class="btn-secondary-small">
             <Icon name="download" />
             Экспорт CSV
@@ -40,17 +48,23 @@
           <table class="responses-table">
             <thead>
               <tr>
-                <th class="col-date">Дата</th>
+                <th class="col-date" @click="toggleSort('created_at')">
+                  Дата
+                  <span class="sort-indicator">{{ getSortIndicator('created_at') }}</span>
+                </th>
                 <th
                   v-for="question in form?.questions || []"
                   :key="question.id"
+                  @click="toggleSort(question.id)"
+                  class="sortable"
                 >
                   {{ question.title }}
+                  <span class="sort-indicator">{{ getSortIndicator(question.id) }}</span>
                 </th>
               </tr>
             </thead>
             <tbody>
-              <tr v-for="response in responses" :key="response.id">
+              <tr v-for="response in filteredResponses" :key="response.id">
                 <td class="col-date">{{ formatDate(response.created_at) }}</td>
                 <td
                   v-for="question in form?.questions || []"
@@ -68,7 +82,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { ref, onMounted, computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import Icon from '../components/Icon.vue'
 
@@ -108,6 +122,64 @@ const form = ref<Form | null>(null)
 const responses = ref<Response[]>([])
 const loading = ref(true)
 const error = ref<string | null>(null)
+const searchQuery = ref('')
+const sortColumn = ref<string>('created_at')
+const sortDirection = ref<'asc' | 'desc'>('desc')
+
+const filteredResponses = computed(() => {
+  let filtered = [...responses.value]
+
+  // Поиск
+  if (searchQuery.value.trim()) {
+    const query = searchQuery.value.toLowerCase().trim()
+    filtered = filtered.filter(r => {
+      const dateStr = formatDate(r.created_at).toLowerCase()
+      if (dateStr.includes(query)) return true
+
+      const answersStr = Object.values(r.answers || {}).join(' ').toLowerCase()
+      return answersStr.includes(query)
+    })
+  }
+
+  // Сортировка
+  filtered.sort((a, b) => {
+    let aVal: any, bVal: any
+
+    if (sortColumn.value === 'created_at') {
+      aVal = a.created_at
+      bVal = b.created_at
+    } else {
+      aVal = a.answers?.[sortColumn.value] ?? ''
+      bVal = b.answers?.[sortColumn.value] ?? ''
+    }
+
+    // Преобразуем в строки для сравнения
+    const strA = String(aVal).toLowerCase()
+    const strB = String(bVal).toLowerCase()
+
+    if (sortDirection.value === 'asc') {
+      return strA.localeCompare(strB, 'ru')
+    } else {
+      return strB.localeCompare(strA, 'ru')
+    }
+  })
+
+  return filtered
+})
+
+const toggleSort = (column: string) => {
+  if (sortColumn.value === column) {
+    sortDirection.value = sortDirection.value === 'asc' ? 'desc' : 'asc'
+  } else {
+    sortColumn.value = column
+    sortDirection.value = 'asc'
+  }
+}
+
+const getSortIndicator = (column: string): string => {
+  if (sortColumn.value !== column) return ''
+  return sortDirection.value === 'asc' ? ' ↑' : ' ↓'
+}
 
 onMounted(async () => {
   const token = localStorage.getItem('token')
@@ -179,7 +251,7 @@ const exportCSV = () => {
   if (!form.value || responses.value.length === 0) return
 
   const headers = ['Дата', ...(form.value.questions || []).map(q => q.title)]
-  const rows = responses.value.map(r => {
+  const rows = filteredResponses.value.map(r => {
     const row = [formatDate(r.created_at)]
     for (const q of form.value?.questions || []) {
       row.push(formatAnswer(r.answers?.[q.id], q.type))
@@ -221,7 +293,13 @@ const exportCSV = () => {
 .empty-state h3 { font-size: 1.25rem; font-weight: 700; color: var(--text); margin-bottom: 0.5rem; }
 .empty-state p { color: var(--text-muted); }
 .table-container { background: var(--surface); border-radius: var(--radius); border: 1px solid var(--border); overflow: hidden; }
-.table-header { display: flex; justify-content: space-between; align-items: center; padding: 1.25rem 1.5rem; border-bottom: 1px solid var(--border); }
+.table-header { display: flex; justify-content: space-between; align-items: center; padding: 1.25rem 1.5rem; border-bottom: 1px solid var(--border); gap: 1rem; }
+.header-left { display: flex; align-items: center; gap: 1rem; flex: 1; }
+.search-input { padding: 0.5rem 0.75rem; border: 1px solid var(--border); border-radius: var(--radius-sm); font-size: 0.9rem; font-family: inherit; min-width: 250px; transition: border-color 0.2s; }
+.search-input:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 0 3px rgba(47, 79, 138, 0.1); }
+.sortable { cursor: pointer; user-select: none; }
+.sortable:hover { background: var(--primary-soft); }
+.sort-indicator { font-size: 0.8rem; margin-left: 0.25rem; }
 .response-count { font-size: 0.95rem; font-weight: 600; color: var(--text); }
 .btn-secondary-small { display: inline-flex; align-items: center; gap: 0.4rem; padding: 0.5rem 1rem; background: var(--bg); color: var(--text); border: 1px solid var(--border); border-radius: var(--radius-sm); font-size: 0.85rem; font-weight: 500; cursor: pointer; transition: all 0.2s; }
 .btn-secondary-small:hover { background: var(--surface); border-color: #cfd6e3; }
