@@ -217,13 +217,6 @@ const loadData = async () => {
     }
     const data = await responsesResponse.json()
     responses.value = Array.isArray(data) ? data : (data.responses || [])
-    
-    // DEBUG: покажем структуру первого ответа
-    const firstResp = responses.value[0]
-    if (firstResp && firstResp.answers) {
-      console.log('[Responses] First response answers:', firstResp.answers)
-      console.log('[Responses] Form questions:', form.value?.questions.map(q => ({ id: q.id, type: q.type, title: q.title })))
-    }
   } catch (err) {
     console.error('[Responses] Load error:', err)
     error.value = 'Ошибка сети. Попробуйте позже.'

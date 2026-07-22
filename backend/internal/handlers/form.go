@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"strconv"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -724,15 +725,6 @@ func GetResponses(db *gorm.DB) gin.HandlerFunc {
 			questionTypes[q.ID.String()] = q.Type
 		}
 
-		// Вспомогательная функция для вывода ключей map
-		getMapKeys := func(m map[string]interface{}) []string {
-			keys := make([]string, 0, len(m))
-			for k := range m {
-				keys = append(keys, k)
-			}
-			return keys
-		}
-
 		// ГЛОБАЛЬНЫЙ кэш: itemID -> Name
 		dictNameCache := make(map[string]string)
 
@@ -746,50 +738,88 @@ func GetResponses(db *gorm.DB) gin.HandlerFunc {
 				answers = make(map[string]interface{})
 			}
 
-			// DEBUG: покажем структуру ответов
-			if i == 0 {
-				fmt.Printf("[GetResponses] First response answers type: %T, keys: %v\n", answers, getMapKeys(answers))
-				for k, v := range answers {
-					fmt.Printf("  Key: %q, Value type: %T, Value: %v\n", k, v, v)
-				}
-			}
+			for qKey, answer := range answers {
+				// Ключ может быть числовым (индекс) или UUID
+				var qIndex int
 
-			for qID, answer := range answers {
-				qType := questionTypes[qID]
+				// Вариант 1: ключ — числовая строка (индекс)
+				if idx, err := strconv.Atoi(qKey); err == nil {
+					qIndex = idx
+				} else {
+					// Вариант 2: ключ — UUID вопроса
+					qType := questionTypes[qKey]
+					if qType == "" {
+						continue // Неизвестный ключ, пропускаем
+					}
+
+					switch qType {
+					case "dictionary":
+						if itemID, ok := answer.(string); ok && len(itemID) == 36 {
+							if name, exists := dictNameCache[itemID]; exists {
+								answers[qKey] = name
+							} else {
+								var dictItem models.DictionaryItem
+								if err := db.Select("name").Where("id = ?", itemID).First(&dictItem).Error; err == nil {
+									dictNameCache[itemID] = dictItem.Name
+									answers[qKey] = dictItem.Name
+								} else {
+									answers[qKey] = "Не найдено"
+								}
+							}
+						}
+					case "schedule":
+						if ansMap, ok := answer.(map[string]interface{}); ok {
+							date, _ := ansMap["date"].(string)
+							startTime, _ := ansMap["start_time"].(string)
+							endTime, _ := ansMap["end_time"].(string)
+							if len(startTime) > 5 {
+								startTime = startTime[:5]
+							}
+							if len(endTime) > 5 {
+								endTime = endTime[:5]
+							}
+							answers[qKey] = fmt.Sprintf("%s, %s–%s", date, startTime, endTime)
+						}
+					}
+					continue
+				}
+
+				// Если числовой индекс — ищем вопрос
+				if qIndex < 0 || qIndex >= len(form.Questions) {
+					continue
+				}
+
+				question := form.Questions[qIndex]
+				qType := question.Type
 
 				switch qType {
 				case "dictionary":
-					// Если ответ — строка (UUID), подгружаем DictionaryItem
 					if itemID, ok := answer.(string); ok && len(itemID) == 36 {
-						// 1. Проверяем глобальный кэш
 						if name, exists := dictNameCache[itemID]; exists {
-							answers[qID] = name
+							answers[qKey] = name
 						} else {
-							// 2. Запрашиваем из БД (только name для скорости)
 							var dictItem models.DictionaryItem
 							if err := db.Select("name").Where("id = ?", itemID).First(&dictItem).Error; err == nil {
 								dictNameCache[itemID] = dictItem.Name
-								answers[qID] = dictItem.Name
+								answers[qKey] = dictItem.Name
 							} else {
-								answers[qID] = "Не найдено"
+								answers[qKey] = "Не найдено"
 							}
 						}
 					}
 
 				case "schedule":
-					// Если ответ — объект, форматируем в строку
 					if ansMap, ok := answer.(map[string]interface{}); ok {
 						date, _ := ansMap["date"].(string)
 						startTime, _ := ansMap["start_time"].(string)
 						endTime, _ := ansMap["end_time"].(string)
-						// Безопасная обрезка времени
 						if len(startTime) > 5 {
 							startTime = startTime[:5]
 						}
 						if len(endTime) > 5 {
 							endTime = endTime[:5]
 						}
-						answers[qID] = fmt.Sprintf("%s, %s–%s", date, startTime, endTime)
+						answers[qKey] = fmt.Sprintf("%s, %s–%s", date, startTime, endTime)
 					}
 				}
 			}

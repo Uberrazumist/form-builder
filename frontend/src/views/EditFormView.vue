@@ -26,6 +26,13 @@
           :key="question.id || index"
           class="sidebar-item"
           :class="{ active: activeQuestionIndex === index, 'sidebar-drag-over': sidebarDragOverIndex === index }"
+          draggable="true"
+          @dragstart="onSidebarDragStart($event, index)"
+          @dragover.prevent="onSidebarDragOver($event, index)"
+          @dragenter.prevent="onSidebarDragEnter($event, index)"
+          @dragleave="onSidebarDragLeave($event, index)"
+          @drop.prevent="onSidebarDrop($event, index)"
+          @dragend="onSidebarDragEnd"
         >
           <div class="sidebar-drag-handle" title="Перетащить для смены порядка">
             <Icon name="menu" />
