@@ -107,7 +107,7 @@ func ListForms(db *gorm.DB) gin.HandlerFunc {
 			return
 		}
 
-		c.JSON(http.StatusOK, gin.H{"forms": forms})
+		c.JSON(http.StatusOK, forms)
 	}
 }
 
@@ -131,7 +131,18 @@ func GetForm(db *gorm.DB) gin.HandlerFunc {
 			return
 		}
 
-		c.JSON(http.StatusOK, form)
+		c.JSON(http.StatusOK, gin.H{
+			"id":           form.ID.String(),
+			"title":        form.Title,
+			"description":  form.Description,
+			"is_public":    form.IsPublic,
+			"is_published": form.IsPublished,
+			"created_by":   form.CreatedBy.String(),
+			"created_at":   form.CreatedAt,
+			"updated_at":   form.UpdatedAt,
+			"settings":     form.Settings,
+			"questions":    form.Questions,
+		})
 	}
 }
 
