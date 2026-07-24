@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 	"strconv"
+	"time"
 
 	"github.com/Uberrazumist/form-builder/backend/internal/models"
 	"github.com/gin-gonic/gin"
@@ -158,9 +159,110 @@ func SubmitResponse(db *gorm.DB) gin.HandlerFunc {
 		}
 
 		var form models.Form
-		if err := db.First(&form, "id = ?", input.FormID).Error; err != nil {
+		if err := db.Preload("Questions").First(&form, "id = ?", input.FormID).Error; err != nil {
 			c.JSON(http.StatusNotFound, gin.H{"error": "Form not found"})
 			return
+		}
+
+		// 🔥 Обработка бронирований для schedule-вопросов
+		userIDStr := c.GetString("userID")
+		userID, _ := uuid.Parse(userIDStr)
+
+		// Для каждого schedule-вопроса создаём бронирование
+		for _, q := range form.Questions {
+			if q.Type != "schedule" {
+				continue
+			}
+
+			// Ответ schedule-вопроса — объект {date, start_time, end_time}
+			answer, hasAnswer := input.Answers[q.ID.String()]
+			if !hasAnswer {
+				continue
+			}
+
+			bookingData, ok := answer.(map[string]interface{})
+			if !ok {
+				continue
+			}
+
+			dateStr, _ := bookingData["date"].(string)
+			startTimeStr, _ := bookingData["start_time"].(string)
+			endTimeStr, _ := bookingData["end_time"].(string)
+
+			if dateStr == "" || startTimeStr == "" || endTimeStr == "" {
+				continue
+			}
+
+			// Парсим дату
+			date, err := time.Parse("2006-01-02", dateStr)
+			if err != nil {
+				c.JSON(http.StatusBadRequest, gin.H{"error": "Неверный формат даты в бронировании"})
+				return
+			}
+
+			// Парсим время
+			startTime, err := time.Parse(time.RFC3339, startTimeStr)
+			if err != nil {
+				startTime, err = time.Parse("2006-01-02T15:04:05Z", startTimeStr)
+				if err != nil {
+					c.JSON(http.StatusBadRequest, gin.H{"error": "Неверный формат времени начала"})
+					return
+				}
+			}
+
+			endTime, err := time.Parse(time.RFC3339, endTimeStr)
+			if err != nil {
+				endTime, err = time.Parse("2006-01-02T15:04:05Z", endTimeStr)
+				if err != nil {
+					c.JSON(http.StatusBadRequest, gin.H{"error": "Неверный формат времени окончания"})
+					return
+				}
+			}
+
+			// Ищем resource_id из depends_on
+			resourceID := uuid.Nil
+			if q.DependsOn != nil && *q.DependsOn != uuid.Nil {
+				// depends_on указывает на dictionary-вопрос, где выбран ресурс
+				if resID, ok := input.Answers[q.DependsOn.String()].(string); ok && len(resID) == 36 {
+					resourceID, err = uuid.Parse(resID)
+					if err != nil {
+						c.JSON(http.StatusBadRequest, gin.H{"error": "Неверный ID ресурса в бронировании"})
+						return
+					}
+				}
+			}
+
+			if resourceID == uuid.Nil {
+				continue // Пропускаем бронирование без ресурса
+			}
+
+			// 🔥 Защита от двойного бронирования — блокируем строку
+			tx := db.Begin()
+			var existingBooking models.Booking
+			if err := tx.Set("gorm:query_option", "FOR UPDATE").Where(
+				"resource_id = ? AND date = ? AND start_time = ?",
+				resourceID, date, startTime,
+			).First(&existingBooking).Error; err == nil {
+				tx.Rollback()
+				c.JSON(http.StatusConflict, gin.H{"error": "Это время только что заняли. Пожалуйста, выберите другое время."})
+				return
+			}
+
+			// Создаём бронирование
+			booking := models.Booking{
+				FormID:     uuid.MustParse(input.FormID),
+				UserID:     userID,
+				ResourceID: resourceID,
+				Date:       date,
+				StartTime:  startTime,
+				EndTime:    endTime,
+			}
+			if err := tx.Create(&booking).Error; err != nil {
+				tx.Rollback()
+				c.JSON(http.StatusInternalServerError, gin.H{"error": "Ошибка создания бронирования"})
+				return
+			}
+			tx.Commit()
 		}
 
 		answersJSON, _ := json.Marshal(input.Answers)

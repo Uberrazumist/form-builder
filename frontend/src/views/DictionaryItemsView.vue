@@ -184,6 +184,8 @@
         <h3>Расписание: {{ currentScheduleResourceName }}</h3>
         <ScheduleBuilder
           :resource-id="currentScheduleResourceId"
+          :resource-name="currentScheduleResourceName"
+          :initial-rule="currentScheduleInitialRule"
           @saved="onScheduleSaved"
         />
         <button @click="showScheduleModal = false" class="btn-close-modal">Закрыть</button>
@@ -234,6 +236,7 @@ const metadataError = ref('')
 const showScheduleModal = ref(false)
 const currentScheduleResourceId = ref('')
 const currentScheduleResourceName = ref('')
+const currentScheduleInitialRule = ref<any>(null)
 
 const selectedParentDictionaryId = ref<string | null>(null)
 const parentDictionaryItems = ref<DictionaryItem[]>([])
@@ -532,9 +535,27 @@ const deleteItem = async (itemId: string) => {
   }
 }
 
-const openScheduleModal = (item: DictionaryItem) => {
+const openScheduleModal = async (item: DictionaryItem) => {
   currentScheduleResourceId.value = item.id
   currentScheduleResourceName.value = item.name
+  currentScheduleInitialRule.value = null
+
+  // Загружаем существующее расписание
+  try {
+    const token = localStorage.getItem('token') || ''
+    const res = await fetch(`/api/schedules?resource_id=${item.id}`, {
+      headers: { 'Authorization': `Bearer ${token}` }
+    })
+    if (res.ok) {
+      const data = await res.json()
+      if (Array.isArray(data) && data.length > 0) {
+        currentScheduleInitialRule.value = data[0]
+      }
+    }
+  } catch (e) {
+    console.error('Failed to load schedule:', e)
+  }
+
   showScheduleModal.value = true
 }
 

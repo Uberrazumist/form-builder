@@ -67,9 +67,17 @@
           <div v-for="rule in scheduleRules" :key="rule.id" class="schedule-card">
             <div class="schedule-header">
               <h4>{{ rule.name }}</h4>
-              <span class="schedule-status" :class="rule.is_deleted ? 'deleted' : 'active'">
-                {{ rule.is_deleted ? 'Удалено' : 'Активно' }}
-              </span>
+              <div class="schedule-actions">
+                <button @click="editSchedule(rule)" class="btn-edit-schedule" title="Редактировать">
+                  <Icon name="edit" />
+                </button>
+                <button @click="deleteSchedule(rule)" class="btn-delete-schedule" title="Удалить">
+                  <Icon name="trash" />
+                </button>
+                <span class="schedule-status" :class="rule.is_deleted ? 'deleted' : 'active'">
+                  {{ rule.is_deleted ? 'Удалено' : 'Активно' }}
+                </span>
+              </div>
             </div>
             
             <div class="schedule-meta">
@@ -99,6 +107,21 @@
             </div>
           </div>
         </div>
+      </div>
+    </div>
+
+    <!-- Модалка редактирования расписания -->
+    <div v-if="showEditModal" class="modal-overlay" @click="closeEditModal">
+      <div class="modal-content modal-large" @click.stop>
+        <h3>Редактирование: {{ editingRule?.name || 'Расписание' }}</h3>
+        <ScheduleBuilder
+          :resource-id="editingRule?.resource_id || ''"
+          :resource-name="editingRule?.name"
+          :initial-rule="editingRule"
+          @saved="onScheduleSaved"
+          @deleted="closeEditModal"
+        />
+        <button @click="closeEditModal" class="btn-close-modal">Закрыть</button>
       </div>
     </div>
   </div>
@@ -135,6 +158,45 @@ const loadingSlots = ref<Record<string, boolean>>({})
 const analyticsData = ref<ResourceAnalytics[]>([])
 const scheduleRules = ref<ScheduleRule[]>([])
 const slotsForRule = ref<Record<string, SlotPreview[]>>({})
+
+// Модалка редактирования
+const showEditModal = ref(false)
+const editingRule = ref<ScheduleRule | null>(null)
+
+const editSchedule = (rule: ScheduleRule) => {
+  editingRule.value = rule
+  showEditModal.value = true
+}
+
+const closeEditModal = () => {
+  showEditModal.value = false
+  editingRule.value = null
+}
+
+const onScheduleSaved = () => {
+  closeEditModal()
+  loadData()
+}
+
+const deleteSchedule = async (rule: ScheduleRule) => {
+  if (!confirm(`Вы уверены, что хотите удалить расписание "${rule.name}"?\n\nСуществующие бронирования останутся в истории.`)) return
+
+  try {
+    const token = localStorage.getItem('token') || ''
+    const res = await fetch(`/api/schedules/${rule.id}`, {
+      method: 'DELETE',
+      headers: { 'Authorization': `Bearer ${token}` }
+    })
+    if (res.ok) {
+      loadData()
+    } else {
+      const errorData = await res.json()
+      alert(errorData.error || 'Ошибка удаления')
+    }
+  } catch (e) {
+    alert('Ошибка сети')
+  }
+}
 
 const loadData = async () => {
   loading.value = true
@@ -415,6 +477,50 @@ onMounted(() => {
   align-items: center;
   margin-bottom: 0.75rem;
   gap: 1rem;
+}
+
+.schedule-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.btn-edit-schedule,
+.btn-delete-schedule {
+  width: 32px;
+  height: 32px;
+  border: 1.5px solid var(--border);
+  background: var(--surface);
+  cursor: pointer;
+  border-radius: var(--radius-sm);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s;
+}
+
+.btn-edit-schedule {
+  color: var(--primary);
+}
+
+.btn-edit-schedule:hover {
+  background: var(--primary-soft);
+  border-color: var(--primary);
+}
+
+.btn-delete-schedule {
+  color: #c53030;
+}
+
+.btn-delete-schedule:hover {
+  background: #fdecec;
+  border-color: #c53030;
+}
+
+.btn-edit-schedule svg,
+.btn-delete-schedule svg {
+  width: 14px;
+  height: 14px;
 }
 
 .schedule-header h4 {
