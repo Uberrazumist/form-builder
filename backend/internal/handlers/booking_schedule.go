@@ -9,12 +9,11 @@ import (
 	"strings"
 	"time"
 
+	"github.com/Uberrazumist/form-builder/backend/internal/models"
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 	"gorm.io/datatypes"
 	"gorm.io/gorm"
-
-	"github.com/Uberrazumist/form-builder/backend/internal/models"
 )
 
 // validateScheduleConfig проверяет корректность конфигурации расписания
@@ -89,90 +88,6 @@ func validateScheduleConfig(config *models.RecurringSchedule) error {
 	return nil
 }
 
-// validateBookingInterval проверяет, что запрашиваемое бронирование укладывается
-// в один из разрешённых интервалов расписания на указанную дату
-func validateBookingInterval(config *models.RecurringSchedule, date time.Time, startTime, endTime time.Time) error {
-	targetDateStr := date.Format("2006-01-02")
-	dayOfWeek := int(date.Weekday())
-	if dayOfWeek == 0 {
-		dayOfWeek = 7
-	}
-
-	// Конвертируем время бронирования в минуты от начала дня
-	bookStart := startTime.Hour()*60 + startTime.Minute()
-	bookEnd := endTime.Hour()*60 + endTime.Minute()
-
-	// 1. Проверяем fixed_slots (приоритет выше weekly_intervals)
-	for _, fs := range config.FixedSlots {
-		if fs.Date == targetDateStr {
-			startParts := strings.Split(fs.StartTime, ":")
-			sh, _ := strconv.Atoi(startParts[0])
-			sm, _ := strconv.Atoi(startParts[1])
-			fsStart := sh*60 + sm
-			// end_time вычисляется из slot_duration
-			fsEnd := fsStart + config.SlotDuration
-			if bookStart >= fsStart && bookEnd <= fsEnd {
-				return nil // OK — укладывается в fixed_slot
-			}
-		}
-	}
-
-	// 2. Проверяем исключения
-	for _, exc := range config.Exceptions {
-		if exc.Date == targetDateStr {
-			if !exc.IsWorking {
-				return errors.New("На эту дату расписание не действует (выходной)")
-			}
-			for _, interval := range exc.Intervals {
-				intParts := strings.Split(interval.Start, ":")
-				endParts := strings.Split(interval.End, ":")
-				intStartH, _ := strconv.Atoi(intParts[0])
-				intStartM, _ := strconv.Atoi(intParts[1])
-				intEndH, _ := strconv.Atoi(endParts[0])
-				intEndM, _ := strconv.Atoi(endParts[1])
-				intStart := intStartH*60 + intStartM
-				intEnd := intEndH*60 + intEndM
-				if bookStart >= intStart && bookEnd <= intEnd {
-					return nil // OK — укладывается
-				}
-			}
-			break
-		}
-	}
-
-	// 3. Проверяем weekly_intervals (только если нет fixed_slots на эту дату)
-	hasFixedSlots := false
-	for _, fs := range config.FixedSlots {
-		if fs.Date == targetDateStr {
-			hasFixedSlots = true
-			break
-		}
-	}
-
-	if !hasFixedSlots {
-		for _, day := range config.WeeklyIntervals {
-			if day.DayOfWeek == dayOfWeek {
-				for _, interval := range day.Intervals {
-					intParts := strings.Split(interval.Start, ":")
-					endParts := strings.Split(interval.End, ":")
-					intStartH, _ := strconv.Atoi(intParts[0])
-					intStartM, _ := strconv.Atoi(intParts[1])
-					intEndH, _ := strconv.Atoi(endParts[0])
-					intEndM, _ := strconv.Atoi(endParts[1])
-					intStart := intStartH*60 + intStartM
-					intEnd := intEndH*60 + intEndM
-					if bookStart >= intStart && bookEnd <= intEnd {
-						return nil // OK — укладывается
-					}
-				}
-				break
-			}
-		}
-	}
-
-	return errors.New("Выбранное время не укладывается в разрешённые интервалы расписания")
-}
-
 // ListScheduleRules – GET /api/schedules
 func ListScheduleRules(db *gorm.DB) gin.HandlerFunc {
 	return func(c *gin.Context) {
@@ -234,6 +149,23 @@ func CreateScheduleRule(db *gorm.DB) gin.HandlerFunc {
 			return
 		}
 
+		// Проверяем, есть ли уже расписание для этого ресурса
+		var existingRule models.ScheduleRule
+		err = db.Where("resource_id = ? AND is_deleted = false", resourceID).First(&existingRule).Error
+
+		if err == nil {
+			// Расписание уже существует — обновляем его
+			existingRule.Name = input.Name
+			existingRule.Recurring = datatypes.JSON(recurringJSON)
+			if err := db.Save(&existingRule).Error; err != nil {
+				c.JSON(http.StatusInternalServerError, gin.H{"error": "Ошибка обновления правила"})
+				return
+			}
+			c.JSON(http.StatusOK, existingRule)
+			return
+		}
+
+		// Расписание не найдено — создаём новое
 		rule := models.ScheduleRule{
 			ResourceID: resourceID,
 			Name:       input.Name,
@@ -582,4 +514,181 @@ func CancelBooking(db *gorm.DB) gin.HandlerFunc {
 		}
 		c.JSON(http.StatusOK, gin.H{"message": "Бронирование отменено"})
 	}
+}
+
+// CreateBooking – POST /api/bookings
+func CreateBooking(db *gorm.DB) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		userIDStr := c.GetString("userID")
+		if userIDStr == "" {
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "Требуется авторизация"})
+			return
+		}
+		userID, err := uuid.Parse(userIDStr)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Неверный идентификатор пользователя"})
+			return
+		}
+
+		var input struct {
+			FormID     string    `json:"form_id" binding:"required"`
+			ResourceID string    `json:"resource_id" binding:"required"`
+			Date       time.Time `json:"date" binding:"required"`
+			StartTime  time.Time `json:"start_time" binding:"required"`
+			EndTime    time.Time `json:"end_time" binding:"required"`
+		}
+		if err := c.ShouldBindJSON(&input); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Некорректные данные бронирования"})
+			return
+		}
+
+		resourceID, err := uuid.Parse(input.ResourceID)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Неверный ID ресурса"})
+			return
+		}
+
+		// Проверяем что start < end
+		if !input.StartTime.Before(input.EndTime) {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Время начала должно быть раньше окончания"})
+			return
+		}
+
+		// Проверяем что бронирование укладывается в расписание
+		var rule models.ScheduleRule
+		if err := db.Where("resource_id = ? AND is_deleted = false", resourceID).First(&rule).Error; err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Для ресурса не настроено расписание"})
+			return
+		}
+
+		var config models.RecurringSchedule
+		if err := json.Unmarshal(rule.Recurring, &config); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Ошибка парсинга правил расписания"})
+			return
+		}
+
+		if err := validateBookingInterval(&config, input.Date, input.StartTime, input.EndTime); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
+
+		// Транзакция для защиты от двойного бронирования
+		tx := db.Begin()
+		defer func() {
+			if r := recover(); r != nil {
+				tx.Rollback()
+			}
+		}()
+
+		// Проверяем что слот не занят (с блокировкой строки)
+		var existingBooking models.Booking
+		if err := tx.Set("gorm:query_option", "FOR UPDATE").Where(
+			"resource_id = ? AND date = ? AND start_time = ?",
+			resourceID, input.Date, input.StartTime,
+		).First(&existingBooking).Error; err == nil {
+			tx.Rollback()
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Этот слот уже занят"})
+			return
+		}
+
+		booking := models.Booking{
+			FormID:     uuid.MustParse(input.FormID),
+			UserID:     userID,
+			ResourceID: resourceID,
+			Date:       input.Date,
+			StartTime:  input.StartTime,
+			EndTime:    input.EndTime,
+		}
+
+		if err := tx.Create(&booking).Error; err != nil {
+			tx.Rollback()
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Ошибка создания бронирования"})
+			return
+		}
+
+		if err := tx.Commit().Error; err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Ошибка сохранения бронирования"})
+			return
+		}
+
+		c.JSON(http.StatusCreated, gin.H{
+			"id":          booking.ID.String(),
+			"form_id":     booking.FormID.String(),
+			"resource_id": booking.ResourceID.String(),
+			"date":        booking.Date.Format("2006-01-02"),
+			"start_time":  booking.StartTime.Format(time.RFC3339),
+			"end_time":    booking.EndTime.Format(time.RFC3339),
+		})
+	}
+}
+
+// validateBookingInterval проверяет, что бронирование укладывается в разрешённые интервалы расписания
+// Приоритет проверки: Exceptions > FixedSlots > WeeklyIntervals
+func validateBookingInterval(config *models.RecurringSchedule, date time.Time, startTime, endTime time.Time) error {
+	targetDateStr := date.Format("2006-01-02")
+
+	// 1. Проверяем исключения (приоритет выше всего)
+	for _, exc := range config.Exceptions {
+		if exc.Date == targetDateStr {
+			if !exc.IsWorking {
+				return fmt.Errorf("Выбранная дата является выходным днём")
+			}
+			// Если это рабочий день с особым графиком, проверяем интервалы исключения
+			for _, interval := range exc.Intervals {
+				if isTimeInRange(startTime, endTime, interval, date) {
+					return nil
+				}
+			}
+			return fmt.Errorf("Выбранное время не попадает в расписание на эту дату")
+		}
+	}
+
+	// 2. Проверяем фиксированные слоты (приоритет выше weekly_intervals)
+	for _, fs := range config.FixedSlots {
+		if fs.Date == targetDateStr {
+			startParts := strings.Split(fs.StartTime, ":")
+			sh, _ := strconv.Atoi(startParts[0])
+			sm, _ := strconv.Atoi(startParts[1])
+			slotStart := time.Date(date.Year(), date.Month(), date.Day(), sh, sm, 0, 0, time.UTC)
+			slotEnd := slotStart.Add(time.Duration(config.SlotDuration) * time.Minute)
+			if startTime.Equal(slotStart) && endTime.Equal(slotEnd) {
+				return nil
+			}
+		}
+	}
+
+	// 3. Проверяем недельное расписание
+	dayOfWeek := int(date.Weekday())
+	if dayOfWeek == 0 {
+		dayOfWeek = 7
+	}
+	for _, day := range config.WeeklyIntervals {
+		if day.DayOfWeek == dayOfWeek {
+			for _, interval := range day.Intervals {
+				if isTimeInRange(startTime, endTime, interval, date) {
+					return nil
+				}
+			}
+			return fmt.Errorf("Выбранное время не попадает в расписание")
+		}
+	}
+
+	return fmt.Errorf("Выбранный день не является рабочим")
+}
+
+// isTimeInRange проверяет, что startTime-endTime укладывается в interval
+func isTimeInRange(startTime, endTime time.Time, interval models.TimeInterval, date time.Time) bool {
+	startParts := strings.Split(interval.Start, ":")
+	endParts := strings.Split(interval.End, ":")
+
+	sh, _ := strconv.Atoi(startParts[0])
+	sm, _ := strconv.Atoi(startParts[1])
+	eh, _ := strconv.Atoi(endParts[0])
+	em, _ := strconv.Atoi(endParts[1])
+
+	intervalStart := time.Date(date.Year(), date.Month(), date.Day(), sh, sm, 0, 0, time.UTC)
+	intervalEnd := time.Date(date.Year(), date.Month(), date.Day(), eh, em, 0, 0, time.UTC)
+
+	// Бронирование должно полностью укладываться в интервал
+	return !startTime.Before(intervalStart) && !endTime.After(intervalEnd)
 }

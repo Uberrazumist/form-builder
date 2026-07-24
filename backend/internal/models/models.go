@@ -177,10 +177,12 @@ type RecurringSchedule struct {
 
 type ScheduleRule struct {
 	ID         uuid.UUID      `gorm:"type:uuid;primaryKey;default:gen_random_uuid()" json:"id"`
-	ResourceID uuid.UUID      `gorm:"type:uuid;not null;uniqueIndex:idx_resource_rule" json:"resource_id"`
+	ResourceID uuid.UUID      `gorm:"type:uuid;not null;index" json:"resource_id"`
 	Name       string         `gorm:"not null" json:"name"`
 	Recurring  datatypes.JSON `gorm:"type:jsonb;not null" json:"recurring"`
 	IsDeleted  bool           `gorm:"default:false" json:"is_deleted"`
+	StartDate  *time.Time     `json:"start_date,omitempty"`
+	EndDate    *time.Time     `json:"end_date,omitempty"`
 	CreatedAt  time.Time      `json:"created_at"`
 	UpdatedAt  time.Time      `json:"updated_at"`
 }

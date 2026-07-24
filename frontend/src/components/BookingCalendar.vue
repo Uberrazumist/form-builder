@@ -1,5 +1,12 @@
 <template>
   <div class="booking-calendar">
+    <!-- Кнопки навигации всегда видны -->
+    <div class="date-header">
+      <button class="nav-btn" @click="changeDate(-1)" :disabled="loading">←</button>
+      <span class="date-label">{{ formatDate(selectedDate) }}</span>
+      <button class="nav-btn" @click="changeDate(1)" :disabled="loading">→</button>
+    </div>
+
     <div v-if="loading" class="loading-state">
       <div class="spinner-small"></div>
       <span>Загрузка слотов...</span>
@@ -8,15 +15,10 @@
     <div v-else-if="slots.length === 0" class="empty-state">
       <Icon name="calendar" />
       <p>Нет доступных слотов на эту дату</p>
+      <p class="hint">Попробуйте выбрать другой день</p>
     </div>
 
     <div v-else>
-      <div class="date-header">
-        <button class="nav-btn" @click="changeDate(-1)" :disabled="loading">←</button>
-        <span class="date-label">{{ formatDate(selectedDate) }}</span>
-        <button class="nav-btn" @click="changeDate(1)" :disabled="loading">→</button>
-      </div>
-
       <div class="slots-grid">
         <button
           v-for="(slot, idx) in slots"

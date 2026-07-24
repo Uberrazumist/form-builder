@@ -147,6 +147,11 @@
           </div>
 
           <div v-if="question.type === 'schedule'" class="schedule-section">
+            <div class="info-box">
+              <Icon name="info" />
+              <span>Проверка занятости включена автоматически — пользователь сможет выбрать только свободные слоты</span>
+            </div>
+
             <div class="form-group">
               <label>
                 <Icon name="link" />
@@ -477,6 +482,8 @@ input:focus, textarea:focus, select:focus { outline: none; border-color: var(--p
 .empty-state { text-align: center; padding: 2rem; color: var(--text-muted); font-size: 0.95rem; }
 .info-hint { display: flex; align-items: center; gap: 0.6rem; padding: 0.85rem 1rem; background: var(--primary-soft); border-radius: var(--radius-sm); color: var(--primary); font-size: 0.88rem; margin-bottom: 1rem; }
 .info-hint svg { width: 18px; height: 18px; flex-shrink: 0; }
+.info-box { display: flex; align-items: center; gap: 0.5rem; padding: 0.7rem 0.9rem; background: #f0f9ff; border-radius: var(--radius-sm); color: #0369a1; font-size: 0.85rem; margin-bottom: 1rem; border: 1px solid #bae6fd; }
+.info-box svg { width: 16px; height: 16px; flex-shrink: 0; color: #0284c7; }
 .question-card { background: var(--bg); padding: 1.5rem; border-radius: var(--radius-sm); border: 1px solid var(--border); margin-bottom: 1rem; animation: fadeUp 0.3s ease both; transition: all 0.2s; }
 .question-card.drag-over { border-color: var(--primary); background: var(--primary-soft); box-shadow: 0 0 0 3px rgba(47, 79, 138, 0.1); }
 .question-card:active { cursor: grabbing; }

@@ -5,17 +5,6 @@
       <input type="text" v-model="form.name" placeholder="Например: Расписание Иванова" />
     </div>
 
-    <div class="form-row">
-      <div class="form-group">
-        <label>Начало действия</label>
-        <input type="date" v-model="form.start_date" />
-      </div>
-      <div class="form-group">
-        <label>Окончание действия</label>
-        <input type="date" v-model="form.end_date" />
-      </div>
-    </div>
-
     <!-- 🔥 Разовые фиксированные слоты — ВЫШЕ weekly schedule, т.к. чаще используются -->
     <div class="fixed-slots-section">
       <div class="section-header">
@@ -147,6 +136,7 @@ const props = defineProps<{
   dictionaries?: Array<{ id: string; name: string }>
   initialRule?: ScheduleRule
   resourceId: string
+  resourceName?: string
 }>()
 
 const emit = defineEmits<{
@@ -175,16 +165,21 @@ interface PreviewSlot {
 
 const dayNames = ['Понедельник', 'Вторник', 'Среда', 'Четверг', 'Пятница', 'Суббота', 'Воскресенье']
 
+// Автозаполнение названия из resourceName
+const defaultName = computed(() => {
+  return props.resourceName ? `Расписание ${props.resourceName}` : ''
+})
+
 const form = reactive({
-  name: '',
+  name: defaultName.value,
   start_date: new Date().toISOString().split('T')[0],
   end_date: new Date(Date.now() + 365 * 86400000).toISOString().split('T')[0],
   days_config: [
-    { day: 1, is_working: true, start_time: '09:00', end_time: '18:00', slot_duration: 45, break_between: 15 },
-    { day: 2, is_working: true, start_time: '09:00', end_time: '18:00', slot_duration: 45, break_between: 15 },
-    { day: 3, is_working: true, start_time: '09:00', end_time: '18:00', slot_duration: 45, break_between: 15 },
-    { day: 4, is_working: true, start_time: '09:00', end_time: '18:00', slot_duration: 45, break_between: 15 },
-    { day: 5, is_working: true, start_time: '09:00', end_time: '18:00', slot_duration: 45, break_between: 15 },
+    { day: 1, is_working: false, start_time: '09:00', end_time: '18:00', slot_duration: 45, break_between: 15 },
+    { day: 2, is_working: false, start_time: '09:00', end_time: '18:00', slot_duration: 45, break_between: 15 },
+    { day: 3, is_working: false, start_time: '09:00', end_time: '18:00', slot_duration: 45, break_between: 15 },
+    { day: 4, is_working: false, start_time: '09:00', end_time: '18:00', slot_duration: 45, break_between: 15 },
+    { day: 5, is_working: false, start_time: '09:00', end_time: '18:00', slot_duration: 45, break_between: 15 },
     { day: 6, is_working: false, start_time: '09:00', end_time: '18:00', slot_duration: 45, break_between: 15 },
     { day: 7, is_working: false, start_time: '09:00', end_time: '18:00', slot_duration: 45, break_between: 15 }
   ] as DayConfig[],
@@ -275,6 +270,13 @@ const setWorkdays = (days: number[]) => {
     config.is_working = days.includes(config.day)
   })
 }
+
+// Отслеживаем изменение resourceName и обновляем name только если пользователь не редактировал
+watch(() => props.resourceName, (newName) => {
+  if (newName && !form.name) {
+    form.name = `Расписание ${newName}`
+  }
+})
 
 // Разовые фиксированные слоты
 const addFixedSlot = () => {

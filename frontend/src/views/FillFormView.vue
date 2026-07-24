@@ -636,18 +636,38 @@ const visibleQuestionsCount = computed(() => {
 })
 
 const currentVisibleStepNumber = computed(() => {
-  if (!form.value?.questions) return 1
+  if (!form.value?.questions || form.value.questions.length === 0) return 1
+  
+  // Ищем текущий видимый шаг
   let visibleCount = 0
-  for (let i = 0; i <= currentStep.value; i++) {
+  for (let i = 0; i < form.value.questions.length; i++) {
     const q = form.value.questions[i]
-    if (q && isQuestionVisible(q)) visibleCount++
+    if (q && isQuestionVisible(q)) {
+      visibleCount++
+      if (i === currentStep.value) {
+        return visibleCount
+      }
+    }
   }
   return Math.max(1, visibleCount)
 })
 
 const progressPercent = computed(() => {
-  const total = visibleQuestionsCount.value
-  return total === 0 ? 0 : Math.round((currentVisibleStepNumber.value / total) * 100)
+  const visibleQuestions = form.value?.questions.filter(q => q && isQuestionVisible(q)) || []
+  if (visibleQuestions.length === 0) return 0
+  
+  // Считаем сколько видимых вопросов имеют ответы
+  const filledCount = visibleQuestions.filter(q => {
+    const answer = answers[q.id]
+    if (!answer) return false
+    // Для schedule-type проверяем объект
+    if (q.type === 'schedule') {
+      return answer.date && answer.start_time && answer.end_time
+    }
+    return true
+  }).length
+  
+  return Math.round((filledCount / visibleQuestions.length) * 100)
 })
 
 // ==========================================
