@@ -200,24 +200,30 @@ func SubmitResponse(db *gorm.DB) gin.HandlerFunc {
 				return
 			}
 
-			// Парсим время
-			startTime, err := time.Parse(time.RFC3339, startTimeStr)
+			// Парсим время — принимаем "HH:MM" или полный timestamp
+			startTime, err := time.Parse("15:04", startTimeStr)
 			if err != nil {
-				startTime, err = time.Parse("2006-01-02T15:04:05Z", startTimeStr)
+				startTime, err = time.Parse(time.RFC3339, startTimeStr)
 				if err != nil {
 					c.JSON(http.StatusBadRequest, gin.H{"error": "Неверный формат времени начала"})
 					return
 				}
 			}
+			// Комбинируем дату и время начала
+			startTime = time.Date(date.Year(), date.Month(), date.Day(),
+				startTime.Hour(), startTime.Minute(), 0, 0, time.UTC)
 
-			endTime, err := time.Parse(time.RFC3339, endTimeStr)
+			endTime, err := time.Parse("15:04", endTimeStr)
 			if err != nil {
-				endTime, err = time.Parse("2006-01-02T15:04:05Z", endTimeStr)
+				endTime, err = time.Parse(time.RFC3339, endTimeStr)
 				if err != nil {
 					c.JSON(http.StatusBadRequest, gin.H{"error": "Неверный формат времени окончания"})
 					return
 				}
 			}
+			// Комбинируем дату и время окончания
+			endTime = time.Date(date.Year(), date.Month(), date.Day(),
+				endTime.Hour(), endTime.Minute(), 0, 0, time.UTC)
 
 			// Ищем resource_id из depends_on
 			resourceID := uuid.Nil
@@ -253,16 +259,20 @@ func SubmitResponse(db *gorm.DB) gin.HandlerFunc {
 				FormID:     uuid.MustParse(input.FormID),
 				UserID:     userID,
 				ResourceID: resourceID,
-				Date:       date,
+				Date:       date, // time.Time с датой, GORM сохранит как date
 				StartTime:  startTime,
 				EndTime:    endTime,
 			}
 			if err := tx.Create(&booking).Error; err != nil {
 				tx.Rollback()
-				c.JSON(http.StatusInternalServerError, gin.H{"error": "Ошибка создания бронирования"})
+				c.JSON(http.StatusBadRequest, gin.H{"error": "Невозможно забронировать: " + err.Error()})
 				return
 			}
-			tx.Commit()
+			if err := tx.Commit().Error; err != nil {
+				tx.Rollback()
+				c.JSON(http.StatusInternalServerError, gin.H{"error": "Ошибка сохранения бронирования"})
+				return
+			}
 		}
 
 		answersJSON, _ := json.Marshal(input.Answers)
